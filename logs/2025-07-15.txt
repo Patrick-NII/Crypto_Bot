@@ -106,3 +106,39 @@ Portefeuille total ≈ 5 596,03 €
 
 Prochain point dans 15 min.
 
+Bonjour M. Ngunga, voici le point sur vos investissements (15/07/2025 23:25).
+
+📊 PERTES TOTALES ACTUELLES (PEA) : -5 268,86 €
+
+═════════════════
+🔹 CRYPTO (Revolut)
+- Bitcoin : 1 417,03 € (0.01405368 @ 100 830,00 €)
+- Ethereum : 312,16 € (0.11832864 @ 2 638,08 €)
+- Solana : 279,10 € (2.004042 @ 139,27 €)
+- Render Token : 342,91 € (103.28506478 @ 3,32 €)
+- Fetch Ai : 208,66 € (327.29352097 @ 0,64 €)
+- Arbitrum : 152,80 € (417.97044486 @ 0,37 €)
+- Avalanche 2 : 141,79 € (7.57011985 @ 18,73 €)
+
+➡️ Total crypto : 2 854,45 € | Tendance : ↗️
+
+═════════════════
+🔹 PEA (Fortuneo)
+- D7G.F : 1 443,99 € (PRU 0,54 € / Gain: -1 997,71 €)
+- NAVYA.PA : 0,00 € (PRU 0,04 € / Gain: -36,00 €)
+- ALEUP.PA : 2,39 € (PRU 6,14 € / Gain: -2 822,47 €)
+- V07.F : 619,40 € (PRU 1,36 € / Gain: -412,68 €)
+
+➡️ Total PEA : 2 065,78 € | Tendance : ↘️ Négative
+
+═════════════════
+🔹 ACTIONS (Revolut)
+- XFAB.PA : 175,05 € (PRU 6,84 € / Gain: 0,26 €)
+
+➡️ Total actions : 175,05 € | Tendance : ↗️ Forte
+
+📈 Projection fin 2025 (hypothèse +10 %/an) :
+Portefeuille total ≈ 5 604,80 €
+
+Prochain point dans 15 min.
+
