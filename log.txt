@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/nii/Documents/bot_money/okamoey_bot.py", line 1, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+Traceback (most recent call last):
+  File "/Users/nii/Documents/bot_money/okamoey_bot.py", line 1, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
