@@ -37,7 +37,7 @@ stocks_lines = [
 
 # Rapport
 now = datetime.now().strftime("%d/%m/%Y %H:%M")
-message = f"""Bonjour M. Ngunga, voici le point sur vos investissements ({now}).
+message = f"""Bonjour M. NII, voici le point sur vos investissements ({now}).
 
 📊 PERTES TOTALES ACTUELLES (PEA) : {format_currency(total_pea_loss)}
 
