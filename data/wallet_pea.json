@@ -1,0 +1,16 @@
+{
+    "BTC":    {"cat": "crypto", "amount": 0.014,    "pru": 0,     "source": "revolut"},
+    "RNDR":   {"cat": "crypto", "amount": 103.28,   "pru": 0,     "source": "revolut"},
+    "ETH":    {"cat": "crypto", "amount": 0.11,     "pru": 0,     "source": "revolut"},
+    "SOL":    {"cat": "crypto", "amount": 2,        "pru": 0,     "source": "revolut"},
+    "FET":    {"cat": "crypto", "amount": 327.29,   "pru": 0,     "source": "revolut"},
+    "ARB":    {"cat": "crypto", "amount": 417.97,   "pru": 0,     "source": "revolut"},
+    "AVAX":   {"cat": "crypto", "amount": 7.57,     "pru": 0,     "source": "revolut"},
+    
+    "CAV":    {"cat": "action", "amount": 760,      "pru": 1.358, "source": "pea"},
+    "EUP":    {"cat": "action", "amount": 460,      "pru": 6.141, "source": "pea"},
+    "NAVYA":  {"cat": "action", "amount": 1000,     "pru": 0.036, "source": "pea"},
+    "NEL":    {"cat": "action", "amount": 6350,     "pru": 0.542, "source": "pea"},
+    
+    "XFB":    {"cat": "action", "amount": 25.55,    "pru": 6.84,  "source": "revolut"}
+  }
