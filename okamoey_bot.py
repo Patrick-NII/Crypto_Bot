@@ -1,100 +1,74 @@
-import requests
+# okamoey_bot.py
 import os
+import json
 from datetime import datetime
 from dotenv import load_dotenv
+import requests
+
+from modules.fetch_crypto import get_crypto_data
+from modules.fetch_stocks import get_stock_data
+from modules.utils import format_currency, log_report
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-CRYPTO_HOLDINGS = {
-    "bitcoin": 0.014,
-    "render-token": 103.28,
-    "ethereum": 0.11,
-    "solana": 2,
-    "fetch-ai": 327.29,
-    "arbitrum": 417.97,
-    "avalanche-2": 7.57
-}
+# Données Crypto
+crypto_report, total_crypto = get_crypto_data()
+crypto_lines = [
+    f"- {name} : {format_currency(value)} ({amount} @ {format_currency(price)})"
+    for name, amount, price, value in crypto_report
+]
 
-def format_currency(value):
-    return f"{value:,.2f} €".replace(",", " ").replace(".", ",")
+# Données PEA
+pea_report, total_pea = get_stock_data("data/wallet_pea.json")
+pea_lines = [
+    f"- {ticker} : {format_currency(value)} (PRU {format_currency(pru)} / Gain: {format_currency(gain)})"
+    for ticker, amount, price, value, pru, gain in pea_report
+]
+total_pea_loss = sum([gain for _, _, _, _, _, gain in pea_report])
 
-def get_crypto_prices():
-    ids = ",".join(CRYPTO_HOLDINGS.keys())
-    url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=eur"
-    res = requests.get(url)
-    return res.json()
+# Données Actions
+stocks_report, total_stocks = get_stock_data("data/wallet_actions.json")
+stocks_lines = [
+    f"- {ticker} : {format_currency(value)} (PRU {format_currency(pru)} / Gain: {format_currency(gain)})"
+    for ticker, amount, price, value, pru, gain in stocks_report
+]
 
-def send_report():
-    now = datetime.now().strftime("%d/%m/%Y %H:%M")
-    prices = get_crypto_prices()
+# Rapport
+now = datetime.now().strftime("%d/%m/%Y %H:%M")
+message = f"""Bonjour M. Ngunga, voici le point sur vos investissements ({now}).
 
-    total_crypto_value = 0
-    crypto_lines = []
+📊 PERTES TOTALES ACTUELLES (PEA) : {format_currency(total_pea_loss)}
 
-    for token_id, amount in CRYPTO_HOLDINGS.items():
-        if token_id in prices:
-            price = prices[token_id]["eur"]
-            total = amount * price
-            total_crypto_value += total
-            name = token_id.replace("-", " ").title()
-            crypto_lines.append(f"- {name} : {format_currency(total)} ({amount} @ {format_currency(price)})")
-
-    # Données fixes pour actions (à remplacer ensuite par yfinance ou RapidAPI)
-    pea = {
-        "Cavendish Hydrogen": (619.40, -412.60),
-        "Europlasma": (2.39, -2822.51),
-        "Navya": (0.09, -35.98),
-        "NEL ASA": (1443.99, -1997.08)
-    }
-
-    stocks = {
-        "X-FAB": (174.79, 16.53)
-    }
-
-    total_pea = sum([val[0] for val in pea.values()])
-    total_stocks = sum([val[0] for val in stocks.values()])
-    total_loss = sum([val[1] for val in pea.values()])
-
-    message = f"""Bonjour M. Ngunga, voici le point sur vos investissements ({now}).
-
-📊 PERTES TOTALES ACTUELLES : {format_currency(total_loss)}
-
-══════════════════════
+═════════════════
 🔹 CRYPTO (Revolut)
-""" + "\n".join(crypto_lines) + f"""
+{chr(10).join(crypto_lines)}
 
-➡️ Total crypto : {format_currency(total_crypto_value)} | Tendance : {'↗️' if total_crypto_value > 2500 else '↘️'}
+➡️ Total crypto : {format_currency(total_crypto)} | Tendance : {'↗️' if total_crypto > 2500 else '↘️'}
 
-══════════════════════
+═════════════════
 🔹 PEA (Fortuneo)
-""" + "\n".join([
-        f"- {k} : {format_currency(v[0])} ({format_currency(v[1])})"
-        for k, v in pea.items()
-    ]) + f"""
+{chr(10).join(pea_lines)}
 
-➡️ Total PEA : {format_currency(total_pea)} | Tendance : {'↘️ Négative' if total_loss < 0 else '↗️ Positive'}
+➡️ Total PEA : {format_currency(total_pea)} | Tendance : {'↘️ Négative' if total_pea_loss < 0 else '↗️ Positive'}
 
-══════════════════════
+═════════════════
 🔹 ACTIONS (Revolut)
-""" + "\n".join([
-        f"- {k} : {format_currency(v[0])} (+{v[1]} %)"
-        for k, v in stocks.items()
-    ]) + f"""
+{chr(10).join(stocks_lines)}
 
-➡️ Total actions : {format_currency(total_stocks)} | Tendance : {'↗️ Forte' if list(stocks.values())[0][1] > 5 else '↔️ Stable'}
+➡️ Total actions : {format_currency(total_stocks)} | Tendance : {'↗️ Forte' if total_stocks > 150 else '↔️ Stable'}
 
-📈 Projection fin 2025 (hypothèse +10 %/an) :
-Portefeuille total ≈ {format_currency((total_crypto_value + total_pea + total_stocks) * 1.1)}
+📈 Projection fin 2025 (hypothèse +10 %/an) :
+Portefeuille total ≈ {format_currency((total_crypto + total_pea + total_stocks) * 1.1)}
 
 Prochain point dans 15 min."""
 
-    res = requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        data={"chat_id": CHAT_ID, "text": message}
-    )
-    print("Statut :", res.status_code)
-    print("Réponse :", res.json())
-
-send_report()
+# Envoi
+res = requests.post(
+    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+    data={"chat_id": CHAT_ID, "text": message}
+)
+print("Statut :", res.status_code)
+print("Réponse :", res.json())
+log_report(message)
