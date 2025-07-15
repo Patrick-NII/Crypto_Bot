@@ -46,3 +46,11 @@ Traceback (most recent call last):
     with open(crypto_file) as f:
          ~~~~^^^^^^^^^^^^^
 FileNotFoundError: [Errno 2] No such file or directory: 'data/wallet_crypto.json'
+Traceback (most recent call last):
+  File "/Users/nii/Documents/bot_money/okamoey_bot.py", line 17, in <module>
+    crypto_report, total_crypto = get_crypto_data()
+                                  ~~~~~~~~~~~~~~~^^
+  File "/Users/nii/Documents/bot_money/modules/fetch_crypto.py", line 6, in get_crypto_data
+    with open(crypto_file) as f:
+         ~~~~^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/wallet_crypto.json'
