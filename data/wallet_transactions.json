@@ -1,5 +1,5 @@
 {
-  "doge": [
+  "dogecoin": [
     {
       "date": "2025-05-06",
       "amount": 656.69287384,
@@ -227,7 +227,7 @@
       "type": "Revente"
     }
   ],
-  "eth": [
+  "ethereum": [
     {
       "date": "2025-05-11",
       "amount": 0.01095437,
@@ -261,7 +261,7 @@
       "type": "Achat"
     }
   ],
-  "btc": [
+  "bitcoin": [
     {
       "date": "2025-05-11",
       "amount": 0.00026601,
@@ -287,7 +287,7 @@
       "type": "Achat"
     }
   ],
-  "xrp": [
+  "ripple": [
     {
       "date": "2025-05-13",
       "amount": 34.636523,
@@ -305,7 +305,7 @@
       "type": "Revente"
     }
   ],
-  "sol": [
+  "solana": [
     {
       "date": "2025-06-20",
       "amount": 0.008084,
@@ -323,7 +323,7 @@
       "type": "Achat"
     }
   ],
-  "rndr": [
+  "render-token": [
     {
       "date": "2025-06-20",
       "amount": 0.73895844,
@@ -359,7 +359,7 @@
       "type": "Achat"
     }
   ],
-  "ada": [
+  "cardano": [
     {
       "date": "2025-07-12",
       "amount": 119.4869,
@@ -385,7 +385,7 @@
       "type": "Revente"
     }
   ],
-  "avax": [
+  "avalanche-2": [
     {
       "date": "2025-07-14",
       "amount": 3.0,
@@ -411,7 +411,7 @@
       "type": "Achat"
     }
   ],
-  "fet": [
+  "fetch-ai": [
     {
       "date": "2025-07-15",
       "amount": 241.85119338,
@@ -429,7 +429,7 @@
       "type": "Achat"
     }
   ],
-  "arb": [
+  "arbitrum": [
     {
       "date": "2025-07-15",
       "amount": 271.26303173,
