@@ -1,0 +1,20 @@
+<svg width="500" height="280" viewBox="0 0 500 280" fill="none" xmlns="http://www.w3.org/2000/svg" style="background:#111">
+<rect x="120" y="22" width="350" height="24" rx="8" fill="#4caf50"/>
+<text x="20" y="40" fill="#fff" font-size="18" font-family="monospace">BITCOIN</text>
+<text x="480" y="40" fill="#fff" font-size="16" font-family="monospace">1,425.94€</text>
+<rect x="120" y="62" width="73" height="24" rx="8" fill="#4caf50"/>
+<text x="20" y="80" fill="#fff" font-size="18" font-family="monospace">SOLANA</text>
+<text x="203" y="80" fill="#fff" font-size="16" font-family="monospace">300.90€</text>
+<rect x="120" y="102" width="89" height="24" rx="8" fill="#4caf50"/>
+<text x="20" y="120" fill="#fff" font-size="18" font-family="monospace">RENDER-TOKEN</text>
+<text x="219" y="120" fill="#fff" font-size="16" font-family="monospace">365.61€</text>
+<rect x="120" y="142" width="58" height="24" rx="8" fill="#4caf50"/>
+<text x="20" y="160" fill="#fff" font-size="18" font-family="monospace">ETHEREUM</text>
+<text x="188" y="160" fill="#fff" font-size="16" font-family="monospace">238.71€</text>
+<rect x="120" y="182" width="39" height="24" rx="8" fill="#4caf50"/>
+<text x="20" y="200" fill="#fff" font-size="18" font-family="monospace">ARBITRUM</text>
+<text x="169" y="200" fill="#fff" font-size="16" font-family="monospace">161.04€</text>
+<rect x="120" y="222" width="52" height="24" rx="8" fill="#4caf50"/>
+<text x="20" y="240" fill="#fff" font-size="18" font-family="monospace">FETCH-AI</text>
+<text x="182" y="240" fill="#fff" font-size="16" font-family="monospace">215.17€</text>
+</svg>
