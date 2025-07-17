@@ -39,3 +39,13 @@ Traceback (most recent call last):
     with open("data/wallet_transactions.json") as f:
          ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 FileNotFoundError: [Errno 2] No such file or directory: 'data/wallet_transactions.json'
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/info_wallet.py", line 14, in <module>
+    with open("data/wallet_transactions.json") as f:
+         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/wallet_transactions.json'
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/info_wallet.py", line 14, in <module>
+    with open("data/wallet_transactions.json") as f:
+         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/wallet_transactions.json'

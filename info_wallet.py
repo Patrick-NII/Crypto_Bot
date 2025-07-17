@@ -83,9 +83,11 @@ plt.tight_layout()
 plt.savefig("wallet.png")
 
 # Envoi image
-with open("~/Crypto_Bot/charts/wallet.png", "rb") as img:
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-        data={"chat_id": CHAT_ID, "caption": "📊 Répartition du portefeuille"},
-        files={"photo": img}
-    )
+for i in range(1):  # Remplace 1 par le nombre total d'images à envoyer
+    image_path = f"/Users/nii/Documents/Crypto_Bot/charts/wallet_{i+1}.png"
+    with open(image_path, "rb") as img:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
+            data={"chat_id": CHAT_ID, "caption": f"📊 Répartition du portefeuille {i+1}"},
+            files={"photo": img}
+        )
