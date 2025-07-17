@@ -1,5 +1,5 @@
 {
-  "doge": {
+  "dogecoin": {
     "qty": 1771.62837,
     "avg_price": 0.17721,
     "invested": 313.95,
@@ -47,7 +47,7 @@
     "fees_buy": 0.53,
     "fees_sell": 0.28
   },
-  "eth": {
+  "ethereum": {
     "qty": 0.122179,
     "avg_price": 2699.88363,
     "invested": 329.87,
@@ -55,7 +55,7 @@
     "fees_buy": 9.87,
     "fees_sell": 0
   },
-  "btc": {
+  "bitcoin": {
     "qty": 0.014338,
     "avg_price": 94247.81199,
     "invested": 1351.36,
@@ -63,7 +63,7 @@
     "fees_buy": 26.36,
     "fees_sell": 0
   },
-  "xrp": {
+  "ripple": {
     "qty": 34.636523,
     "avg_price": 2.390251,
     "invested": 82.79,
@@ -71,7 +71,7 @@
     "fees_buy": 2.79,
     "fees_sell": 1.99
   },
-  "sol": {
+  "solana": {
     "qty": 2.008084,
     "avg_price": 133.56015,
     "invested": 268.2,
@@ -79,7 +79,7 @@
     "fees_buy": 6.97,
     "fees_sell": 0
   },
-  "rndr": {
+  "render-token": {
     "qty": 0.738958,
     "avg_price": 4.032703,
     "invested": 2.98,
@@ -95,7 +95,7 @@
     "fees_buy": 5.49,
     "fees_sell": 0
   },
-  "ada": {
+  "cardano": {
     "qty": 134.4869,
     "avg_price": 0.654711,
     "invested": 88.05,
@@ -103,7 +103,7 @@
     "fees_buy": 3.48,
     "fees_sell": 1.99
   },
-  "avax": {
+  "avalanche-2": {
     "qty": 7.832075,
     "avg_price": 19.463551,
     "invested": 152.44,
@@ -111,7 +111,7 @@
     "fees_buy": 6.87,
     "fees_sell": 0
   },
-  "fet": {
+  "fetch-ai": {
     "qty": 338.714186,
     "avg_price": 0.640835,
     "invested": 217.06,
@@ -119,7 +119,7 @@
     "fees_buy": 7.06,
     "fees_sell": 0
   },
-  "arb": {
+  "arbitrum": {
     "qty": 434.483195,
     "avg_price": 0.382224,
     "invested": 166.07,
