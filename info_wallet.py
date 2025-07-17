@@ -69,25 +69,47 @@ requests.post(
     data={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
 )
 
-# Graphique matplotlib
+# Graphique matplotlib (version pro)
 wallet_perf_sorted = sorted(wallet_perf, key=lambda x: x['value'])
-labels = [f"{w['coin']}" for w in wallet_perf_sorted]
+labels = [w['coin'] for w in wallet_perf_sorted]
 values = [w['value'] for w in wallet_perf_sorted]
-colors = ["green" if w['perf'] > 0 else "red" if w['perf'] < 0 else "gray" for w in wallet_perf_sorted]
+colors = ["royalblue" if w['perf'] > 0 else "red" if w['perf'] < 0 else "gray" for w in wallet_perf_sorted]
+percentages = [v / total_value * 100 for v in values]
 
-plt.figure(figsize=(8, 5))
-plt.barh(labels, values, color=colors)
-plt.xlabel("Valeur (€)")
-plt.title("Répartition du portefeuille")
+plt.figure(figsize=(10, 6))
+bars = plt.barh(labels, values, color=colors)
+
+# Ajouter le texte (valeur en € + pourcentage) à droite de chaque barre
+for i, bar in enumerate(bars):
+    width = bar.get_width()
+    plt.text(width + total_value * 0.01, bar.get_y() + bar.get_height()/2,
+             f"{values[i]:.2f} € | {percentages[i]:.1f} %",
+             va='center', fontsize=10, fontweight='bold')
+
+# Nettoyage de l'axe et du cadre
+plt.gca().spines['top'].set_visible(False)
+plt.gca().spines['right'].set_visible(False)
+plt.gca().spines['bottom'].set_visible(False)
+plt.gca().spines['left'].set_visible(False)
+plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+plt.tick_params(axis='y', labelsize=11)
+
+plt.title("Répartition du portefeuille", fontsize=14, fontweight='bold', pad=15)
 plt.tight_layout()
-plt.savefig("wallet.png")
+plt.savefig(f"/Users/nii/Documents/Crypto_Bot/charts/wallet_1.png", dpi=300, bbox_inches="tight")
+plt.close()
 
 # Envoi image
-for i in range(1):  # Remplace 1 par le nombre total d'images à envoyer
+
+i = 0
+while True:
     image_path = f"/Users/nii/Documents/Crypto_Bot/charts/wallet_{i+1}.png"
+    if not os.path.exists(image_path):
+        break  # Arrête la boucle dès qu'un fichier est introuvable
     with open(image_path, "rb") as img:
         requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-            data={"chat_id": CHAT_ID, "caption": f"📊 Répartition du portefeuille {i+1}"},
+            data={"chat_id": CHAT_ID},
             files={"photo": img}
         )
+    i += 1
