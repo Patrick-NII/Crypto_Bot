@@ -30,10 +30,21 @@ try:
 except:
     prices = {k: {"eur": 1} for k in wallet_stats}  # fallback temporaire
 
+# Abréviations personnalisées
+SYMBOLS = {
+    "bitcoin": "BTC",
+    "ethereum": "ETH",
+    "solana": "SOL",
+    "render-token": "RNDR",
+    "arbitrum": "ARB",
+    "fetch-ai": "FET",
+    "avalanche-2": "AVAX"
+}
+
 # Calcul performance
 wallet_perf = []
 total_value = 0
-emoji = lambda x: "📈" if x > 0 else "📉" if x < 0 else "⚖️"
+emoji = lambda x: "▲" if x > 0 else "▼" if x < 0 else "●"
 
 for coin, stat in wallet_stats.items():
     price = prices.get(coin, {}).get("eur", 0)
@@ -42,7 +53,7 @@ for coin, stat in wallet_stats.items():
     perf_pct = ((price - stat["avg_price"]) / stat["avg_price"]) * 100 if stat["avg_price"] else 0
     total_value += value
     wallet_perf.append({
-        "coin": coin.upper(),
+        "coin": SYMBOLS.get(coin, coin[:6].upper()),  # Nom abrégé ou fallback
         "qty": stat["qty"],
         "price": price,
         "value": value,
@@ -53,15 +64,38 @@ for coin, stat in wallet_stats.items():
         "emoji": emoji(perf_eur)
     })
 
-# Message Telegram texte
+# 🔢 Statistiques globales
+with open("data/wallet_transactions.json") as f:
+    all_tx = json.load(f)
+total_fees = sum(t["fees"] for txs in all_tx.values() for t in txs)
+net_value = total_value - total_fees
+
+# Fonction pour format compact
+def format_valeur(v):
+    return f"{v/1000:.2f}k€" if v >= 1000 else f"{v:.2f}€"
+
 now = datetime.now().strftime("%d/%m/%Y %H:%M")
-lines = [f"📊 *Rapport de Performance* — `{now}`", f"💰 *Valeur totale* : `{total_value:,.2f} €`", "", "*Détail par crypto :*",
-         "`🪙 Crypto    Qté     Prix     Valeur     Achat     +/- €     %    `"]
-lines.append("```")
-for w in wallet_perf:
-    lines.append(f"{w['coin']:<10} {w['qty']:>6.4f} {w['price']:>8.2f} {w['value']:>9.2f} {w['avg']:>9.2f} {w['perf']:>8.2f} {w['pct']:>6.2f}% {w['emoji']}")
+lines = [
+    f"📄 Rapport — `{now}`",
+    f"*Total brut* : `{total_value:,.2f} €`",
+    f"*Frais cumulés* : `{total_fees:,.2f} €`",
+    f"*Net estimé* : `{net_value:,.2f} €`",
+    "",
+    "`Sym  Qté    Valeur  ± €   Taux `",
+    "```"
+]
+
+for w in sorted(wallet_perf, key=lambda x: -x['value']):
+    sym = w['coin'][:4].upper()
+    qty = f"{w['qty']:>6.2f}"
+    val = format_valeur(w['value']).rjust(7)
+    perf = f"{w['perf']:+.0f}€".rjust(5)
+    pct = f"{w['pct']:+.0f}% {'▲' if w['pct'] > 0 else '▼' if w['pct'] < 0 else '→'}".rjust(6)
+    lines.append(f"{sym:<4} {qty}  {val}  {perf}  {pct}")
+
 lines.append("```")
 text = "\n".join(lines)
+
 
 # Envoi message texte
 requests.post(
