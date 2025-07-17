@@ -110,6 +110,32 @@ values = [w['value'] for w in wallet_perf_sorted]
 colors = ["royalblue" if w['perf'] > 0 else "red" if w['perf'] < 0 else "gray" for w in wallet_perf_sorted]
 percentages = [v / total_value * 100 for v in values]
 
+
+import numpy as np
+from scipy.interpolate import make_interp_spline
+
+# ➕ Log de net_value
+history_file = "data/net_history.json"
+
+# Charger l'historique si existant
+if os.path.exists(history_file):
+    with open(history_file, "r") as f:
+        net_history = json.load(f)
+else:
+    net_history = []
+
+# Ajouter la nouvelle entrée
+now_iso = datetime.now().isoformat()
+net_history.append({"timestamp": now_iso, "net_value": round(net_value, 2)})
+
+# Garder les 12 dernières entrées (6h à raison d'une entrée/30min)
+net_history = net_history[-12:]
+
+# Sauvegarder l'historique
+with open(history_file, "w") as f:
+    json.dump(net_history, f, indent=2)
+
+
 plt.figure(figsize=(10, 6))
 bars = plt.barh(labels, values, color=colors)
 
@@ -133,8 +159,67 @@ plt.tight_layout()
 plt.savefig(f"/Users/nii/Documents/Crypto_Bot/charts/wallet_1.png", dpi=300, bbox_inches="tight")
 plt.close()
 
-# Envoi image
 
+# DEPRECATED
+history_file = "data/net_history.json"
+
+# Charger historique existant
+if os.path.exists(history_file):
+    with open(history_file, "r") as f:
+        net_history = json.load(f)
+else:
+    net_history = []
+
+# Ajouter la valeur actuelle
+now_iso = datetime.now().isoformat()
+net_history.append({"timestamp": now_iso, "net_value": round(net_value, 2)})
+
+# Garder uniquement les dernières 12 entrées (6h si toutes les 30min)
+net_history = net_history[-12:]
+
+# Sauvegarder
+with open(history_file, "w") as f:
+    json.dump(net_history, f, indent=2)
+
+
+import numpy as np
+from scipy.interpolate import make_interp_spline
+
+# ➕ Tracer le graphique d’évolution du Net
+timestamps = [datetime.fromisoformat(p["timestamp"]) for p in net_history]
+values = [p["net_value"] for p in net_history]
+
+x = np.linspace(0, len(values) - 1, 300)
+spl = make_interp_spline(range(len(values)), values, k=3)
+y_smooth = spl(x)
+
+# Labels X toutes les 15 min
+xticks = range(len(values))
+xtick_labels = [timestamps[i].strftime('%H:%M') for i in xticks]
+
+plt.figure(figsize=(10, 4))
+plt.plot(x, y_smooth, color="royalblue", linewidth=2.5)
+
+# Supprimer axe Y
+plt.gca().spines['left'].set_visible(False)
+plt.tick_params(axis='y', left=False, labelleft=False)
+
+# Axe X
+plt.xticks(ticks=xticks, labels=xtick_labels, rotation=45)
+plt.grid(True, linestyle="--", alpha=0.3)
+
+# Annotations
+for i in range(len(values)):
+    plt.text(i, values[i], f"{values[i]:.0f}€", fontsize=9, ha="center", va="bottom", color="black")
+
+plt.title("Évolution du Net (6 dernières heures)", fontsize=13, fontweight='bold', pad=10)
+plt.tight_layout()
+
+chart_path = f"/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
+plt.savefig(chart_path, dpi=300)
+plt.close()
+
+# Envoi image
 i = 0
 while True:
     image_path = f"/Users/nii/Documents/Crypto_Bot/charts/wallet_{i+1}.png"
@@ -147,3 +232,61 @@ while True:
             files={"photo": img}
         )
     i += 1
+
+# Envoi du graphique net_value séparément
+net_chart = "/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
+if os.path.exists(net_chart):
+    with open(net_chart, "rb") as img:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
+            data={"chat_id": CHAT_ID},
+            files={"photo": img}
+        )
+
+
+# ➕ Tracer le graphique d’évolution du Net
+timestamps = [datetime.fromisoformat(p["timestamp"]) for p in net_history]
+values = [p["net_value"] for p in net_history]
+
+# Création des points lissés pour une courbe fluide
+x = np.linspace(0, len(values) - 1, 300)
+spl = make_interp_spline(range(len(values)), values, k=3)
+y_smooth = spl(x)
+
+# Ticks X pour 15 minutes (si une entrée toutes les 30min, montre 12 points)
+xticks = range(len(values))
+xtick_labels = [timestamps[i].strftime('%H:%M') for i in xticks]
+
+plt.figure(figsize=(10, 4))
+plt.plot(x, y_smooth, color="royalblue", linewidth=2.5)
+
+# Supprimer l'axe Y
+plt.gca().spines['left'].set_visible(False)
+plt.tick_params(axis='y', left=False, labelleft=False)
+
+# Afficher uniquement les labels de l’axe X
+plt.xticks(ticks=xticks, labels=xtick_labels, rotation=45)
+plt.grid(True, linestyle="--", alpha=0.3)
+
+# Annotations
+for i, v in enumerate(values):
+    plt.text(i, v, f"{v:.0f}€", fontsize=9, ha="center", va="bottom", color="black")
+
+plt.title("Évolution du Net (6 dernières heures)", fontsize=13, fontweight='bold', pad=10)
+plt.tight_layout()
+
+chart_path = "/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
+plt.savefig(chart_path, dpi=300)
+plt.close()
+
+
+
+# Envoi du graphique net_value séparément
+net_chart = "/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
+if os.path.exists(net_chart):
+    with open(net_chart, "rb") as img:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
+            data={"chat_id": CHAT_ID},
+            files={"photo": img}
+        )
