@@ -2,8 +2,11 @@ import os
 import json
 import requests
 import matplotlib.pyplot as plt
-from datetime import datetime
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
+import numpy as np
+from scipy.interpolate import make_interp_spline
+from collections import OrderedDict
 
 # Chargement .env
 load_dotenv()
@@ -70,39 +73,6 @@ with open("data/wallet_transactions.json") as f:
 total_fees = sum(t["fees"] for txs in all_tx.values() for t in txs)
 net_value = total_value - total_fees
 
-# Fonction pour format compact
-def format_valeur(v):
-    return f"{v/1000:.2f}k€" if v >= 1000 else f"{v:.2f}€"
-
-now = datetime.now().strftime("%d/%m/%Y %H:%M")
-lines = [
-    f"📄 Rapport — `{now}`",
-    f"*Total brut* : `{total_value:,.2f} €`",
-    f"*Frais cumulés* : `{total_fees:,.2f} €`",
-    f"*Net estimé* : `{net_value:,.2f} €`",
-    "",
-    "`Sym  Qté    Valeur  ± €   Taux `",
-    "```"
-]
-
-for w in sorted(wallet_perf, key=lambda x: -x['value']):
-    sym = w['coin'][:4].upper()
-    qty = f"{w['qty']:>6.2f}"
-    val = format_valeur(w['value']).rjust(7)
-    perf = f"{w['perf']:+.0f}€".rjust(5)
-    pct = f"{w['pct']:+.0f}% {'▲' if w['pct'] > 0 else '▼' if w['pct'] < 0 else '→'}".rjust(6)
-    lines.append(f"{sym:<4} {qty}  {val}  {perf}  {pct}")
-
-lines.append("```")
-text = "\n".join(lines)
-
-
-# Envoi message texte
-requests.post(
-    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-    data={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
-)
-
 # Graphique matplotlib (version pro)
 wallet_perf_sorted = sorted(wallet_perf, key=lambda x: x['value'])
 labels = [w['coin'] for w in wallet_perf_sorted]
@@ -136,7 +106,7 @@ with open(history_file, "w") as f:
     json.dump(net_history, f, indent=2)
 
 
-plt.figure(figsize=(10, 6))
+plt.figure(figsize=(10, 8))
 bars = plt.barh(labels, values, color=colors)
 
 # Ajouter le texte (valeur en € + pourcentage) à droite de chaque barre
@@ -160,62 +130,89 @@ plt.savefig(f"/Users/nii/Documents/Crypto_Bot/charts/wallet_1.png", dpi=300, bbo
 plt.close()
 
 
-# DEPRECATED
-history_file = "data/net_history.json"
 
-# Charger historique existant
+
+# ➕ Graphique évolution Net
+history_file = "data/net_history.json"
+chart_path = "charts/net_value.png"
+
+# Charger historique
 if os.path.exists(history_file):
     with open(history_file, "r") as f:
         net_history = json.load(f)
 else:
     net_history = []
 
-# Ajouter la valeur actuelle
-now_iso = datetime.now().isoformat()
-net_history.append({"timestamp": now_iso, "net_value": round(net_value, 2)})
+# Obtenir le timestamp actuel
+now = datetime.now()
+should_add = True
 
-# Garder uniquement les dernières 12 entrées (6h si toutes les 30min)
+# Vérification si la dernière entrée est trop récente (< 15 minutes)
+if net_history:
+    last_ts = datetime.fromisoformat(net_history[-1]["timestamp"])
+    delta = now - last_ts
+    if delta < timedelta(minutes=15):
+        should_add = False
+
+# Ajouter si respect du délai
+if should_add:
+    net_history.append({
+        "timestamp": now.isoformat(),
+        "net_value": round(net_value, 2)
+    })
+
+# Garder les 12 dernières entrées
 net_history = net_history[-12:]
 
-# Sauvegarder
-with open(history_file, "w") as f:
-    json.dump(net_history, f, indent=2)
+# Sauvegarder uniquement si ajout autorisé
+if should_add:
+    os.makedirs(os.path.dirname(history_file), exist_ok=True)
+    with open(history_file, "w") as f:
+        json.dump(net_history, f, indent=2)
 
 
-import numpy as np
-from scipy.interpolate import make_interp_spline
 
-# ➕ Tracer le graphique d’évolution du Net
-timestamps = [datetime.fromisoformat(p["timestamp"]) for p in net_history]
-values = [p["net_value"] for p in net_history]
 
-x = np.linspace(0, len(values) - 1, 300)
-spl = make_interp_spline(range(len(values)), values, k=3)
-y_smooth = spl(x)
+from collections import OrderedDict
 
-# Labels X toutes les 15 min
-xticks = range(len(values))
-xtick_labels = [timestamps[i].strftime('%H:%M') for i in xticks]
+# Grouper les points par tranche de 15 minutes, garder le dernier
+grouped = OrderedDict()
+for entry in reversed(net_history):
+    ts = datetime.fromisoformat(entry["timestamp"])
+    rounded_min = (ts.minute // 15) * 15
+    rounded_time = ts.replace(minute=rounded_min, second=0, microsecond=0)
+    if rounded_time not in grouped:
+        grouped[rounded_time] = entry["net_value"]
 
-plt.figure(figsize=(10, 4))
-plt.plot(x, y_smooth, color="royalblue", linewidth=2.5)
+# Extraire les données
+timestamps = list(sorted(grouped.keys()))
+values = [grouped[t] for t in timestamps]
 
-# Supprimer axe Y
-plt.gca().spines['left'].set_visible(False)
+plt.figure(figsize=(10, 6))
+
+if len(values) >= 4:
+    # Courbe lissée avec spline
+    x = np.linspace(0, len(values) - 1, 300)
+    spl = make_interp_spline(range(len(values)), values, k=3)
+    y_smooth = spl(x)
+    plt.plot(x, y_smooth, color="royalblue", linewidth=3.5)
+else:
+    # Trop peu de points → courbe directe
+    plt.plot(range(len(values)), values, color="royalblue", linewidth=3.5)
+
+# Points et annotations
+plt.scatter(range(len(values)), values, color="royalblue", zorder=5)
+xtick_labels = [t.strftime('%H:%M') for t in timestamps]
+plt.xticks(ticks=range(len(values)), labels=xtick_labels, rotation=0, fontsize=12)
+
+for i, v in enumerate(values):
+    plt.annotate(f"{v:.0f}€", (i, v), textcoords="offset points", xytext=(0, 10), ha='center', fontsize=12)
+
+# Style
+plt.gca().spines[['top', 'right', 'left']].set_visible(False)
 plt.tick_params(axis='y', left=False, labelleft=False)
-
-# Axe X
-plt.xticks(ticks=xticks, labels=xtick_labels, rotation=45)
-plt.grid(True, linestyle="--", alpha=0.3)
-
-# Annotations
-for i in range(len(values)):
-    plt.text(i, values[i], f"{values[i]:.0f}€", fontsize=9, ha="center", va="bottom", color="black")
-
 plt.title("Évolution du Net (6 dernières heures)", fontsize=13, fontweight='bold', pad=10)
 plt.tight_layout()
-
-chart_path = f"/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
 plt.savefig(chart_path, dpi=300)
 plt.close()
 
@@ -244,49 +241,39 @@ if os.path.exists(net_chart):
         )
 
 
-# ➕ Tracer le graphique d’évolution du Net
-timestamps = [datetime.fromisoformat(p["timestamp"]) for p in net_history]
-values = [p["net_value"] for p in net_history]
-
-# Création des points lissés pour une courbe fluide
-x = np.linspace(0, len(values) - 1, 300)
-spl = make_interp_spline(range(len(values)), values, k=3)
-y_smooth = spl(x)
-
-# Ticks X pour 15 minutes (si une entrée toutes les 30min, montre 12 points)
-xticks = range(len(values))
-xtick_labels = [timestamps[i].strftime('%H:%M') for i in xticks]
-
-plt.figure(figsize=(10, 4))
-plt.plot(x, y_smooth, color="royalblue", linewidth=2.5)
-
-# Supprimer l'axe Y
-plt.gca().spines['left'].set_visible(False)
-plt.tick_params(axis='y', left=False, labelleft=False)
-
-# Afficher uniquement les labels de l’axe X
-plt.xticks(ticks=xticks, labels=xtick_labels, rotation=45)
-plt.grid(True, linestyle="--", alpha=0.3)
-
-# Annotations
-for i, v in enumerate(values):
-    plt.text(i, v, f"{v:.0f}€", fontsize=9, ha="center", va="bottom", color="black")
-
-plt.title("Évolution du Net (6 dernières heures)", fontsize=13, fontweight='bold', pad=10)
-plt.tight_layout()
-
-chart_path = "/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
-plt.savefig(chart_path, dpi=300)
-plt.close()
 
 
 
-# Envoi du graphique net_value séparément
-net_chart = "/Users/nii/Documents/Crypto_Bot/charts/net_value.png"
-if os.path.exists(net_chart):
-    with open(net_chart, "rb") as img:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendPhoto",
-            data={"chat_id": CHAT_ID},
-            files={"photo": img}
-        )
+
+# Fonction pour format compact
+def format_valeur(v):
+    return f"{v/1000:.2f}k€" if v >= 1000 else f"{v:.2f}€"
+
+now = datetime.now().strftime("%d/%m/%Y %H:%M")
+lines = [
+    f"📄 Rapport — `{now}`",
+    f"*Total brut* : `{total_value:,.2f} €`",
+    f"*Frais cumulés* : `{total_fees:,.2f} €`",
+    f"*Net estimé* : `{net_value:,.2f} €`",
+    "",
+    "`Sym  Qté    Valeur  ± €   Taux `",
+    "```"
+]
+
+for w in sorted(wallet_perf, key=lambda x: -x['value']):
+    sym = w['coin'][:4].upper()
+    qty = f"{w['qty']:>6.2f}"
+    val = format_valeur(w['value']).rjust(7)
+    perf = f"{w['perf']:+.0f}€".rjust(5)
+    pct = f"{w['pct']:+.0f}% {'▲' if w['pct'] > 0 else '▼' if w['pct'] < 0 else '→'}".rjust(6)
+    lines.append(f"{sym:<4} {qty}  {val}  {perf}  {pct}")
+
+lines.append("```")
+text = "\n".join(lines)
+
+
+# Envoi message texte
+requests.post(
+    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+    data={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
+)
