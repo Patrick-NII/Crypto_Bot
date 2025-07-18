@@ -28,7 +28,7 @@ def get_top_cryptos(limit=10):
 
 # Format market update
 def format_market_summary(cryptos):
-    lines = ["📊 *MISE À JOUR MARCHÉ*\n"]
+    lines = ["📊 *MISE À JOUR MARCHÉ DU MARDI*\n"]
     for coin in cryptos:
         symbol = coin['symbol'].upper()
         name = coin['name']
@@ -81,7 +81,7 @@ try:
     ai_analysis = generate_ai_analysis(cryptos)
 
     message = (
-        "📢 *NOUVELLE ANALYSE OPPORTUNITÉS*\n\n"
+        "📢 *L'HEBDOMADAIRE DE OKAMOEY*\n\n"
         f"{market_summary}\n\n"
         "💡 *Analyse Okamoey :*\n"
         f"{ai_analysis}"
