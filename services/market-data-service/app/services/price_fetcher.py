@@ -453,6 +453,143 @@ async def fetch_trending() -> List[dict]:
     return []
 
 
+async def search_assets(query: str, limit: int = 20) -> List[Dict]:
+    """Search CoinGecko for assets matching query.
+
+    GET https://api.coingecko.com/api/v3/search?query={query}
+    Parse response: coins array -> extract id, symbol, name, market_cap_rank, thumb.
+    Cache result in Redis for 5 minutes (key: search:{query}).
+    """
+    cache_key = f"{settings.REDIS_PRICE_KEY_PREFIX}search:{query.lower()}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached[:limit]
+
+    url = f"{settings.COINGECKO_BASE_URL}/search"
+    params = {"query": query}
+
+    headers = {}
+    if settings.COINGECKO_API_KEY:
+        headers["x-cg-demo-api-key"] = settings.COINGECKO_API_KEY
+
+    retry_delay = settings.RETRY_BASE_DELAY
+    for attempt in range(settings.MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(url, params=params, headers=headers)
+                if resp.status_code == 429:
+                    logger.warning(
+                        "CoinGecko rate limit during search (attempt %d/%d)",
+                        attempt + 1,
+                        settings.MAX_RETRIES,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+
+            coins = data.get("coins", [])
+            results = []
+            for coin in coins:
+                results.append(
+                    {
+                        "id": coin.get("id", ""),
+                        "symbol": coin.get("symbol", ""),
+                        "name": coin.get("name", ""),
+                        "market_cap_rank": coin.get("market_cap_rank"),
+                        "thumb": coin.get("thumb", ""),
+                    }
+                )
+
+            await cache_set(cache_key, results, ttl=300)
+            return results[:limit]
+
+        except Exception:
+            logger.exception("Asset search failed (attempt %d)", attempt + 1)
+            if attempt < settings.MAX_RETRIES - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+
+    return []
+
+
+async def fetch_all_cryptos(limit: int = 250, page: int = 1) -> List[Dict]:
+    """Fetch all cryptos from CoinGecko markets endpoint.
+
+    GET /coins/markets?vs_currency=eur&order=market_cap_desc&per_page={limit}&page={page}&sparkline=true
+    Cache in Redis for 2 minutes (key: all_cryptos:{limit}:{page}).
+    Return full list with prices, market cap, 24h change, sparkline.
+    """
+    cache_key = f"{settings.REDIS_PRICE_KEY_PREFIX}all_cryptos:{limit}:{page}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    url = f"{settings.COINGECKO_BASE_URL}/coins/markets"
+    params = {
+        "vs_currency": "eur",
+        "order": "market_cap_desc",
+        "per_page": str(limit),
+        "page": str(page),
+        "sparkline": "true",
+    }
+
+    headers = {}
+    if settings.COINGECKO_API_KEY:
+        headers["x-cg-demo-api-key"] = settings.COINGECKO_API_KEY
+
+    retry_delay = settings.RETRY_BASE_DELAY
+    for attempt in range(settings.MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(url, params=params, headers=headers)
+                if resp.status_code == 429:
+                    logger.warning(
+                        "CoinGecko rate limit during all_cryptos fetch (attempt %d/%d)",
+                        attempt + 1,
+                        settings.MAX_RETRIES,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+
+            results = []
+            for coin in data:
+                sparkline_data = coin.get("sparkline_in_7d")
+                sparkline_prices = None
+                if sparkline_data and isinstance(sparkline_data, dict):
+                    sparkline_prices = sparkline_data.get("price")
+
+                results.append(
+                    {
+                        "id": coin.get("id", ""),
+                        "symbol": (coin.get("symbol") or "").lower(),
+                        "name": coin.get("name", ""),
+                        "image": coin.get("image"),
+                        "current_price": coin.get("current_price"),
+                        "market_cap": coin.get("market_cap"),
+                        "market_cap_rank": coin.get("market_cap_rank"),
+                        "price_change_percentage_24h": coin.get("price_change_percentage_24h"),
+                        "total_volume": coin.get("total_volume"),
+                        "sparkline_in_7d": sparkline_prices,
+                    }
+                )
+
+            await cache_set(cache_key, results, ttl=120)
+            return results
+
+        except Exception:
+            logger.exception("All cryptos fetch failed (attempt %d)", attempt + 1)
+            if attempt < settings.MAX_RETRIES - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+
+    return []
+
+
 async def fetch_fear_greed() -> Optional[dict]:
     """Fetch the Crypto Fear & Greed Index from alternative.me.
 

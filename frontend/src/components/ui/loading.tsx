@@ -24,24 +24,24 @@ export function Loading({ size = "md", className, label }: LoadingProps) {
         {/* Outer ring */}
         <div
           className={cn(
-            "absolute inset-0 rounded-full border-2 border-white/[0.06]",
+            "absolute inset-0 rounded-full border-2 border-[rgba(255,255,255,0.06)]",
             sizeMap[size]
           )}
         />
         {/* Spinning gradient ring */}
         <div
           className={cn(
-            "absolute inset-0 animate-spin-slow rounded-full border-2 border-transparent border-t-accent-purple border-r-accent-blue",
+            "absolute inset-0 animate-spin-slow rounded-full border-2 border-transparent border-t-[#06d6a0] border-r-[#c6f135]",
             sizeMap[size]
           )}
         />
         {/* Inner glow dot */}
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="h-1.5 w-1.5 rounded-full bg-accent-purple animate-pulse-glow" />
+          <div className="h-1.5 w-1.5 rounded-full bg-[#06d6a0] animate-pulse-glow" />
         </div>
       </div>
       {label && (
-        <p className="text-sm text-white/40 font-medium">{label}</p>
+        <p className="text-sm text-[#8888a0] font-medium">{label}</p>
       )}
       <span className="sr-only">{label ?? "Loading..."}</span>
     </div>

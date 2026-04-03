@@ -1,6 +1,7 @@
 """Market API router - /api/v1/markets
 
 Endpoints:
+- GET /all         All available cryptocurrencies (paginated)
 - GET /top         Top cryptocurrencies by market cap
 - GET /trending    Trending coins (CoinGecko)
 - GET /fear-greed  Crypto Fear & Greed Index
@@ -12,6 +13,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import (
+    AllCryptosResponse,
+    CryptoMarketData,
     ErrorResponse,
     ExchangeInfo,
     ExchangesResponse,
@@ -22,7 +25,12 @@ from app.models.schemas import (
     TrendingCoin,
     TrendingResponse,
 )
-from app.services.price_fetcher import fetch_fear_greed, fetch_top_markets, fetch_trending
+from app.services.price_fetcher import (
+    fetch_all_cryptos,
+    fetch_fear_greed,
+    fetch_top_markets,
+    fetch_trending,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +81,33 @@ SUPPORTED_EXCHANGES = [
         has_ticker=True,
     ),
 ]
+
+
+@router.get(
+    "/all",
+    response_model=AllCryptosResponse,
+    summary="Get all available cryptocurrencies",
+)
+async def get_all_cryptos(
+    limit: int = Query(250, le=500, description="Number of results per page"),
+    page: int = Query(1, ge=1, description="Page number"),
+) -> AllCryptosResponse:
+    """Get all available cryptos with basic info.
+
+    Uses CoinGecko /coins/markets endpoint.
+    Returns: id, symbol, name, image, current_price, market_cap, market_cap_rank,
+    price_change_percentage_24h, total_volume, sparkline_in_7d.
+    Cache: Redis 2 min. Supports pagination via page param.
+    """
+    raw = await fetch_all_cryptos(limit=limit, page=page)
+    data = [CryptoMarketData(**item) for item in raw]
+    return AllCryptosResponse(
+        success=True,
+        data=data,
+        page=page,
+        limit=limit,
+        total=len(data),
+    )
 
 
 @router.get(

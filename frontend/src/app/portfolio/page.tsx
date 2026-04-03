@@ -25,8 +25,9 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PriceChart } from "@/components/charts/price-chart";
 
-const PIE_COLORS = ["#a855f7", "#3b82f6", "#06b6d4", "#22c55e", "#eab308", "#ef4444"];
+const PIE_COLORS = ["#06d6a0", "#c6f135", "#06b6d4", "#3b82f6", "#8b5cf6", "#ef4444"];
 
 function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-lg bg-white/5", className)} />;
@@ -50,6 +51,9 @@ export default function PortfolioPage() {
   // Sort state
   const [sortField, setSortField] = useState<"symbol" | "pnl" | "pnl_pct">("pnl");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // Expanded position for mini chart
+  const [expandedPosition, setExpandedPosition] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -180,22 +184,22 @@ export default function PortfolioPage() {
       {/* Create Form */}
       {showCreateForm && (
         <GlassCard className="mb-6">
-          <h3 className="mb-4 text-base font-semibold text-white">
+          <h3 className="mb-4 text-base font-semibold text-[#e8e8ed]">
             New Portfolio
           </h3>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <label className="mb-1 block text-xs text-white/40">Name</label>
+              <label className="mb-1 block text-xs text-[#55556a]">Name</label>
               <input
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="My Portfolio"
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
               />
             </div>
             <div className="flex-1">
-              <label className="mb-1 block text-xs text-white/40">
+              <label className="mb-1 block text-xs text-[#55556a]">
                 Description
               </label>
               <input
@@ -203,7 +207,7 @@ export default function PortfolioPage() {
                 value={newDesc}
                 onChange={(e) => setNewDesc(e.target.value)}
                 placeholder="Optional description"
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
               />
             </div>
             <div className="flex gap-2">
@@ -240,8 +244,8 @@ export default function PortfolioPage() {
               className={cn(
                 "shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
                 activePortfolio?.id === p.id
-                  ? "bg-accent-purple/20 text-accent-purple border border-accent-purple/30"
-                  : "border border-white/5 text-white/50 hover:text-white hover:bg-white/5",
+                  ? "bg-[#06d6a0]/20 text-[#06d6a0] border border-[#06d6a0]/30"
+                  : "border border-white/[0.06] text-[#8888a0] hover:text-[#e8e8ed] hover:bg-white/5",
               )}
             >
               {p.name}
@@ -275,14 +279,14 @@ export default function PortfolioPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Positions Table (2/3) */}
         <GlassCard className="lg:col-span-2">
-          <h2 className="mb-4 text-lg font-semibold text-white">Positions</h2>
+          <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">Positions</h2>
           {sortedPositions.length === 0 ? (
-            <p className="text-sm text-white/40">No open positions</p>
+            <p className="text-sm text-[#55556a]">No open positions</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wider text-white/40">
+                  <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
                     <th
                       className="cursor-pointer pb-3 pr-3"
                       onClick={() => toggleSort("symbol")}
@@ -312,95 +316,119 @@ export default function PortfolioPage() {
                 </thead>
                 <tbody>
                   {sortedPositions.map((pos) => (
-                    <tr
-                      key={pos.id}
-                      className="border-b border-white/5 transition-colors hover:bg-white/[0.02]"
-                    >
-                      <td className="py-3 pr-3 font-semibold text-white">
-                        {pos.symbol}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <Badge variant="purple">{pos.asset_type}</Badge>
-                      </td>
-                      <td className="py-3 pr-3 text-right font-mono text-white/70">
-                        {pos.quantity}
-                      </td>
-                      <td className="hidden py-3 pr-3 text-right font-mono text-white/50 sm:table-cell">
-                        {formatCurrency(pos.avg_entry_price)}
-                      </td>
-                      <td className="py-3 pr-3 text-right font-mono text-white">
-                        {formatCurrency(pos.current_price)}
-                      </td>
-                      <td
-                        className={cn(
-                          "py-3 pr-3 text-right font-mono font-semibold",
-                          pos.pnl >= 0 ? "text-success" : "text-danger",
-                        )}
+                    <>
+                      <tr
+                        key={pos.id}
+                        className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02] cursor-pointer"
+                        onClick={() =>
+                          setExpandedPosition(
+                            expandedPosition === pos.id ? null : pos.id,
+                          )
+                        }
                       >
-                        {formatCurrency(pos.pnl)}
-                      </td>
-                      <td
-                        className={cn(
-                          "py-3 pr-3 text-right font-mono font-semibold",
-                          pos.pnl_pct >= 0 ? "text-success" : "text-danger",
-                        )}
-                      >
-                        {formatPercent(pos.pnl_pct)}
-                      </td>
-                      <td className="py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {editingStopLoss === pos.id ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={stopLossValue}
-                                onChange={(e) =>
-                                  setStopLossValue(e.target.value)
-                                }
-                                placeholder="Stop price"
-                                className="w-20 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-white outline-none"
-                              />
-                              <Button
-                                size="sm"
-                                onClick={() => handleUpdateStopLoss(pos.id)}
-                              >
-                                Set
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setEditingStopLoss(null)}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setEditingStopLoss(pos.id);
-                                  setStopLossValue(
-                                    pos.stop_loss?.toString() ?? "",
-                                  );
-                                }}
-                                title="Edit stop-loss"
-                              >
-                                <Edit3 className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={() => handleClosePosition(pos.id)}
-                              >
-                                Close
-                              </Button>
-                            </>
+                        <td className="py-3 pr-3 font-semibold text-[#e8e8ed]">
+                          {pos.symbol}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <Badge variant="info">{pos.asset_type}</Badge>
+                        </td>
+                        <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
+                          {pos.quantity}
+                        </td>
+                        <td className="hidden py-3 pr-3 text-right font-mono text-[#8888a0] sm:table-cell">
+                          {formatCurrency(pos.avg_entry_price)}
+                        </td>
+                        <td className="py-3 pr-3 text-right font-mono text-[#e8e8ed]">
+                          {formatCurrency(pos.current_price)}
+                        </td>
+                        <td
+                          className={cn(
+                            "py-3 pr-3 text-right font-mono font-semibold",
+                            pos.pnl >= 0 ? "text-[#06d6a0]" : "text-[#ef4444]",
                           )}
-                        </div>
-                      </td>
-                    </tr>
+                        >
+                          {formatCurrency(pos.pnl)}
+                        </td>
+                        <td
+                          className={cn(
+                            "py-3 pr-3 text-right font-mono font-semibold",
+                            pos.pnl_pct >= 0 ? "text-[#06d6a0]" : "text-[#ef4444]",
+                          )}
+                        >
+                          {formatPercent(pos.pnl_pct)}
+                        </td>
+                        <td
+                          className="py-3 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            {editingStopLoss === pos.id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  value={stopLossValue}
+                                  onChange={(e) =>
+                                    setStopLossValue(e.target.value)
+                                  }
+                                  placeholder="Stop price"
+                                  className="w-20 rounded border border-white/[0.06] bg-[#1a1a24] px-2 py-1 text-xs text-[#e8e8ed] outline-none"
+                                />
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleUpdateStopLoss(pos.id)}
+                                >
+                                  Set
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setEditingStopLoss(null)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingStopLoss(pos.id);
+                                    setStopLossValue(
+                                      pos.stop_loss?.toString() ?? "",
+                                    );
+                                  }}
+                                  title="Edit stop-loss"
+                                >
+                                  <Edit3 className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="danger"
+                                  onClick={() => handleClosePosition(pos.id)}
+                                >
+                                  Close
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Expanded mini chart row */}
+                      {expandedPosition === pos.id && (
+                        <tr key={`${pos.id}-chart`}>
+                          <td colSpan={8} className="p-3">
+                            <div className="rounded-lg border border-white/[0.06] bg-[#14141b] p-3">
+                              <PriceChart
+                                symbol={pos.symbol}
+                                height={120}
+                                type="line"
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
                 </tbody>
               </table>
@@ -410,9 +438,9 @@ export default function PortfolioPage() {
 
         {/* Allocation Chart (1/3) */}
         <GlassCard>
-          <h2 className="mb-4 text-lg font-semibold text-white">Allocation</h2>
+          <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">Allocation</h2>
           {pieData.length === 0 ? (
-            <p className="text-center text-sm text-white/40">
+            <p className="text-center text-sm text-[#55556a]">
               No positions to display
             </p>
           ) : (
@@ -439,10 +467,10 @@ export default function PortfolioPage() {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      background: "rgba(10,10,26,0.9)",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: "rgba(13,13,18,0.95)",
+                      border: "1px solid rgba(255,255,255,0.06)",
                       borderRadius: "0.5rem",
-                      color: "#fff",
+                      color: "#e8e8ed",
                     }}
                     formatter={(value) => formatCurrency(Number(value))}
                   />
@@ -457,7 +485,7 @@ export default function PortfolioPage() {
                         background: PIE_COLORS[i % PIE_COLORS.length],
                       }}
                     />
-                    <span className="text-xs capitalize text-white/60">
+                    <span className="text-xs capitalize text-[#8888a0]">
                       {entry.name}
                     </span>
                   </div>
@@ -470,16 +498,16 @@ export default function PortfolioPage() {
 
       {/* Recent Transactions */}
       <GlassCard className="mt-6">
-        <h2 className="mb-4 text-lg font-semibold text-white">
+        <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
           Recent Transactions
         </h2>
         {transactions.length === 0 ? (
-          <p className="text-sm text-white/40">No transactions yet</p>
+          <p className="text-sm text-[#55556a]">No transactions yet</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wider text-white/40">
+                <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
                   <th className="pb-3 pr-3">Time</th>
                   <th className="pb-3 pr-3">Symbol</th>
                   <th className="pb-3 pr-3">Side</th>
@@ -492,12 +520,12 @@ export default function PortfolioPage() {
                 {transactions.map((tx) => (
                   <tr
                     key={tx.id}
-                    className="border-b border-white/5 transition-colors hover:bg-white/[0.02]"
+                    className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02]"
                   >
-                    <td className="py-3 pr-3 text-white/50">
+                    <td className="py-3 pr-3 text-[#8888a0]">
                       {formatRelative(tx.timestamp)}
                     </td>
-                    <td className="py-3 pr-3 font-semibold text-white">
+                    <td className="py-3 pr-3 font-semibold text-[#e8e8ed]">
                       {tx.symbol}
                     </td>
                     <td className="py-3 pr-3">
@@ -505,13 +533,13 @@ export default function PortfolioPage() {
                         {tx.side.toUpperCase()}
                       </Badge>
                     </td>
-                    <td className="py-3 pr-3 text-right font-mono text-white/70">
+                    <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
                       {tx.quantity}
                     </td>
-                    <td className="py-3 pr-3 text-right font-mono text-white/70">
+                    <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
                       {formatCurrency(tx.price)}
                     </td>
-                    <td className="py-3 text-right font-mono text-white">
+                    <td className="py-3 text-right font-mono text-[#e8e8ed]">
                       {formatCurrency(tx.total)}
                     </td>
                   </tr>

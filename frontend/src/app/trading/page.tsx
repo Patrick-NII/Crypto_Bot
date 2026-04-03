@@ -1,24 +1,27 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   DollarSign,
   ShoppingCart,
   XCircle,
   Clock,
   ArrowUpDown,
+  Search,
 } from "lucide-react";
-import { tradingApi } from "@/lib/api";
+import { pricesApi, tradingApi } from "@/lib/api";
 import type {
   Order,
   OrderSide,
   OrderType,
   PaperBalance,
+  AssetSearchResult,
 } from "@/lib/types";
 import { formatCurrency, formatTime, formatDate, cn } from "@/lib/utils";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PriceChart } from "@/components/charts/price-chart";
 
 function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-lg bg-white/5", className)} />;
@@ -42,20 +45,20 @@ function statusVariant(status: string) {
   }
 }
 
-const POPULAR_SYMBOLS = [
-  "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT",
-  "AVAX", "MATIC", "LINK", "UNI",
-];
-
 export default function TradingPage() {
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<PaperBalance[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
 
-  // Order form state
+  // Symbol search state
   const [symbol, setSymbol] = useState("BTC");
-  const [symbolInput, setSymbolInput] = useState("BTC");
-  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("BTC");
+  const [searchResults, setSearchResults] = useState<AssetSearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Order form state
   const [side, setSide] = useState<OrderSide>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
   const [quantity, setQuantity] = useState("");
@@ -85,6 +88,39 @@ export default function TradingPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Debounced search
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query.toUpperCase());
+    setShowDropdown(true);
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (query.length < 1) {
+      setSearchResults([]);
+      return;
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await pricesApi.searchAssets(query, 10);
+        setSearchResults(res.results);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+  };
+
+  const selectSymbol = (s: AssetSearchResult) => {
+    setSymbol(s.symbol);
+    setSearchQuery(s.symbol);
+    setShowDropdown(false);
+  };
 
   const handleSubmit = async () => {
     if (!quantity || isNaN(Number(quantity))) return;
@@ -130,10 +166,6 @@ export default function TradingPage() {
     }
   };
 
-  const filteredSymbols = POPULAR_SYMBOLS.filter((s) =>
-    s.toLowerCase().includes(symbolInput.toLowerCase()),
-  );
-
   if (loading) {
     return (
       <div className="relative z-10 min-h-screen p-4 md:p-8">
@@ -153,27 +185,27 @@ export default function TradingPage() {
 
       {/* Paper Trading Balances */}
       <GlassCard className="mb-6">
-        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-white">
-          <DollarSign className="h-5 w-5 text-accent-purple" />
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-[#e8e8ed]">
+          <DollarSign className="h-5 w-5 text-[#06d6a0]" />
           Paper Trading Balances
         </h2>
         {balances.length === 0 ? (
-          <p className="text-sm text-white/40">No balances available</p>
+          <p className="text-sm text-[#55556a]">No balances available</p>
         ) : (
           <div className="flex flex-wrap gap-4">
             {balances.map((b) => (
               <div
                 key={b.currency}
-                className="rounded-lg border border-white/5 bg-white/[0.03] px-4 py-3"
+                className="rounded-lg border border-white/[0.06] bg-[#14141b] px-4 py-3"
               >
-                <span className="text-xs font-medium uppercase text-white/40">
+                <span className="text-xs font-medium uppercase text-[#55556a]">
                   {b.currency}
                 </span>
-                <p className="text-lg font-bold text-white">
+                <p className="text-lg font-bold text-[#e8e8ed]">
                   {formatCurrency(b.total)}
                 </p>
-                <div className="flex gap-3 text-xs text-white/40">
-                  <span>Avail: {formatCurrency(b.available)}</span>
+                <div className="flex gap-3 text-xs text-[#55556a]">
+                  <span>Avail: <span className="text-[#06d6a0]">{formatCurrency(b.available)}</span></span>
                   <span>Reserved: {formatCurrency(b.reserved)}</span>
                 </div>
               </div>
@@ -182,42 +214,59 @@ export default function TradingPage() {
         )}
       </GlassCard>
 
+      {/* Price chart for selected symbol */}
+      <GlassCard className="mb-6">
+        <h2 className="mb-3 text-lg font-semibold text-[#e8e8ed]">
+          {symbol} Chart
+        </h2>
+        <PriceChart symbol={symbol} height={300} type="candlestick" />
+      </GlassCard>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Order Form */}
         <GlassCard>
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
-            <ShoppingCart className="h-5 w-5 text-accent-purple" />
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-[#e8e8ed]">
+            <ShoppingCart className="h-5 w-5 text-[#06d6a0]" />
             Place Order
           </h2>
           <div className="space-y-4">
-            {/* Symbol with autocomplete */}
+            {/* Symbol search input */}
             <div className="relative">
-              <label className="mb-1 block text-xs text-white/40">Symbol</label>
-              <input
-                type="text"
-                value={symbolInput}
-                onChange={(e) => {
-                  setSymbolInput(e.target.value.toUpperCase());
-                  setShowAutocomplete(true);
-                }}
-                onFocus={() => setShowAutocomplete(true)}
-                onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
-                placeholder="BTC"
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
-              />
-              {showAutocomplete && filteredSymbols.length > 0 && (
-                <div className="absolute z-20 mt-1 w-full rounded-lg border border-white/10 bg-[#0a0a1a] shadow-xl">
-                  {filteredSymbols.map((s) => (
+              <label className="mb-1 block text-xs text-[#55556a]">Symbol</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#55556a]" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                  placeholder="Search symbol..."
+                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] pl-9 pr-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
+                />
+              </div>
+              {showDropdown && (searchResults.length > 0 || searching) && (
+                <div className="absolute z-20 mt-1 w-full rounded-lg border border-white/[0.06] bg-[#0d0d12] shadow-xl max-h-60 overflow-y-auto">
+                  {searching && (
+                    <div className="px-3 py-2 text-xs text-[#55556a]">
+                      Searching...
+                    </div>
+                  )}
+                  {searchResults.map((s) => (
                     <button
-                      key={s}
-                      className="w-full px-3 py-2 text-left text-sm text-white/70 hover:bg-white/5 hover:text-white"
-                      onMouseDown={() => {
-                        setSymbol(s);
-                        setSymbolInput(s);
-                        setShowAutocomplete(false);
-                      }}
+                      key={s.symbol}
+                      className="w-full px-3 py-2 text-left text-sm text-[#8888a0] hover:bg-white/5 hover:text-[#e8e8ed] flex items-center justify-between"
+                      onMouseDown={() => selectSymbol(s)}
                     >
-                      {s}
+                      <div>
+                        <span className="font-semibold text-[#e8e8ed]">{s.symbol}</span>
+                        <span className="ml-2 text-xs text-[#55556a]">{s.name}</span>
+                      </div>
+                      {s.price !== undefined && (
+                        <span className="text-xs font-mono text-[#8888a0]">
+                          {formatCurrency(s.price)}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -226,14 +275,14 @@ export default function TradingPage() {
 
             {/* Side toggle */}
             <div>
-              <label className="mb-1 block text-xs text-white/40">Side</label>
-              <div className="flex overflow-hidden rounded-lg border border-white/10">
+              <label className="mb-1 block text-xs text-[#55556a]">Side</label>
+              <div className="flex overflow-hidden rounded-lg border border-white/[0.06]">
                 <button
                   className={cn(
                     "flex-1 py-2.5 text-sm font-semibold transition-colors",
                     side === "buy"
-                      ? "bg-success/20 text-success"
-                      : "text-white/40 hover:bg-white/5",
+                      ? "bg-[#06d6a0]/20 text-[#06d6a0]"
+                      : "text-[#55556a] hover:bg-white/5",
                   )}
                   onClick={() => setSide("buy")}
                 >
@@ -243,8 +292,8 @@ export default function TradingPage() {
                   className={cn(
                     "flex-1 py-2.5 text-sm font-semibold transition-colors",
                     side === "sell"
-                      ? "bg-danger/20 text-danger"
-                      : "text-white/40 hover:bg-white/5",
+                      ? "bg-[#ef4444]/20 text-[#ef4444]"
+                      : "text-[#55556a] hover:bg-white/5",
                   )}
                   onClick={() => setSide("sell")}
                 >
@@ -255,7 +304,7 @@ export default function TradingPage() {
 
             {/* Order type */}
             <div>
-              <label className="mb-1 block text-xs text-white/40">
+              <label className="mb-1 block text-xs text-[#55556a]">
                 Order Type
               </label>
               <div className="flex gap-2">
@@ -271,8 +320,8 @@ export default function TradingPage() {
                     className={cn(
                       "flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors",
                       orderType === type
-                        ? "border-accent-purple/30 bg-accent-purple/20 text-accent-purple"
-                        : "border-white/10 text-white/40 hover:bg-white/5 hover:text-white/60",
+                        ? "border-[#06d6a0]/30 bg-[#06d6a0]/20 text-[#06d6a0]"
+                        : "border-white/[0.06] text-[#55556a] hover:bg-white/5 hover:text-[#8888a0]",
                     )}
                     onClick={() => setOrderType(type)}
                   >
@@ -284,7 +333,7 @@ export default function TradingPage() {
 
             {/* Quantity */}
             <div>
-              <label className="mb-1 block text-xs text-white/40">
+              <label className="mb-1 block text-xs text-[#55556a]">
                 Quantity
               </label>
               <input
@@ -292,14 +341,14 @@ export default function TradingPage() {
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 placeholder="0.00"
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
               />
             </div>
 
             {/* Limit price */}
             {orderType === "limit" && (
               <div>
-                <label className="mb-1 block text-xs text-white/40">
+                <label className="mb-1 block text-xs text-[#55556a]">
                   Limit Price
                 </label>
                 <input
@@ -307,7 +356,7 @@ export default function TradingPage() {
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="0.00"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
                 />
               </div>
             )}
@@ -315,7 +364,7 @@ export default function TradingPage() {
             {/* Stop price */}
             {orderType === "stop_loss" && (
               <div>
-                <label className="mb-1 block text-xs text-white/40">
+                <label className="mb-1 block text-xs text-[#55556a]">
                   Stop Price
                 </label>
                 <input
@@ -323,13 +372,13 @@ export default function TradingPage() {
                   value={stopPrice}
                   onChange={(e) => setStopPrice(e.target.value)}
                   placeholder="0.00"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
                 />
               </div>
             )}
 
             {/* Risk indicator */}
-            <div className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-white/40">
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-[#55556a]">
               <ArrowUpDown className="mr-1 inline h-3 w-3" />
               Risk check: {orderType === "market" ? "Market order" : "Limit order"}{" "}
               {side === "buy" ? "buying" : "selling"} {quantity || "0"} {symbol}
@@ -352,8 +401,8 @@ export default function TradingPage() {
                 className={cn(
                   "rounded-lg border px-3 py-2 text-xs",
                   submitResult.ok
-                    ? "border-success/20 bg-success/10 text-success"
-                    : "border-danger/20 bg-danger/10 text-danger",
+                    ? "border-[#06d6a0]/20 bg-[#06d6a0]/10 text-[#06d6a0]"
+                    : "border-[#ef4444]/20 bg-[#ef4444]/10 text-[#ef4444]",
                 )}
               >
                 {submitResult.msg}
@@ -364,17 +413,17 @@ export default function TradingPage() {
 
         {/* Order History */}
         <GlassCard className="lg:col-span-2">
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
-            <Clock className="h-5 w-5 text-accent-purple" />
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-[#e8e8ed]">
+            <Clock className="h-5 w-5 text-[#06d6a0]" />
             Order History
           </h2>
           {orders.length === 0 ? (
-            <p className="text-sm text-white/40">No orders yet</p>
+            <p className="text-sm text-[#55556a]">No orders yet</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wider text-white/40">
+                  <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
                     <th className="pb-3 pr-3">Time</th>
                     <th className="pb-3 pr-3">Symbol</th>
                     <th className="pb-3 pr-3">Side</th>
@@ -392,17 +441,17 @@ export default function TradingPage() {
                   {orders.map((order) => (
                     <tr
                       key={order.id}
-                      className="border-b border-white/5 transition-colors hover:bg-white/[0.02]"
+                      className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02]"
                     >
-                      <td className="py-3 pr-3 text-white/50">
+                      <td className="py-3 pr-3 text-[#8888a0]">
                         <div className="text-xs">
                           {formatDate(order.created_at)}
                         </div>
-                        <div className="text-xs text-white/30">
+                        <div className="text-xs text-[#55556a]">
                           {formatTime(order.created_at)}
                         </div>
                       </td>
-                      <td className="py-3 pr-3 font-semibold text-white">
+                      <td className="py-3 pr-3 font-semibold text-[#e8e8ed]">
                         {order.symbol}
                       </td>
                       <td className="py-3 pr-3">
@@ -414,13 +463,13 @@ export default function TradingPage() {
                           {order.side.toUpperCase()}
                         </Badge>
                       </td>
-                      <td className="py-3 pr-3 text-white/50">
+                      <td className="py-3 pr-3 text-[#8888a0]">
                         {order.order_type}
                       </td>
-                      <td className="py-3 pr-3 text-right font-mono text-white/70">
+                      <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
                         {order.quantity}
                       </td>
-                      <td className="py-3 pr-3 text-right font-mono text-white/70">
+                      <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
                         {formatCurrency(
                           order.filled_price ?? order.price ?? 0,
                         )}
@@ -430,7 +479,7 @@ export default function TradingPage() {
                           {order.status}
                         </Badge>
                       </td>
-                      <td className="hidden py-3 pr-3 text-right font-mono text-white/40 sm:table-cell">
+                      <td className="hidden py-3 pr-3 text-right font-mono text-[#55556a] sm:table-cell">
                         {order.fee ? formatCurrency(order.fee) : "-"}
                       </td>
                       <td className="py-3 text-right">

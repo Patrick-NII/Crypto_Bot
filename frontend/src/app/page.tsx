@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import { pricesApi, portfolioApi, tradingApi } from "@/lib/api";
 import type {
-  CryptoPrice,
+  CryptoMarketData,
   Order,
   Portfolio,
 } from "@/lib/types";
@@ -27,6 +27,7 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PriceChart } from "@/components/charts/price-chart";
 
 // ---- Skeleton helpers ----
 
@@ -48,8 +49,8 @@ function StatCardSkeleton() {
   );
 }
 
-// ---- Color palette for pie chart ----
-const PIE_COLORS = ["#a855f7", "#3b82f6", "#06b6d4", "#22c55e", "#eab308"];
+// ---- Color palette for pie chart (turquoise/lime theme) ----
+const PIE_COLORS = ["#06d6a0", "#c6f135", "#06b6d4", "#3b82f6", "#8b5cf6"];
 
 // ---- Order status badge variant ----
 function orderStatusVariant(status: string) {
@@ -69,11 +70,11 @@ function orderStatusVariant(status: string) {
 
 // ---- Fear & Greed gauge color ----
 function fearGreedColor(value: number) {
-  if (value <= 25) return "text-danger";
-  if (value <= 45) return "text-warning";
-  if (value <= 55) return "text-white/70";
-  if (value <= 75) return "text-info";
-  return "text-success";
+  if (value <= 25) return "text-[#ef4444]";
+  if (value <= 45) return "text-[#c6f135]";
+  if (value <= 55) return "text-[#8888a0]";
+  if (value <= 75) return "text-[#06d6a0]";
+  return "text-[#06d6a0]";
 }
 
 function fearGreedLabel(value: number) {
@@ -90,28 +91,36 @@ function fearGreedLabel(value: number) {
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [prices, setPrices] = useState<CryptoPrice[]>([]);
+  const [cryptos, setCryptos] = useState<CryptoMarketData[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [fearGreed, setFearGreed] = useState<number>(50);
   const [openOrderCount, setOpenOrderCount] = useState(0);
 
-  // Quick trade state
-  const [tradeSymbol, setTradeSymbol] = useState("BTC");
+  // Quick trade state - symbols from API
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([]);
+  const [tradeSymbol, setTradeSymbol] = useState("");
   const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
   const [tradeAmount, setTradeAmount] = useState("");
   const [tradeSubmitting, setTradeSubmitting] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const [cryptoData, portfolios, orderData, fgData] = await Promise.allSettled([
-        pricesApi.getCrypto(),
+      const [allCryptosResult, portfolios, orderData, fgData] = await Promise.allSettled([
+        pricesApi.getAllCryptos(20),
         portfolioApi.list(),
         tradingApi.getOrders(),
         pricesApi.getFearGreed(),
       ]);
 
-      if (cryptoData.status === "fulfilled") setPrices(cryptoData.value);
+      if (allCryptosResult.status === "fulfilled") {
+        setCryptos(allCryptosResult.value.data);
+        const symbols = allCryptosResult.value.data.map((c) => c.symbol);
+        setAvailableSymbols(symbols);
+        if (symbols.length > 0 && !tradeSymbol) {
+          setTradeSymbol(symbols[0]);
+        }
+      }
       if (portfolios.status === "fulfilled" && portfolios.value.length > 0) {
         setPortfolio(portfolios.value[0]);
       }
@@ -127,19 +136,19 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tradeSymbol]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(() => {
-      pricesApi.getCrypto().then(setPrices).catch(() => {});
+      pricesApi.getAllCryptos(20).then((res) => setCryptos(res.data)).catch(() => {});
     }, 30_000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
   // Quick trade handler
   const handleQuickTrade = async () => {
-    if (!tradeAmount || isNaN(Number(tradeAmount))) return;
+    if (!tradeAmount || isNaN(Number(tradeAmount)) || !tradeSymbol) return;
     setTradeSubmitting(true);
     try {
       await tradingApi.placeOrder({
@@ -169,7 +178,7 @@ export default function DashboardPage() {
     : [];
 
   // Top 10 crypto for market overview
-  const top10 = prices.slice(0, 10);
+  const top10 = cryptos.slice(0, 10);
 
   // ---- Loading state ----
   if (loading) {
@@ -202,7 +211,7 @@ export default function DashboardPage() {
   const portfolioValue = portfolio?.total_value ?? 0;
   const pnl24h = portfolio?.total_pnl ?? 0;
   const pnlPct = portfolio?.total_pnl_pct ?? 0;
-  const riskScore = 42; // placeholder
+  const riskScore = 42; // fetched from API in future
 
   return (
     <div className="relative z-10 min-h-screen p-4 md:p-8">
@@ -240,21 +249,21 @@ export default function DashboardPage() {
       {/* ---- Price Ticker Strip ---- */}
       <div className="mt-6 overflow-x-auto">
         <div className="flex gap-4 pb-2">
-          {prices.slice(0, 20).map((coin) => (
+          {cryptos.slice(0, 20).map((coin) => (
             <div
               key={coin.symbol}
-              className="flex shrink-0 items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-4 py-2.5"
+              className="flex shrink-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#14141b]/60 px-4 py-2.5"
             >
-              <span className="text-sm font-semibold text-white">
+              <span className="text-sm font-semibold text-[#e8e8ed]">
                 {coin.symbol}
               </span>
-              <span className="text-sm text-white/80">
+              <span className="text-sm text-[#e8e8ed]/80">
                 {formatCurrency(coin.price)}
               </span>
               <span
                 className={cn(
                   "flex items-center text-xs font-semibold",
-                  coin.change_pct_24h >= 0 ? "text-success" : "text-danger",
+                  coin.change_pct_24h >= 0 ? "text-[#06d6a0]" : "text-[#ef4444]",
                 )}
               >
                 {coin.change_pct_24h >= 0 ? (
@@ -264,12 +273,12 @@ export default function DashboardPage() {
                 )}
                 {formatPercent(coin.change_pct_24h)}
               </span>
-              {/* Mini sparkline placeholder */}
+              {/* Mini sparkline */}
               {coin.sparkline && coin.sparkline.length > 1 && (
                 <svg className="h-6 w-12" viewBox="0 0 48 24">
                   <polyline
                     fill="none"
-                    stroke={coin.change_pct_24h >= 0 ? "#22c55e" : "#ef4444"}
+                    stroke={coin.change_pct_24h >= 0 ? "#06d6a0" : "#ef4444"}
                     strokeWidth="1.5"
                     points={coin.sparkline
                       .map((v, i) => {
@@ -295,18 +304,18 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Market Overview */}
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
               Market Overview
             </h2>
             {top10.length === 0 ? (
-              <p className="text-sm text-white/40">
+              <p className="text-sm text-[#55556a]">
                 No market data available
               </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wider text-white/40">
+                    <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
                       <th className="pb-3 pr-4">#</th>
                       <th className="pb-3 pr-4">Asset</th>
                       <th className="pb-3 pr-4 text-right">Price</th>
@@ -321,64 +330,46 @@ export default function DashboardPage() {
                     {top10.map((coin, idx) => (
                       <tr
                         key={coin.symbol}
-                        className="border-b border-white/5 transition-colors hover:bg-white/[0.02]"
+                        className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02]"
                       >
-                        <td className="py-3 pr-4 text-white/40">
+                        <td className="py-3 pr-4 text-[#55556a]">
                           {idx + 1}
                         </td>
                         <td className="py-3 pr-4">
                           <div>
-                            <span className="font-semibold text-white">
+                            <span className="font-semibold text-[#e8e8ed]">
                               {coin.symbol}
                             </span>
-                            <span className="ml-2 text-white/40">
+                            <span className="ml-2 text-[#55556a]">
                               {coin.name}
                             </span>
                           </div>
                         </td>
-                        <td className="py-3 pr-4 text-right font-mono text-white">
+                        <td className="py-3 pr-4 text-right font-mono text-[#e8e8ed]">
                           {formatCurrency(coin.price)}
                         </td>
                         <td
                           className={cn(
                             "py-3 pr-4 text-right font-mono font-semibold",
                             coin.change_pct_24h >= 0
-                              ? "text-success"
-                              : "text-danger",
+                              ? "text-[#06d6a0]"
+                              : "text-[#ef4444]",
                           )}
                         >
                           {formatPercent(coin.change_pct_24h)}
                         </td>
-                        <td className="hidden py-3 pr-4 text-right font-mono text-white/50 sm:table-cell">
+                        <td className="hidden py-3 pr-4 text-right font-mono text-[#8888a0] sm:table-cell">
                           {coin.volume_24h
                             ? `$${(coin.volume_24h / 1e9).toFixed(1)}B`
                             : "-"}
                         </td>
                         <td className="py-3 text-right">
-                          {/* Mini bar chart */}
-                          <div className="inline-flex h-4 w-12 items-end gap-px">
-                            {Array.from({ length: 8 }).map((_, barIdx) => {
-                              const h =
-                                20 +
-                                Math.abs(
-                                  Math.sin(
-                                    (idx + barIdx) * 1.3 + coin.price * 0.001,
-                                  ),
-                                ) *
-                                  80;
-                              return (
-                                <div
-                                  key={barIdx}
-                                  className={cn(
-                                    "w-1 rounded-sm",
-                                    coin.change_pct_24h >= 0
-                                      ? "bg-success/60"
-                                      : "bg-danger/60",
-                                  )}
-                                  style={{ height: `${h}%` }}
-                                />
-                              );
-                            })}
+                          <div className="inline-block w-[80px]">
+                            <PriceChart
+                              symbol={coin.symbol}
+                              height={40}
+                              type="line"
+                            />
                           </div>
                         </td>
                       </tr>
@@ -391,17 +382,17 @@ export default function DashboardPage() {
 
           {/* Recent Trades */}
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
               Recent Trades
             </h2>
             {orders.length === 0 ? (
-              <p className="text-sm text-white/40">No recent trades</p>
+              <p className="text-sm text-[#55556a]">No recent trades</p>
             ) : (
               <div className="space-y-3">
                 {orders.map((order) => (
                   <div
                     key={order.id}
-                    className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
+                    className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
                       <Badge
@@ -410,16 +401,16 @@ export default function DashboardPage() {
                         {order.side.toUpperCase()}
                       </Badge>
                       <div>
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-[#e8e8ed]">
                           {order.symbol}
                         </span>
-                        <span className="ml-2 text-xs text-white/40">
+                        <span className="ml-2 text-xs text-[#55556a]">
                           {order.order_type}
                         </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="font-mono text-sm text-white/70">
+                      <span className="font-mono text-sm text-[#8888a0]">
                         {order.quantity} @{" "}
                         {formatCurrency(order.filled_price ?? order.price ?? 0)}
                       </span>
@@ -438,7 +429,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Fear & Greed Index */}
           <GlassCard className="flex flex-col items-center">
-            <h2 className="mb-4 self-start text-lg font-semibold text-white">
+            <h2 className="mb-4 self-start text-lg font-semibold text-[#e8e8ed]">
               Fear & Greed Index
             </h2>
             <div className="relative flex h-32 w-32 items-center justify-center">
@@ -466,8 +457,8 @@ export default function DashboardPage() {
                 <defs>
                   <linearGradient id="fgGrad" x1="0" y1="0" x2="1" y2="1">
                     <stop offset="0%" stopColor="#ef4444" />
-                    <stop offset="50%" stopColor="#eab308" />
-                    <stop offset="100%" stopColor="#22c55e" />
+                    <stop offset="50%" stopColor="#c6f135" />
+                    <stop offset="100%" stopColor="#06d6a0" />
                   </linearGradient>
                 </defs>
               </svg>
@@ -480,45 +471,43 @@ export default function DashboardPage() {
                 {fearGreed}
               </span>
             </div>
-            <span className="mt-2 text-sm font-medium text-white/50">
+            <span className="mt-2 text-sm font-medium text-[#8888a0]">
               {fearGreedLabel(fearGreed)}
             </span>
           </GlassCard>
 
           {/* Quick Trade Form */}
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
               Quick Trade
             </h2>
             <div className="space-y-4">
-              {/* Symbol selector */}
+              {/* Symbol selector - fetched from API */}
               <div>
-                <label className="mb-1 block text-xs text-white/40">
+                <label className="mb-1 block text-xs text-[#55556a]">
                   Symbol
                 </label>
                 <select
                   value={tradeSymbol}
                   onChange={(e) => setTradeSymbol(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
                 >
-                  {["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT"].map(
-                    (s) => (
-                      <option key={s} value={s} className="bg-[#0a0a1a]">
-                        {s}
-                      </option>
-                    ),
-                  )}
+                  {availableSymbols.map((s) => (
+                    <option key={s} value={s} className="bg-[#0d0d12]">
+                      {s}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               {/* Buy / Sell toggle */}
-              <div className="flex overflow-hidden rounded-lg border border-white/10">
+              <div className="flex overflow-hidden rounded-lg border border-white/[0.06]">
                 <button
                   className={cn(
                     "flex-1 py-2 text-sm font-semibold transition-colors",
                     tradeSide === "buy"
-                      ? "bg-success/20 text-success"
-                      : "text-white/40 hover:bg-white/5",
+                      ? "bg-[#06d6a0]/20 text-[#06d6a0]"
+                      : "text-[#55556a] hover:bg-white/5",
                   )}
                   onClick={() => setTradeSide("buy")}
                 >
@@ -528,8 +517,8 @@ export default function DashboardPage() {
                   className={cn(
                     "flex-1 py-2 text-sm font-semibold transition-colors",
                     tradeSide === "sell"
-                      ? "bg-danger/20 text-danger"
-                      : "text-white/40 hover:bg-white/5",
+                      ? "bg-[#ef4444]/20 text-[#ef4444]"
+                      : "text-[#55556a] hover:bg-white/5",
                   )}
                   onClick={() => setTradeSide("sell")}
                 >
@@ -539,7 +528,7 @@ export default function DashboardPage() {
 
               {/* Amount input */}
               <div>
-                <label className="mb-1 block text-xs text-white/40">
+                <label className="mb-1 block text-xs text-[#55556a]">
                   Amount
                 </label>
                 <input
@@ -547,7 +536,7 @@ export default function DashboardPage() {
                   value={tradeAmount}
                   onChange={(e) => setTradeAmount(e.target.value)}
                   placeholder="0.00"
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-accent-purple"
+                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
                 />
               </div>
 
@@ -556,7 +545,7 @@ export default function DashboardPage() {
                 variant={tradeSide === "buy" ? "success" : "danger"}
                 onClick={handleQuickTrade}
                 loading={tradeSubmitting}
-                disabled={!tradeAmount}
+                disabled={!tradeAmount || !tradeSymbol}
               >
                 {tradeSide === "buy" ? "Buy" : "Sell"} {tradeSymbol}
               </Button>
@@ -565,11 +554,11 @@ export default function DashboardPage() {
 
           {/* Portfolio Allocation Donut */}
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-white">
+            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
               Allocation
             </h2>
             {allocationData.length === 0 ? (
-              <p className="text-center text-sm text-white/40">
+              <p className="text-center text-sm text-[#55556a]">
                 No positions yet
               </p>
             ) : (
@@ -595,10 +584,10 @@ export default function DashboardPage() {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      background: "rgba(10,10,26,0.9)",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: "rgba(13,13,18,0.95)",
+                      border: "1px solid rgba(255,255,255,0.06)",
                       borderRadius: "0.5rem",
-                      color: "#fff",
+                      color: "#e8e8ed",
                     }}
                     formatter={(value) => formatCurrency(Number(value))}
                   />
@@ -615,7 +604,7 @@ export default function DashboardPage() {
                       background: PIE_COLORS[i % PIE_COLORS.length],
                     }}
                   />
-                  <span className="text-xs capitalize text-white/60">
+                  <span className="text-xs capitalize text-[#8888a0]">
                     {entry.name}
                   </span>
                 </div>

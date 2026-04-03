@@ -2,6 +2,7 @@
 
 Endpoints:
 - GET /              Get prices for multiple symbols
+- GET /search        Search crypto assets by name or symbol
 - GET /{symbol}      Get single symbol price with full data
 - GET /history/{symbol}  Get OHLCV price history
 """
@@ -11,14 +12,16 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import (
+    AssetSearchResult,
     ErrorResponse,
     HistoryResponse,
     MultiPriceResponse,
     OHLCVData,
     PriceData,
     PriceResponse,
+    SearchResponse,
 )
-from app.services.price_fetcher import fetch_ohlcv, fetch_prices
+from app.services.price_fetcher import fetch_ohlcv, fetch_prices, search_assets
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,30 @@ async def get_prices(
 
     prices = await fetch_prices(symbol_list)
     return MultiPriceResponse(success=True, data=prices)
+
+
+@router.get(
+    "/search",
+    response_model=SearchResponse,
+    summary="Search crypto assets by name or symbol",
+)
+async def search_crypto_assets(
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(20, le=100, description="Maximum results to return"),
+) -> SearchResponse:
+    """Search crypto assets by name or symbol.
+
+    Uses CoinGecko /search endpoint with Redis cache (5 min).
+    Returns list of matching assets with id, symbol, name, market_cap_rank, thumb.
+    """
+    raw = await search_assets(q, limit=limit)
+    results = [AssetSearchResult(**item) for item in raw]
+    return SearchResponse(
+        success=True,
+        query=q,
+        results=results,
+        total=len(results),
+    )
 
 
 @router.get(

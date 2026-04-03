@@ -139,6 +139,50 @@ class WebSocketMessage(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+class AssetSearchResult(BaseModel):
+    """Single asset from a search query."""
+
+    id: str
+    symbol: str
+    name: str
+    market_cap_rank: Optional[int] = None
+    thumb: Optional[str] = None
+
+
+class SearchResponse(BaseModel):
+    """Response for asset search query."""
+
+    success: bool = True
+    query: str
+    results: List[AssetSearchResult]
+    total: int
+
+
+class CryptoMarketData(BaseModel):
+    """Full market data for a single cryptocurrency."""
+
+    id: str
+    symbol: str
+    name: str
+    image: Optional[str] = None
+    current_price: Optional[float] = None
+    market_cap: Optional[float] = None
+    market_cap_rank: Optional[int] = None
+    price_change_percentage_24h: Optional[float] = None
+    total_volume: Optional[float] = None
+    sparkline_in_7d: Optional[List[float]] = None
+
+
+class AllCryptosResponse(BaseModel):
+    """Response for all cryptos listing."""
+
+    success: bool = True
+    data: List[CryptoMarketData]
+    page: int
+    limit: int
+    total: int
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 

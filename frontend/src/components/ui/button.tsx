@@ -13,15 +13,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "bg-gradient-to-r from-accent-purple to-accent-blue text-white hover:opacity-90 shadow-lg shadow-accent-purple/20",
+    "bg-gradient-to-br from-[#06d6a0] to-[#0ff0b3] text-[#0d0d12] font-semibold hover:shadow-lg hover:shadow-[#06d6a0]/20 hover:-translate-y-0.5",
   secondary:
-    "glass text-white hover:bg-white/10",
+    "border border-[#06d6a0]/40 text-[#06d6a0] bg-transparent hover:bg-[#06d6a0]/10 hover:border-[#06d6a0]/60",
   danger:
     "bg-danger/20 text-danger border border-danger/30 hover:bg-danger/30",
   ghost:
-    "text-white/60 hover:text-white hover:bg-white/5",
+    "text-[#8888a0] hover:text-white hover:bg-white/5",
   success:
-    "bg-success/20 text-success border border-success/30 hover:bg-success/30",
+    "bg-[#c6f135] text-[#0d0d12] font-semibold hover:bg-[#b8e619] hover:-translate-y-0.5",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -43,7 +43,7 @@ export function Button({
     <button
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200",
-        "focus:outline-none focus:ring-2 focus:ring-accent-purple/50",
+        "focus:outline-none focus:ring-2 focus:ring-[#06d6a0]/50",
         "disabled:cursor-not-allowed disabled:opacity-50",
         variantStyles[variant],
         sizeStyles[size],
