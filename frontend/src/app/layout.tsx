@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { ChatWrapper } from "@/components/ai/chat-wrapper";
 import "./globals.css";
 
 const inter = Inter({
@@ -42,6 +43,8 @@ export default function RootLayout({
             {children}
           </main>
         </div>
+
+        <ChatWrapper />
       </body>
     </html>
   );

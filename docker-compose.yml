@@ -54,6 +54,7 @@ services:
       - RISK_SERVICE_URL=http://risk-service:8005
       - ML_SERVICE_URL=http://ml-service:8006
       - NOTIFICATION_SERVICE_URL=http://notification-service:8007
+      - AI_AGENT_SERVICE_URL=http://ai-agent-service:8008
       - REDIS_HOST=redis
       - SECRET_KEY=${SECRET_KEY:-dev-secret}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
@@ -204,6 +205,30 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8007}:8007"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - okamoey-net
+
+  # ─── AI Agent Service ───────────────────────────────────────
+  ai-agent-service:
+    build:
+      context: ./services/ai-agent-service
+      dockerfile: Dockerfile
+    container_name: okamoey-ai-agent
+    environment:
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MARKET_DATA_URL=http://market-data-service:8003
+      - PORTFOLIO_URL=http://portfolio-service:8002
+      - TRADING_URL=http://trading-engine:8004
+      - RISK_URL=http://risk-service:8005
+      - STRATEGY_URL=http://ml-service:8006
+    ports:
+      - "${AI_AGENT_SERVICE_PORT:-8008}:8008"
     depends_on:
       redis:
         condition: service_healthy
