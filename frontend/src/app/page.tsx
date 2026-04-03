@@ -1,618 +1,222 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
-  Wallet,
+  Bot,
+  BarChart3,
+  Shield,
+  Zap,
   TrendingUp,
-  ShoppingCart,
-  ShieldAlert,
-  ArrowUpRight,
-  ArrowDownRight,
+  Bell,
+  ChevronDown,
+  Check,
+  ArrowRight,
 } from "lucide-react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import { pricesApi, portfolioApi, tradingApi } from "@/lib/api";
-import type {
-  CryptoMarketData,
-  Order,
-  Portfolio,
-} from "@/lib/types";
-import { formatCurrency, formatPercent, cn } from "@/lib/utils";
-import { GlassCard } from "@/components/ui/glass-card";
-import { StatCard } from "@/components/ui/stat-card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { PriceChart } from "@/components/charts/price-chart";
+import { useState } from "react";
 
-// ---- Skeleton helpers ----
+const FEATURES = [
+  {
+    icon: Bot,
+    title: "AI Trading Agents",
+    desc: "6 specialized AI agents that analyze your portfolio, execute trades, and optimize strategies using GPT-4o and Claude.",
+  },
+  {
+    icon: BarChart3,
+    title: "Real-Time Analytics",
+    desc: "Professional-grade charts, equity curves, and risk metrics updated in real-time via WebSocket.",
+  },
+  {
+    icon: Shield,
+    title: "Risk Management",
+    desc: "Automated stop-losses, VaR calculations, portfolio drawdown alerts, and position sizing.",
+  },
+  {
+    icon: Zap,
+    title: "Paper Trading",
+    desc: "Test strategies risk-free with realistic paper trading before committing real capital.",
+  },
+  {
+    icon: TrendingUp,
+    title: "Strategy Builder",
+    desc: "Describe strategies in plain English. Our AI translates them into executable trading algorithms.",
+  },
+  {
+    icon: Bell,
+    title: "Smart Alerts",
+    desc: "Price alerts, pattern detection, and portfolio risk notifications via email, push, or SMS.",
+  },
+];
 
-function SkeletonBlock({ className }: { className?: string }) {
+const PLANS = [
+  {
+    name: "Free",
+    price: "0",
+    period: "forever",
+    features: ["1 Portfolio", "Paper trading only", "Basic analytics", "5 AI queries/day", "Email alerts"],
+    cta: "Get Started",
+    highlight: false,
+  },
+  {
+    name: "Pro",
+    price: "49",
+    period: "/month",
+    features: ["Unlimited portfolios", "Live + paper trading", "Full analytics suite", "Unlimited AI queries", "All alert channels", "Strategy backtesting", "Priority support"],
+    cta: "Start Free Trial",
+    highlight: true,
+  },
+  {
+    name: "Enterprise",
+    price: "199",
+    period: "/month",
+    features: ["Everything in Pro", "Multi-exchange support", "Custom AI agents", "API access", "Dedicated account manager", "White-label option", "SLA guarantee"],
+    cta: "Contact Sales",
+    highlight: false,
+  },
+];
+
+const FAQ = [
+  { q: "Is my money safe?", a: "Okamoey never holds your funds. We connect to exchanges via read-only API keys for analytics, and trade-enabled keys only when you explicitly allow it." },
+  { q: "Which exchanges are supported?", a: "We currently support Binance, Coinbase Pro, and Kraken. More exchanges are added regularly." },
+  { q: "How do the AI agents work?", a: "Each page has a specialized AI agent that uses live data from your portfolio and market feeds. Simple questions use GPT-4o-mini, complex analysis uses Claude." },
+  { q: "Can I cancel anytime?", a: "Yes, all subscriptions are month-to-month with no long-term commitment. Cancel anytime from your account settings." },
+];
+
+export default function LandingPage() {
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+
   return (
-    <div
-      className={cn("animate-pulse rounded-lg bg-white/5", className)}
-    />
-  );
-}
-
-function StatCardSkeleton() {
-  return (
-    <GlassCard className="flex flex-col gap-2">
-      <SkeletonBlock className="h-3 w-20" />
-      <SkeletonBlock className="h-7 w-28" />
-      <SkeletonBlock className="h-4 w-16" />
-    </GlassCard>
-  );
-}
-
-// ---- Color palette for pie chart (turquoise/lime theme) ----
-const PIE_COLORS = ["#06d6a0", "#c6f135", "#06b6d4", "#3b82f6", "#8b5cf6"];
-
-// ---- Order status badge variant ----
-function orderStatusVariant(status: string) {
-  switch (status) {
-    case "filled":
-      return "success";
-    case "open":
-      return "info";
-    case "cancelled":
-      return "default";
-    case "failed":
-      return "danger";
-    default:
-      return "default";
-  }
-}
-
-// ---- Fear & Greed gauge color ----
-function fearGreedColor(value: number) {
-  if (value <= 25) return "text-[#ef4444]";
-  if (value <= 45) return "text-[#c6f135]";
-  if (value <= 55) return "text-[#8888a0]";
-  if (value <= 75) return "text-[#06d6a0]";
-  return "text-[#06d6a0]";
-}
-
-function fearGreedLabel(value: number) {
-  if (value <= 25) return "Extreme Fear";
-  if (value <= 45) return "Fear";
-  if (value <= 55) return "Neutral";
-  if (value <= 75) return "Greed";
-  return "Extreme Greed";
-}
-
-// ============================================================
-// Dashboard Page
-// ============================================================
-
-export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-  const [cryptos, setCryptos] = useState<CryptoMarketData[]>([]);
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [fearGreed, setFearGreed] = useState<number>(50);
-  const [openOrderCount, setOpenOrderCount] = useState(0);
-
-  // Quick trade state - symbols from API
-  const [availableSymbols, setAvailableSymbols] = useState<string[]>([]);
-  const [tradeSymbol, setTradeSymbol] = useState("");
-  const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
-  const [tradeAmount, setTradeAmount] = useState("");
-  const [tradeSubmitting, setTradeSubmitting] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [allCryptosResult, portfolios, orderData, fgData] = await Promise.allSettled([
-        pricesApi.getAllCryptos(20),
-        portfolioApi.list(),
-        tradingApi.getOrders(),
-        pricesApi.getFearGreed(),
-      ]);
-
-      if (allCryptosResult.status === "fulfilled") {
-        setCryptos(allCryptosResult.value.data);
-        const symbols = allCryptosResult.value.data.map((c) => c.symbol);
-        setAvailableSymbols(symbols);
-        if (symbols.length > 0 && !tradeSymbol) {
-          setTradeSymbol(symbols[0]);
-        }
-      }
-      if (portfolios.status === "fulfilled" && portfolios.value.length > 0) {
-        setPortfolio(portfolios.value[0]);
-      }
-      if (orderData.status === "fulfilled") {
-        setOrders(orderData.value.slice(0, 5));
-        setOpenOrderCount(
-          orderData.value.filter((o) => o.status === "open").length,
-        );
-      }
-      if (fgData.status === "fulfilled") setFearGreed(fgData.value.value);
-    } catch {
-      // Errors handled per-request above
-    } finally {
-      setLoading(false);
-    }
-  }, [tradeSymbol]);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(() => {
-      pricesApi.getAllCryptos(20).then((res) => setCryptos(res.data)).catch(() => {});
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  // Quick trade handler
-  const handleQuickTrade = async () => {
-    if (!tradeAmount || isNaN(Number(tradeAmount)) || !tradeSymbol) return;
-    setTradeSubmitting(true);
-    try {
-      await tradingApi.placeOrder({
-        symbol: tradeSymbol,
-        side: tradeSide,
-        order_type: "market",
-        quantity: Number(tradeAmount),
-      });
-      setTradeAmount("");
-      fetchData();
-    } catch {
-      // toast or error handling
-    } finally {
-      setTradeSubmitting(false);
-    }
-  };
-
-  // Allocation data for pie chart
-  const allocationData = portfolio?.positions
-    ? Object.entries(
-        portfolio.positions.reduce<Record<string, number>>((acc, p) => {
-          const type = p.asset_type || "other";
-          acc[type] = (acc[type] || 0) + p.current_price * p.quantity;
-          return acc;
-        }, {}),
-      ).map(([name, value]) => ({ name, value }))
-    : [];
-
-  // Top 10 crypto for market overview
-  const top10 = cryptos.slice(0, 10);
-
-  // ---- Loading state ----
-  if (loading) {
-    return (
-      <div className="relative z-10 min-h-screen p-4 md:p-8">
-        <h1 className="mb-8 text-3xl font-bold glow-text">Dashboard</h1>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <StatCardSkeleton key={i} />
-          ))}
-        </div>
-        <div className="mt-6">
-          <SkeletonBlock className="h-12 w-full" />
-        </div>
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-6">
-            <SkeletonBlock className="h-80" />
-            <SkeletonBlock className="h-48" />
+    <div className="min-h-screen bg-[#0d0d12]">
+      {/* Nav */}
+      <nav className="fixed top-0 z-50 w-full border-b border-[rgba(255,255,255,0.06)] bg-[#0d0d12]/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <span className="text-xl font-bold glow-text">OKAMOEY</span>
+          <div className="hidden items-center gap-8 md:flex">
+            <a href="#features" className="text-sm text-[#8888a0] hover:text-white">Features</a>
+            <a href="#pricing" className="text-sm text-[#8888a0] hover:text-white">Pricing</a>
+            <a href="#faq" className="text-sm text-[#8888a0] hover:text-white">FAQ</a>
           </div>
-          <div className="space-y-6">
-            <SkeletonBlock className="h-48" />
-            <SkeletonBlock className="h-64" />
-            <SkeletonBlock className="h-56" />
+          <div className="flex items-center gap-3">
+            <Link href="/login" className="rounded-lg px-4 py-2 text-sm text-[#8888a0] hover:text-white">Log in</Link>
+            <Link href="/register" className="rounded-lg bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] px-4 py-2 text-sm font-semibold text-[#0d0d12] hover:scale-105 transition-transform">Start Trading</Link>
           </div>
         </div>
-      </div>
-    );
-  }
+      </nav>
 
-  const portfolioValue = portfolio?.total_value ?? 0;
-  const pnl24h = portfolio?.total_pnl ?? 0;
-  const pnlPct = portfolio?.total_pnl_pct ?? 0;
-  const riskScore = 42; // fetched from API in future
-
-  return (
-    <div className="relative z-10 min-h-screen p-4 md:p-8">
-      {/* Page Title */}
-      <h1 className="mb-8 text-3xl font-bold glow-text">Dashboard</h1>
-
-      {/* ---- Top Row: StatCards ---- */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Portfolio Value"
-          value={formatCurrency(portfolioValue)}
-          icon={Wallet}
-        />
-        <StatCard
-          title="24h Change"
-          value={formatCurrency(pnl24h)}
-          subtitle={formatPercent(pnlPct)}
-          trend={pnl24h >= 0 ? "up" : "down"}
-          icon={TrendingUp}
-        />
-        <StatCard
-          title="Open Orders"
-          value={String(openOrderCount)}
-          icon={ShoppingCart}
-        />
-        <StatCard
-          title="Risk Score"
-          value={`${riskScore}/100`}
-          subtitle={riskScore < 50 ? "Low Risk" : "Moderate"}
-          trend={riskScore < 50 ? "up" : "neutral"}
-          icon={ShieldAlert}
-        />
-      </div>
-
-      {/* ---- Price Ticker Strip ---- */}
-      <div className="mt-6 overflow-x-auto">
-        <div className="flex gap-4 pb-2">
-          {cryptos.slice(0, 20).map((coin) => (
-            <div
-              key={coin.symbol}
-              className="flex shrink-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#14141b]/60 px-4 py-2.5"
-            >
-              <span className="text-sm font-semibold text-[#e8e8ed]">
-                {coin.symbol}
-              </span>
-              <span className="text-sm text-[#e8e8ed]/80">
-                {formatCurrency(coin.price)}
-              </span>
-              <span
-                className={cn(
-                  "flex items-center text-xs font-semibold",
-                  coin.change_pct_24h >= 0 ? "text-[#06d6a0]" : "text-[#ef4444]",
-                )}
-              >
-                {coin.change_pct_24h >= 0 ? (
-                  <ArrowUpRight className="mr-0.5 h-3 w-3" />
-                ) : (
-                  <ArrowDownRight className="mr-0.5 h-3 w-3" />
-                )}
-                {formatPercent(coin.change_pct_24h)}
-              </span>
-              {/* Mini sparkline */}
-              {coin.sparkline && coin.sparkline.length > 1 && (
-                <svg className="h-6 w-12" viewBox="0 0 48 24">
-                  <polyline
-                    fill="none"
-                    stroke={coin.change_pct_24h >= 0 ? "#06d6a0" : "#ef4444"}
-                    strokeWidth="1.5"
-                    points={coin.sparkline
-                      .map((v, i) => {
-                        const min = Math.min(...coin.sparkline!);
-                        const max = Math.max(...coin.sparkline!);
-                        const range = max - min || 1;
-                        const x = (i / (coin.sparkline!.length - 1)) * 48;
-                        const y = 24 - ((v - min) / range) * 24;
-                        return `${x},${y}`;
-                      })
-                      .join(" ")}
-                  />
-                </svg>
-              )}
-            </div>
-          ))}
+      {/* Hero */}
+      <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 pt-20">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(6,214,160,0.08)_0%,transparent_60%)]" />
+        <div className="relative z-10 mx-auto max-w-4xl text-center">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#06d6a0]/20 bg-[#06d6a0]/10 px-4 py-1.5">
+            <Zap className="h-3.5 w-3.5 text-[#06d6a0]" />
+            <span className="text-xs font-medium text-[#06d6a0]">AI-Powered Trading Platform</span>
+          </div>
+          <h1 className="mb-6 text-5xl font-bold leading-tight text-white md:text-7xl">
+            Trade Smarter with{" "}
+            <span className="bg-gradient-to-r from-[#06d6a0] to-[#c6f135] bg-clip-text text-transparent">AI Agents</span>
+          </h1>
+          <p className="mx-auto mb-10 max-w-2xl text-lg text-[#8888a0] md:text-xl">
+            Okamoey combines real-time market data, professional analytics, and intelligent AI agents to help you build, test, and execute winning trading strategies.
+          </p>
+          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <Link href="/register" className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] px-8 py-3.5 text-base font-semibold text-[#0d0d12] hover:scale-105 transition-transform">
+              Start Free <ArrowRight className="h-4 w-4" />
+            </Link>
+            <a href="#features" className="rounded-xl border border-[rgba(255,255,255,0.08)] px-8 py-3.5 text-base text-[#8888a0] hover:border-[rgba(255,255,255,0.15)] hover:text-white">See Features</a>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* ---- Main Content: 2-column layout ---- */}
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left Column (2/3) */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Market Overview */}
-          <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
-              Market Overview
-            </h2>
-            {top10.length === 0 ? (
-              <p className="text-sm text-[#55556a]">
-                No market data available
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
-                      <th className="pb-3 pr-4">#</th>
-                      <th className="pb-3 pr-4">Asset</th>
-                      <th className="pb-3 pr-4 text-right">Price</th>
-                      <th className="pb-3 pr-4 text-right">24h</th>
-                      <th className="hidden pb-3 pr-4 text-right sm:table-cell">
-                        Volume
-                      </th>
-                      <th className="pb-3 text-right">Chart</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {top10.map((coin, idx) => (
-                      <tr
-                        key={coin.symbol}
-                        className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02]"
-                      >
-                        <td className="py-3 pr-4 text-[#55556a]">
-                          {idx + 1}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div>
-                            <span className="font-semibold text-[#e8e8ed]">
-                              {coin.symbol}
-                            </span>
-                            <span className="ml-2 text-[#55556a]">
-                              {coin.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-3 pr-4 text-right font-mono text-[#e8e8ed]">
-                          {formatCurrency(coin.price)}
-                        </td>
-                        <td
-                          className={cn(
-                            "py-3 pr-4 text-right font-mono font-semibold",
-                            coin.change_pct_24h >= 0
-                              ? "text-[#06d6a0]"
-                              : "text-[#ef4444]",
-                          )}
-                        >
-                          {formatPercent(coin.change_pct_24h)}
-                        </td>
-                        <td className="hidden py-3 pr-4 text-right font-mono text-[#8888a0] sm:table-cell">
-                          {coin.volume_24h
-                            ? `$${(coin.volume_24h / 1e9).toFixed(1)}B`
-                            : "-"}
-                        </td>
-                        <td className="py-3 text-right">
-                          <div className="inline-block w-[80px]">
-                            <PriceChart
-                              symbol={coin.symbol}
-                              height={40}
-                              type="line"
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </GlassCard>
-
-          {/* Recent Trades */}
-          <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
-              Recent Trades
-            </h2>
-            {orders.length === 0 ? (
-              <p className="text-sm text-[#55556a]">No recent trades</p>
-            ) : (
-              <div className="space-y-3">
-                {orders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Badge
-                        variant={order.side === "buy" ? "success" : "danger"}
-                      >
-                        {order.side.toUpperCase()}
-                      </Badge>
-                      <div>
-                        <span className="font-semibold text-[#e8e8ed]">
-                          {order.symbol}
-                        </span>
-                        <span className="ml-2 text-xs text-[#55556a]">
-                          {order.order_type}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-mono text-sm text-[#8888a0]">
-                        {order.quantity} @{" "}
-                        {formatCurrency(order.filled_price ?? order.price ?? 0)}
-                      </span>
-                      <Badge variant={orderStatusVariant(order.status)}>
-                        {order.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </GlassCard>
-        </div>
-
-        {/* Right Column (1/3) */}
-        <div className="space-y-6">
-          {/* Fear & Greed Index */}
-          <GlassCard className="flex flex-col items-center">
-            <h2 className="mb-4 self-start text-lg font-semibold text-[#e8e8ed]">
-              Fear & Greed Index
-            </h2>
-            <div className="relative flex h-32 w-32 items-center justify-center">
-              {/* Background circle */}
-              <svg className="absolute inset-0" viewBox="0 0 128 128">
-                <circle
-                  cx="64"
-                  cy="64"
-                  r="56"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.05)"
-                  strokeWidth="8"
-                />
-                <circle
-                  cx="64"
-                  cy="64"
-                  r="56"
-                  fill="none"
-                  stroke="url(#fgGrad)"
-                  strokeWidth="8"
-                  strokeDasharray={`${(fearGreed / 100) * 352} 352`}
-                  strokeLinecap="round"
-                  transform="rotate(-90 64 64)"
-                />
-                <defs>
-                  <linearGradient id="fgGrad" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#ef4444" />
-                    <stop offset="50%" stopColor="#c6f135" />
-                    <stop offset="100%" stopColor="#06d6a0" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <span
-                className={cn(
-                  "text-3xl font-bold",
-                  fearGreedColor(fearGreed),
-                )}
-              >
-                {fearGreed}
-              </span>
-            </div>
-            <span className="mt-2 text-sm font-medium text-[#8888a0]">
-              {fearGreedLabel(fearGreed)}
-            </span>
-          </GlassCard>
-
-          {/* Quick Trade Form */}
-          <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
-              Quick Trade
-            </h2>
-            <div className="space-y-4">
-              {/* Symbol selector - fetched from API */}
-              <div>
-                <label className="mb-1 block text-xs text-[#55556a]">
-                  Symbol
-                </label>
-                <select
-                  value={tradeSymbol}
-                  onChange={(e) => setTradeSymbol(e.target.value)}
-                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
-                >
-                  {availableSymbols.map((s) => (
-                    <option key={s} value={s} className="bg-[#0d0d12]">
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Buy / Sell toggle */}
-              <div className="flex overflow-hidden rounded-lg border border-white/[0.06]">
-                <button
-                  className={cn(
-                    "flex-1 py-2 text-sm font-semibold transition-colors",
-                    tradeSide === "buy"
-                      ? "bg-[#06d6a0]/20 text-[#06d6a0]"
-                      : "text-[#55556a] hover:bg-white/5",
-                  )}
-                  onClick={() => setTradeSide("buy")}
-                >
-                  Buy
-                </button>
-                <button
-                  className={cn(
-                    "flex-1 py-2 text-sm font-semibold transition-colors",
-                    tradeSide === "sell"
-                      ? "bg-[#ef4444]/20 text-[#ef4444]"
-                      : "text-[#55556a] hover:bg-white/5",
-                  )}
-                  onClick={() => setTradeSide("sell")}
-                >
-                  Sell
-                </button>
-              </div>
-
-              {/* Amount input */}
-              <div>
-                <label className="mb-1 block text-xs text-[#55556a]">
-                  Amount
-                </label>
-                <input
-                  type="number"
-                  value={tradeAmount}
-                  onChange={(e) => setTradeAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
-                />
-              </div>
-
-              <Button
-                className="w-full"
-                variant={tradeSide === "buy" ? "success" : "danger"}
-                onClick={handleQuickTrade}
-                loading={tradeSubmitting}
-                disabled={!tradeAmount || !tradeSymbol}
-              >
-                {tradeSide === "buy" ? "Buy" : "Sell"} {tradeSymbol}
-              </Button>
-            </div>
-          </GlassCard>
-
-          {/* Portfolio Allocation Donut */}
-          <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
-              Allocation
-            </h2>
-            {allocationData.length === 0 ? (
-              <p className="text-center text-sm text-[#55556a]">
-                No positions yet
-              </p>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={allocationData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={4}
-                    stroke="none"
-                  >
-                    {allocationData.map((_, i) => (
-                      <Cell
-                        key={i}
-                        fill={PIE_COLORS[i % PIE_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "rgba(13,13,18,0.95)",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      borderRadius: "0.5rem",
-                      color: "#e8e8ed",
-                    }}
-                    formatter={(value) => formatCurrency(Number(value))}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-            {/* Legend */}
-            <div className="mt-2 flex flex-wrap justify-center gap-3">
-              {allocationData.map((entry, i) => (
-                <div key={entry.name} className="flex items-center gap-1.5">
-                  <div
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{
-                      background: PIE_COLORS[i % PIE_COLORS.length],
-                    }}
-                  />
-                  <span className="text-xs capitalize text-[#8888a0]">
-                    {entry.name}
-                  </span>
+      {/* Features */}
+      <section id="features" className="px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-16 text-center">
+            <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">Everything you need to trade</h2>
+            <p className="text-[#8888a0]">Professional-grade tools powered by artificial intelligence</p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="group rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#14141b] p-6 transition-all hover:border-[#06d6a0]/20 hover:shadow-lg hover:shadow-[#06d6a0]/5">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[#06d6a0]/10">
+                  <f.icon className="h-6 w-6 text-[#06d6a0]" />
                 </div>
-              ))}
-            </div>
-          </GlassCard>
+                <h3 className="mb-2 text-lg font-semibold text-white">{f.title}</h3>
+                <p className="text-sm leading-relaxed text-[#8888a0]">{f.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="relative px-6 py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(198,241,53,0.05)_0%,transparent_60%)]" />
+        <div className="relative mx-auto max-w-6xl">
+          <div className="mb-16 text-center">
+            <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">Simple, transparent pricing</h2>
+            <p className="text-[#8888a0]">Start free, upgrade when you&apos;re ready</p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            {PLANS.map((plan) => (
+              <div key={plan.name} className={`relative rounded-2xl border p-8 ${plan.highlight ? "border-[#06d6a0]/40 bg-[#14141b] shadow-lg shadow-[#06d6a0]/10" : "border-[rgba(255,255,255,0.06)] bg-[#14141b]"}`}>
+                {plan.highlight && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[#06d6a0] to-[#c6f135] px-4 py-1 text-xs font-bold text-[#0d0d12]">Most Popular</div>
+                )}
+                <h3 className="mb-2 text-lg font-semibold text-white">{plan.name}</h3>
+                <div className="mb-6 flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-white">${plan.price}</span>
+                  <span className="text-[#55556a]">{plan.period}</span>
+                </div>
+                <ul className="mb-8 space-y-3">
+                  {plan.features.map((feat) => (
+                    <li key={feat} className="flex items-center gap-2 text-sm text-[#8888a0]">
+                      <Check className="h-4 w-4 flex-shrink-0 text-[#06d6a0]" />
+                      {feat}
+                    </li>
+                  ))}
+                </ul>
+                <Link href={plan.name === "Enterprise" ? "#" : "/register"} className={`block w-full rounded-xl py-3 text-center text-sm font-semibold ${plan.highlight ? "bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] text-[#0d0d12]" : "border border-[rgba(255,255,255,0.08)] text-white hover:border-[rgba(255,255,255,0.15)]"}`}>
+                  {plan.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="px-6 py-24">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="mb-12 text-center text-3xl font-bold text-white md:text-4xl">Frequently asked questions</h2>
+          <div className="space-y-3">
+            {FAQ.map((item, i) => (
+              <div key={i} className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#14141b]">
+                <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="flex w-full items-center justify-between p-5 text-left">
+                  <span className="text-sm font-medium text-white">{item.q}</span>
+                  <ChevronDown className={`h-4 w-4 text-[#55556a] transition-transform ${openFaq === i ? "rotate-180" : ""}`} />
+                </button>
+                {openFaq === i && (
+                  <div className="border-t border-[rgba(255,255,255,0.06)] px-5 pb-5 pt-3">
+                    <p className="text-sm leading-relaxed text-[#8888a0]">{item.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-[rgba(255,255,255,0.06)] px-6 py-12">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 md:flex-row">
+          <span className="text-lg font-bold glow-text">OKAMOEY</span>
+          <div className="flex gap-6">
+            <a href="#" className="text-xs text-[#55556a] hover:text-[#8888a0]">Terms</a>
+            <a href="#" className="text-xs text-[#55556a] hover:text-[#8888a0]">Privacy</a>
+            <a href="#" className="text-xs text-[#55556a] hover:text-[#8888a0]">Contact</a>
+          </div>
+          <p className="text-xs text-[#3a3a4a]">&copy; 2026 Okamoey. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   );
 }

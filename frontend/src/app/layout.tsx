@@ -1,8 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
-import { ChatWrapper } from "@/components/ai/chat-wrapper";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,8 +15,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Okamoey | Trading Platform",
-  description: "Automated crypto and stock trading platform with real-time analytics",
+  title: "Okamoey | AI-Powered Crypto Trading",
+  description: "Autonomous crypto trading with AI agents, real-time analytics, and professional tools.",
 };
 
 export default function RootLayout({
@@ -33,18 +30,7 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} dark`}
     >
       <body className="min-h-screen bg-background text-foreground antialiased">
-        <Sidebar />
-
-        {/* Main content area offset by sidebar on desktop */}
-        <div className="flex flex-col min-h-screen md:pl-60 transition-all duration-300">
-          <Header />
-
-          <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
-            {children}
-          </main>
-        </div>
-
-        <ChatWrapper />
+        {children}
       </body>
     </html>
   );

@@ -51,3 +51,4 @@ redis_data/
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+frontend/static-serve/
