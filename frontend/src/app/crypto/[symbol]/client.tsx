@@ -65,9 +65,15 @@ export default function CryptoDetailClient() {
   useEffect(() => {
     setIsWatched(getWatchlist().includes(symbol));
     pricesApi.getAllCryptos(250).then((res) => {
+      // res.data contains extra CoinGecko fields via fallback
       const data = res.data as unknown as CoinData[];
-      const found = data.find((c) => c.symbol?.toUpperCase() === symbol);
-      if (found) { setCoin(found); setLivePrice(found.current_price); }
+      const found = data.find((c) => (c.symbol ?? "").toUpperCase() === symbol);
+      if (found) {
+        setCoin(found);
+        // current_price from CoinGecko fallback, or price from gateway
+        const price = found.current_price || (found as unknown as Record<string, number>).price || 0;
+        setLivePrice(price);
+      }
     }).catch(() => {}).finally(() => setLoading(false));
   }, [symbol]);
 

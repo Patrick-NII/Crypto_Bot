@@ -1,5 +1,6 @@
 // ============================================================
 // Okamoey Trading Platform - API Client
+// Gateway-first with CoinGecko direct fallback
 // ============================================================
 
 import type {
@@ -30,6 +31,7 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const CG_BASE = "https://api.coingecko.com/api/v3";
 
 // ---- Helpers ----
 
@@ -45,6 +47,142 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function fetchCG<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+  const qs = new URLSearchParams(params).toString();
+  const url = `${CG_BASE}${path}${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+// Symbol → CoinGecko ID mapping
+const SYM_TO_CG: Record<string, string> = {
+  BTC: "bitcoin", ETH: "ethereum", SOL: "solana", BNB: "binancecoin", XRP: "ripple",
+  ADA: "cardano", DOGE: "dogecoin", AVAX: "avalanche-2", DOT: "polkadot", MATIC: "matic-network",
+  LINK: "chainlink", UNI: "uniswap", ATOM: "cosmos", LTC: "litecoin", NEAR: "near",
+  APT: "aptos", ARB: "arbitrum", OP: "optimism", FIL: "filecoin", AAVE: "aave",
+  SHIB: "shiba-inu", TRX: "tron", TON: "the-open-network", SUI: "sui", SEI: "sei-network",
+  PEPE: "pepe", WLD: "worldcoin-wld", INJ: "injective-protocol", TIA: "celestia",
+  JUP: "jupiter-exchange-solana", ONDO: "ondo-finance", RENDER: "render-token",
+  FET: "fetch-ai", STX: "blockstack", IMX: "immutable-x", MKR: "maker", GRT: "the-graph",
+  ALGO: "algorand", FTM: "fantom", SAND: "the-sandbox", MANA: "decentraland",
+  AXS: "axie-infinity", THETA: "theta-token", EGLD: "elrond-erd-2", FLOW: "flow",
+  XLM: "stellar", VET: "vechain", HBAR: "hedera-hashgraph", EOS: "eos", CRO: "crypto-com-chain",
+};
+
+// ---- CoinGecko Direct Fallbacks ----
+
+async function cgGetAllCryptos(limit: number): Promise<AllCryptosResponse> {
+  const data = await fetchCG<Array<Record<string, unknown>>>("/coins/markets", {
+    vs_currency: "usd",
+    order: "market_cap_desc",
+    per_page: String(limit),
+    page: "1",
+    sparkline: "true",
+    price_change_percentage: "24h",
+  });
+
+  return {
+    data: data.map((coin) => {
+      const sparkline = coin.sparkline_in_7d as { price?: number[] } | null;
+      return {
+        symbol: String(coin.symbol ?? "").toUpperCase(),
+        name: String(coin.name ?? ""),
+        price: Number(coin.current_price ?? 0),
+        change_24h: Number(coin.price_change_24h ?? 0),
+        change_pct_24h: Number(coin.price_change_percentage_24h ?? 0),
+        volume_24h: Number(coin.total_volume ?? 0),
+        market_cap: Number(coin.market_cap ?? 0),
+        sparkline: sparkline?.price ?? [],
+        rank: Number(coin.market_cap_rank ?? 0),
+        // Extra fields for discover page
+        id: String(coin.id ?? ""),
+        image: String(coin.image ?? ""),
+        current_price: Number(coin.current_price ?? 0),
+        market_cap_rank: Number(coin.market_cap_rank ?? 0),
+        price_change_percentage_24h: Number(coin.price_change_percentage_24h ?? 0),
+        total_volume: Number(coin.total_volume ?? 0),
+        sparkline_in_7d: sparkline?.price ?? null,
+        high_24h: Number(coin.high_24h ?? 0),
+        low_24h: Number(coin.low_24h ?? 0),
+        circulating_supply: Number(coin.circulating_supply ?? 0),
+        total_supply: Number(coin.total_supply ?? 0),
+        ath: Number(coin.ath ?? 0),
+        ath_change_percentage: Number(coin.ath_change_percentage ?? 0),
+      };
+    }),
+    total: data.length,
+    page: 1,
+    limit,
+  };
+}
+
+// CoinGecko OHLC endpoint (returns [timestamp, open, high, low, close])
+async function cgGetOHLCV(symbol: string, interval: string, limit: number): Promise<OHLCVPoint[]> {
+  const cgId = SYM_TO_CG[symbol.toUpperCase()];
+  if (!cgId) return [];
+
+  // Map interval to CoinGecko days parameter
+  let days = "30";
+  if (interval === "1m" || limit <= 60) days = "1";
+  else if (interval === "5m" || limit <= 288) days = "1";
+  else if (interval === "1h" || limit <= 168) days = "7";
+  else if (interval === "4h" || limit <= 180) days = "30";
+  else if (interval === "1d" && limit <= 90) days = "90";
+  else if (interval === "1d" && limit <= 365) days = "365";
+  else days = "max";
+
+  const data = await fetchCG<number[][]>(`/coins/${cgId}/ohlc`, {
+    vs_currency: "usd",
+    days,
+  });
+
+  return data.map((d) => ({
+    time: Math.floor(d[0] / 1000), // ms → seconds for lightweight-charts
+    open: d[1],
+    high: d[2],
+    low: d[3],
+    close: d[4],
+    volume: 0, // OHLC endpoint doesn't include volume
+  }));
+}
+
+async function cgGetFearGreed(): Promise<{ value: number; label: string }> {
+  try {
+    const data = await fetch("https://api.alternative.me/fng/?limit=1&format=json").then((r) => r.json());
+    const entry = data?.data?.[0];
+    return {
+      value: Number(entry?.value ?? 50),
+      label: String(entry?.value_classification ?? "Neutral"),
+    };
+  } catch {
+    return { value: 50, label: "Neutral" };
+  }
+}
+
+async function cgSearchAssets(query: string): Promise<SearchResponse> {
+  const data = await fetchCG<{ coins: Array<Record<string, unknown>> }>("/search", { query });
+  return {
+    results: (data.coins ?? []).slice(0, 20).map((c) => ({
+      symbol: String(c.symbol ?? "").toUpperCase(),
+      name: String(c.name ?? ""),
+      asset_type: "crypto" as const,
+      market_cap: Number(c.market_cap_rank ?? 0),
+    })),
+    total: data.coins?.length ?? 0,
+  };
+}
+
+// ---- API with fallback pattern ----
+
+async function withFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+  try {
+    return await primary();
+  } catch {
+    return fallback();
+  }
+}
+
 // ---- Prices / Market Data ----
 
 export const pricesApi = {
@@ -53,15 +191,29 @@ export const pricesApi = {
   getCryptoBySymbol: (symbol: string) =>
     fetchJson<CryptoPrice>(`/prices/crypto/${symbol}`),
   getStocks: () => fetchJson<CryptoPrice[]>("/prices/stocks"),
+
   getFearGreed: () =>
-    fetchJson<{ value: number; label: string }>("/markets/fear-greed"),
+    withFallback(
+      () => fetchJson<{ value: number; label: string }>("/markets/fear-greed"),
+      () => cgGetFearGreed(),
+    ),
+
   searchAssets: (query: string, limit = 20) =>
-    fetchJson<SearchResponse>(`/prices/search?q=${encodeURIComponent(query)}&limit=${limit}`),
-  getAllCryptos: (limit = 20, page = 1) =>
-    fetchJson<AllCryptosResponse>(`/markets/all?limit=${limit}&page=${page}`),
+    withFallback(
+      () => fetchJson<SearchResponse>(`/prices/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+      () => cgSearchAssets(query),
+    ),
+
+  getAllCryptos: (limit = 20, _page = 1) =>
+    withFallback(
+      () => fetchJson<AllCryptosResponse>(`/markets/all?limit=${limit}&page=${_page}`),
+      () => cgGetAllCryptos(limit),
+    ),
+
   getOHLCV: (symbol: string, interval = "1d", limit = 90) =>
-    fetchJson<OHLCVPoint[]>(
-      `/prices/history/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}`,
+    withFallback(
+      () => fetchJson<OHLCVPoint[]>(`/prices/history/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}`),
+      () => cgGetOHLCV(symbol, interval, limit),
     ),
 };
 
@@ -144,8 +296,6 @@ export const alertsApi = {
     fetchJson<{ success: boolean }>(`/alerts/${id}`, { method: "DELETE" }),
 };
 
-// ---- Analytics ----
-
 // ---- AI Agents ----
 
 const AI_BASE = process.env.NEXT_PUBLIC_AI_URL ?? "http://localhost:8008/api/v1";
@@ -174,7 +324,6 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify({ agent_type: agentType, user_id: userId }),
     }),
-  // Auto-trading
   getAutoTradingStatus: () =>
     fetchAI<{ enabled: boolean; last_run: string | null; trades_today: number; total_pnl: number }>("/ai/auto-trading/status"),
   toggleAutoTrading: (enabled: boolean) =>

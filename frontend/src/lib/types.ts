@@ -248,6 +248,20 @@ export interface CryptoMarketData {
   market_cap: number;
   sparkline?: number[];
   rank?: number;
+  // Extra fields from CoinGecko fallback
+  id?: string;
+  image?: string;
+  current_price?: number;
+  market_cap_rank?: number;
+  price_change_percentage_24h?: number;
+  total_volume?: number;
+  sparkline_in_7d?: number[] | null;
+  high_24h?: number;
+  low_24h?: number;
+  circulating_supply?: number;
+  total_supply?: number;
+  ath?: number;
+  ath_change_percentage?: number;
 }
 
 export interface AllCryptosResponse {
