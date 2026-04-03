@@ -11,6 +11,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const enterDemo = () => {
+    localStorage.setItem("access_token", "demo-token");
+    localStorage.setItem("refresh_token", "demo-refresh");
+    localStorage.setItem("demo_user", JSON.stringify({
+      id: "demo-001",
+      email: "demo@okamoey.com",
+      username: "DemoTrader",
+      plan: "pro",
+    }));
+    window.location.href = "/dashboard";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -93,6 +105,19 @@ export default function LoginPage() {
           <div className="mt-4 flex items-center justify-between text-xs">
             <Link href="/forgot-password" className="text-[#06d6a0] hover:underline">Forgot password?</Link>
             <Link href="/register" className="text-[#8888a0] hover:text-white">Create account</Link>
+          </div>
+
+          <div className="mt-6 border-t border-[rgba(255,255,255,0.06)] pt-6">
+            <button
+              type="button"
+              onClick={enterDemo}
+              className="w-full rounded-xl border border-[#c6f135]/30 bg-[#c6f135]/10 py-3 text-sm font-semibold text-[#c6f135] transition-all hover:bg-[#c6f135]/20"
+            >
+              Enter Demo Mode
+            </button>
+            <p className="mt-2 text-center text-[10px] text-[#55556a]">
+              demo@okamoey.com &middot; No backend required
+            </p>
           </div>
         </form>
       </div>

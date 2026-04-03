@@ -48,6 +48,31 @@ SYMBOL_TO_COINGECKO: Dict[str, str] = {
     "TON": "the-open-network",
     "SUI": "sui",
     "SEI": "sei-network",
+    "PEPE": "pepe",
+    "WLD": "worldcoin-wld",
+    "INJ": "injective-protocol",
+    "TIA": "celestia",
+    "JUP": "jupiter-exchange-solana",
+    "ONDO": "ondo-finance",
+    "RENDER": "render-token",
+    "FET": "fetch-ai",
+    "STX": "blockstack",
+    "IMX": "immutable-x",
+    "MKR": "maker",
+    "GRT": "the-graph",
+    "ALGO": "algorand",
+    "FTM": "fantom",
+    "SAND": "the-sandbox",
+    "MANA": "decentraland",
+    "AXS": "axie-infinity",
+    "THETA": "theta-token",
+    "EGLD": "elrond-erd-2",
+    "FLOW": "flow",
+    "XLM": "stellar",
+    "VET": "vechain",
+    "HBAR": "hedera-hashgraph",
+    "EOS": "eos",
+    "CRO": "crypto-com-chain",
 }
 
 # Valid OHLCV intervals supported by most exchanges
@@ -528,7 +553,7 @@ async def fetch_all_cryptos(limit: int = 250, page: int = 1) -> List[Dict]:
 
     url = f"{settings.COINGECKO_BASE_URL}/coins/markets"
     params = {
-        "vs_currency": "eur",
+        "vs_currency": "usd",
         "order": "market_cap_desc",
         "per_page": str(limit),
         "page": str(page),

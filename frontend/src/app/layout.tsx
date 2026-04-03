@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { AppShell } from "@/components/layout/app-shell";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,7 +31,7 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} dark`}
     >
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -14,7 +14,7 @@ const ROUTE_TO_AGENT: Record<string, { type: string; name: string }> = {
 
 export function ChatWrapper() {
   const pathname = usePathname();
-  const agent = ROUTE_TO_AGENT[pathname] ?? ROUTE_TO_AGENT["/"];
+  const agent = ROUTE_TO_AGENT[pathname] ?? { type: "dashboard", name: "AI Assistant" };
 
   return <ChatPanel agentType={agent.type} agentName={agent.name} />;
 }

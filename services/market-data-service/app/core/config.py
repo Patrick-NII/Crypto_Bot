@@ -26,19 +26,25 @@ class Settings(BaseSettings):
     BINANCE_API_SECRET: Optional[str] = None
 
     # Price updates
-    PRICE_UPDATE_INTERVAL_SECONDS: int = 30
-    PRICE_CACHE_TTL_SECONDS: int = 30
+    PRICE_UPDATE_INTERVAL_SECONDS: int = 10
+    PRICE_CACHE_TTL_SECONDS: int = 10
 
     # Rate limiting
     MAX_RETRIES: int = 3
     RETRY_BASE_DELAY: float = 1.0
 
-    # Default symbols to track
+    # Default symbols to track (top 50 by market cap)
     DEFAULT_SYMBOLS: List[str] = [
         "BTC", "ETH", "SOL", "BNB", "XRP",
         "ADA", "DOGE", "AVAX", "DOT", "MATIC",
         "LINK", "UNI", "ATOM", "LTC", "NEAR",
         "APT", "ARB", "OP", "FIL", "AAVE",
+        "SHIB", "TRX", "TON", "SUI", "SEI",
+        "PEPE", "WLD", "INJ", "TIA", "JUP",
+        "ONDO", "RENDER", "FET", "STX", "IMX",
+        "MKR", "GRT", "ALGO", "FTM", "SAND",
+        "MANA", "AXS", "THETA", "EGLD", "FLOW",
+        "XLM", "VET", "HBAR", "EOS", "CRO",
     ]
 
     # Redis channels
