@@ -2,67 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "market-data-service",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8003,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/market-data-service"
-    },
-    {
-      "name": "gateway",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8000,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/gateway"
-    },
-    {
-      "name": "auth-service",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8001,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/auth-service"
-    },
-    {
-      "name": "portfolio-service",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8002,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/portfolio-service"
-    },
-    {
-      "name": "trading-engine",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8004,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/trading-engine"
-    },
-    {
-      "name": "risk-service",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8005,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/risk-service"
-    },
-    {
-      "name": "ml-service",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8006,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/ml-service"
-    },
-    {
-      "name": "notification-service",
-      "runtimeExecutable": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/.venv/bin/uvicorn",
-      "runtimeArgs": ["app.main:app", "--reload", "--host", "0.0.0.0"],
-      "port": 8007,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/services/notification-service"
-    },
-    {
       "name": "frontend",
-      "runtimeExecutable": "/opt/homebrew/bin/npx",
-      "runtimeArgs": ["next", "dev"],
+      "runtimeExecutable": "/opt/homebrew/bin/node",
+      "runtimeArgs": ["server.mjs", "3000"],
       "port": 3000,
-      "cwd": "/Users/nii/Documents/Crypto_Bot/.claude/worktrees/practical-swirles/frontend"
+      "cwd": "frontend"
     }
   ]
 }
