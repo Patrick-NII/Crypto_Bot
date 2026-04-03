@@ -1,111 +1,130 @@
-"""Orders API - Phase 1 stub.
+"""Orders REST API -- Phase 2 full implementation.
 
-Provides endpoints for order creation, listing, retrieval, and cancellation.
+Provides endpoints for order creation, listing, retrieval, cancellation,
+balance queries, and pending-order checks.
 """
 
-import logging
-import uuid
-from datetime import datetime, timezone
-from enum import Enum
+from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import List, Optional
+import logging
+from typing import Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+
+from app.models.order import (
+    Order,
+    OrderCreate,
+    OrderListResponse,
+    OrderResponse,
+    OrderStatus,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 
-# --- Schemas ---
+def _get_order_manager():
+    """Return the global OrderManager instance (set during app lifespan)."""
+    from app.main import order_manager
+
+    if order_manager is None:
+        raise HTTPException(status_code=503, detail="Order manager not initialised")
+    return order_manager
 
 
-class OrderSide(str, Enum):
-    buy = "buy"
-    sell = "sell"
-
-
-class OrderType(str, Enum):
-    market = "market"
-    limit = "limit"
-    stop_loss = "stop_loss"
-
-
-class OrderCreate(BaseModel):
-    symbol: str = Field(..., description="Trading pair symbol, e.g. BTC/USDT")
-    side: OrderSide
-    order_type: OrderType
-    quantity: float = Field(..., gt=0)
-    price: Optional[float] = Field(None, description="Limit price (required for limit orders)")
-    stop_price: Optional[float] = Field(None, description="Stop price (required for stop_loss orders)")
-
-
-class OrderResponse(BaseModel):
-    id: str
-    symbol: str
-    side: OrderSide
-    order_type: OrderType
-    quantity: float
-    price: Optional[float]
-    stop_price: Optional[float]
-    status: str
-    created_at: str
-
-
-# --- Endpoints ---
+# ------------------------------------------------------------------
+# Endpoints
+# ------------------------------------------------------------------
 
 
 @router.post("/", response_model=OrderResponse, status_code=201)
 async def create_order(order: OrderCreate) -> OrderResponse:
     """Create a new order.
 
-    Phase 1 stub: accepts the order and returns it with status 'pending'.
+    The order is validated against the risk service, then executed via
+    the paper trader (default) or the live exchange.
     """
-    # TODO: implement order execution via CCXT / exchange integration
-    # TODO: validate order against risk service
-    # TODO: persist order to database
-    # TODO: publish order event to Redis for downstream consumers
-    logger.info("TODO: implement order execution | received order: %s %s %s %s", order.side, order.quantity, order.symbol, order.order_type)
+    mgr = _get_order_manager()
+    try:
+        result: Order = await mgr.create_order(order, user_id="default")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
-    return OrderResponse(
-        id=str(uuid.uuid4()),
-        symbol=order.symbol,
-        side=order.side,
-        order_type=order.order_type,
-        quantity=order.quantity,
-        price=order.price,
-        stop_price=order.stop_price,
-        status="pending",
-        created_at=datetime.now(timezone.utc).isoformat(),
+    if result.status == OrderStatus.FAILED:
+        raise HTTPException(
+            status_code=422,
+            detail=result.error_message or "Order execution failed",
+        )
+
+    return OrderResponse.from_order(result)
+
+
+@router.get("/", response_model=OrderListResponse)
+async def list_orders(
+    status: Optional[str] = Query(None, description="Filter by order status"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+) -> OrderListResponse:
+    """List orders with optional filtering and pagination."""
+    mgr = _get_order_manager()
+    orders = await mgr.list_orders(
+        status=status, symbol=symbol, limit=limit, offset=offset
+    )
+    total = await mgr.count_orders(status=status, symbol=symbol)
+    return OrderListResponse(
+        orders=[OrderResponse.from_order(o) for o in orders],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
-@router.get("/", response_model=List[OrderResponse])
-async def list_orders() -> List[OrderResponse]:
-    """List all orders.
+@router.get("/balance")
+async def get_balance() -> Dict[str, str]:
+    """Return current trading balances (paper or live).
 
-    Phase 1 stub: returns an empty list.
+    Decimal values are serialised as strings for JSON safety.
     """
-    # TODO: query orders from database with filtering and pagination
-    return []
+    mgr = _get_order_manager()
+    balances = await mgr.get_balance()
+    return {k: str(v) for k, v in balances.items()}
+
+
+@router.post("/check-pending")
+async def check_pending_orders() -> Dict[str, object]:
+    """Trigger a check of all pending paper orders against current prices.
+
+    Returns the list of orders that were filled as a result.
+    """
+    mgr = _get_order_manager()
+    changed = await mgr.check_pending_orders()
+    return {
+        "checked": True,
+        "filled_count": len(changed),
+        "filled_orders": [OrderResponse.from_order(o).dict() for o in changed],
+    }
 
 
 @router.get("/{order_id}", response_model=OrderResponse)
 async def get_order(order_id: str) -> OrderResponse:
-    """Get a specific order by ID.
+    """Retrieve a single order by ID."""
+    mgr = _get_order_manager()
+    order = await mgr.get_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return OrderResponse.from_order(order)
 
-    Phase 1 stub: not yet implemented.
-    """
-    # TODO: fetch order from database by ID
-    raise HTTPException(status_code=404, detail="Phase 2")
 
-
-@router.delete("/{order_id}")
-async def cancel_order(order_id: str) -> dict:
-    """Cancel an existing order.
-
-    Phase 1 stub: not yet implemented.
-    """
-    # TODO: cancel order on exchange via CCXT
-    # TODO: update order status in database
-    raise HTTPException(status_code=404, detail="Phase 2")
+@router.delete("/{order_id}", response_model=OrderResponse)
+async def cancel_order(order_id: str) -> OrderResponse:
+    """Cancel an open or pending order."""
+    mgr = _get_order_manager()
+    try:
+        order = await mgr.cancel_order(order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return OrderResponse.from_order(order)
