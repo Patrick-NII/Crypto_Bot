@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTheme } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -14,6 +15,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Sun,
+  Moon,
+  Bot,
+  Hand,
 } from "lucide-react";
 
 const navItems = [
@@ -29,118 +34,115 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { theme, toggleTheme, tradingMode, setTradingMode } = useTheme();
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden md:flex flex-col fixed left-0 top-0 h-full z-40 bg-[#0d0d12] transition-all duration-300 border-r border-[rgba(255,255,255,0.06)]",
-          collapsed ? "w-16" : "w-60"
+          "hidden md:flex flex-col fixed left-0 top-0 h-full z-40 liquid-glass transition-all duration-300",
+          "rounded-none rounded-r-[24px]",
+          collapsed ? "w-[72px]" : "w-[280px]",
         )}
       >
-        {/* Logo area */}
-        <div className="flex h-16 items-center justify-between px-4 border-b border-[rgba(255,255,255,0.06)]">
+        {/* Logo */}
+        <div className="flex h-16 items-center justify-between px-5 border-b border-[var(--glass-border)]">
           {!collapsed && (
-            <span className="glow-text text-lg font-bold tracking-wider">
-              OKAMOEY
-            </span>
+            <span className="glow-text text-xl font-bold tracking-wider">OKAMOEY</span>
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#55556a] hover:text-white hover:bg-[rgba(6,214,160,0.05)] transition-all duration-200 ease-out"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="flex h-8 w-8 items-center justify-center rounded-xl text-[var(--text-muted)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all"
           >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
         </div>
 
-        {/* Nav items */}
-        <nav className="flex-1 flex flex-col gap-1 p-3 mt-2">
+        {/* Nav */}
+        <nav className="flex-1 flex flex-col gap-1.5 p-3 mt-2">
           {navItems.map((item) => {
-            const isActive =
-              pathname.startsWith(item.href);
-
+            const isActive = pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ease-out",
+                  "group relative flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-[rgba(6,214,160,0.1)] text-[#06d6a0]"
-                    : "text-[#8888a0] hover:text-white hover:bg-[rgba(6,214,160,0.05)]"
+                    ? "accent-bg accent-text accent-glow"
+                    : "text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)]",
                 )}
               >
-                {/* Active indicator */}
                 {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full bg-[#06d6a0]" />
+                  <div
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full"
+                    style={{ background: "var(--page-accent)" }}
+                  />
                 )}
-
-                <item.icon
-                  className={cn(
-                    "h-5 w-5 shrink-0 transition-colors duration-200",
-                    isActive ? "text-[#06d6a0]" : "text-[#55556a] group-hover:text-white"
-                  )}
-                />
-                {!collapsed && (
-                  <span className="truncate">{item.label}</span>
-                )}
+                <item.icon className={cn("h-5 w-5 shrink-0 transition-colors", isActive ? "accent-text" : "text-[var(--text-muted)] group-hover:text-[var(--foreground)]")} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             );
           })}
         </nav>
 
-        {/* Bottom section */}
-        <div className="p-3 border-t border-[rgba(255,255,255,0.06)]">
-          <div
+        {/* Bottom controls */}
+        <div className="p-3 space-y-2 border-t border-[var(--glass-border)]">
+          {/* Manual/Auto toggle */}
+          <button
+            onClick={() => setTradingMode(tradingMode === "manual" ? "auto" : "manual")}
             className={cn(
-              "flex items-center gap-3 rounded-xl px-3 py-2",
-              collapsed && "justify-center"
+              "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all",
+              tradingMode === "auto"
+                ? "bg-[#22c55e]/15 text-[#22c55e]"
+                : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)]",
             )}
           >
-            <div className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-[#06d6a0] to-[#c6f135] flex items-center justify-center text-xs font-bold text-[#0d0d12]">
-              OK
-            </div>
+            {tradingMode === "auto" ? <Bot className="h-5 w-5 shrink-0" /> : <Hand className="h-5 w-5 shrink-0" />}
             {!collapsed && (
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-[#e8e8ed] truncate">
-                  Okamoey Bot
-                </p>
-                <p className="text-[10px] text-[#55556a] truncate">Active</p>
+              <div className="flex flex-1 items-center justify-between">
+                <span>{tradingMode === "auto" ? "Auto" : "Manual"}</span>
+                <div className={cn(
+                  "w-9 h-5 rounded-full relative transition-colors",
+                  tradingMode === "auto" ? "bg-[#22c55e]" : "bg-[var(--text-muted)]/30",
+                )}>
+                  <div className={cn(
+                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                    tradingMode === "auto" ? "translate-x-4" : "translate-x-0.5",
+                  )} />
+                </div>
               </div>
             )}
-          </div>
+          </button>
+
+          {/* Light/Dark toggle */}
+          <button
+            onClick={toggleTheme}
+            className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all"
+          >
+            {theme === "dark" ? <Sun className="h-5 w-5 shrink-0" /> : <Moon className="h-5 w-5 shrink-0" />}
+            {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
+          </button>
         </div>
       </aside>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0d0d12] border-t border-[rgba(255,255,255,0.06)] px-2 pb-[env(safe-area-inset-bottom)]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 liquid-glass-strong rounded-t-[20px] px-2 pb-[env(safe-area-inset-bottom)]">
         <div className="flex items-center justify-around">
-          {navItems.map((item) => {
-            const isActive =
-              pathname.startsWith(item.href);
-
+          {navItems.slice(0, 5).map((item) => {
+            const isActive = pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 transition-colors duration-200 ease-out",
-                  isActive ? "text-[#06d6a0]" : "text-[#55556a]"
+                  "flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 transition-colors",
+                  isActive ? "accent-text" : "text-[var(--text-muted)]",
                 )}
               >
                 <item.icon className="h-5 w-5" />
-                <span className="text-[10px] font-medium truncate">
-                  {item.label}
-                </span>
-                {isActive && (
-                  <div className="absolute top-0 h-[2px] w-8 rounded-b-full bg-[#06d6a0]" />
-                )}
+                <span className="text-[10px] font-medium truncate">{item.label}</span>
               </Link>
             );
           })}

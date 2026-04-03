@@ -49,28 +49,37 @@ const FEATURES = [
 
 const PLANS = [
   {
-    name: "Free",
-    price: "0",
+    name: "Starter",
+    priceMonthly: 0,
+    priceAnnual: 0,
+    originalPrice: null,
     period: "forever",
     features: ["1 Portfolio", "Paper trading only", "Basic analytics", "5 AI queries/day", "Email alerts"],
-    cta: "Get Started",
+    cta: "Get Started Free",
     highlight: false,
+    badge: null,
   },
   {
     name: "Pro",
-    price: "49",
+    priceMonthly: 79,
+    priceAnnual: 59,
+    originalPrice: 99,
     period: "/month",
-    features: ["Unlimited portfolios", "Live + paper trading", "Full analytics suite", "Unlimited AI queries", "All alert channels", "Strategy backtesting", "Priority support"],
-    cta: "Start Free Trial",
+    features: ["Unlimited portfolios", "Live + paper trading", "AI Auto-Trading agents", "Full analytics suite", "Unlimited AI queries", "All alert channels", "Strategy backtesting", "Priority support"],
+    cta: "Start 14-Day Free Trial",
     highlight: true,
+    badge: "Most Popular",
   },
   {
-    name: "Enterprise",
-    price: "199",
+    name: "Elite",
+    priceMonthly: 249,
+    priceAnnual: 189,
+    originalPrice: 299,
     period: "/month",
-    features: ["Everything in Pro", "Multi-exchange support", "Custom AI agents", "API access", "Dedicated account manager", "White-label option", "SLA guarantee"],
-    cta: "Contact Sales",
+    features: ["Everything in Pro", "Multi-exchange support", "Custom AI agents", "API access", "Dedicated account manager", "White-label option", "SLA guarantee", "Advanced risk tools"],
+    cta: "Start Free Trial",
     highlight: false,
+    badge: "Best Value",
   },
 ];
 
@@ -83,9 +92,10 @@ const FAQ = [
 
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [annual, setAnnual] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#0d0d12]">
+    <div className="min-h-screen bg-[var(--bg)]">
       {/* Nav */}
       <nav className="fixed top-0 z-50 w-full border-b border-[rgba(255,255,255,0.06)] bg-[#0d0d12]/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
@@ -149,36 +159,89 @@ export default function LandingPage() {
 
       {/* Pricing */}
       <section id="pricing" className="relative px-6 py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(198,241,53,0.05)_0%,transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(6,214,160,0.06)_0%,transparent_60%)]" />
         <div className="relative mx-auto max-w-6xl">
-          <div className="mb-16 text-center">
-            <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">Simple, transparent pricing</h2>
-            <p className="text-[#8888a0]">Start free, upgrade when you&apos;re ready</p>
+          <div className="mb-10 text-center">
+            <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">Invest in your trading edge</h2>
+            <p className="text-[#8888a0]">Start free. Upgrade when you&apos;re ready to go live.</p>
           </div>
+
+          {/* Monthly / Annual toggle */}
+          <div className="mb-12 flex items-center justify-center gap-3">
+            <span className={`text-sm font-medium ${!annual ? "text-white" : "text-[#55556a]"}`}>Monthly</span>
+            <button
+              onClick={() => setAnnual(!annual)}
+              className="relative h-7 w-14 rounded-full bg-[#1a1a24] transition-colors"
+              style={annual ? { background: "#06d6a0" } : {}}
+            >
+              <div className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${annual ? "translate-x-7" : "translate-x-0.5"}`} />
+            </button>
+            <span className={`text-sm font-medium ${annual ? "text-white" : "text-[#55556a]"}`}>
+              Annual <span className="ml-1 rounded-full bg-[#06d6a0]/15 px-2 py-0.5 text-xs font-bold text-[#06d6a0]">-25%</span>
+            </span>
+          </div>
+
           <div className="grid gap-6 md:grid-cols-3">
-            {PLANS.map((plan) => (
-              <div key={plan.name} className={`relative rounded-2xl border p-8 ${plan.highlight ? "border-[#06d6a0]/40 bg-[#14141b] shadow-lg shadow-[#06d6a0]/10" : "border-[rgba(255,255,255,0.06)] bg-[#14141b]"}`}>
-                {plan.highlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[#06d6a0] to-[#c6f135] px-4 py-1 text-xs font-bold text-[#0d0d12]">Most Popular</div>
-                )}
-                <h3 className="mb-2 text-lg font-semibold text-white">{plan.name}</h3>
-                <div className="mb-6 flex items-baseline gap-1">
-                  <span className="text-4xl font-bold text-white">${plan.price}</span>
-                  <span className="text-[#55556a]">{plan.period}</span>
+            {PLANS.map((plan) => {
+              const price = annual ? plan.priceAnnual : plan.priceMonthly;
+              const savings = plan.originalPrice ? (plan.originalPrice - plan.priceAnnual) * 12 : 0;
+              return (
+                <div key={plan.name} className={`relative liquid-glass-card p-8 ${plan.highlight ? "ring-2 ring-[#06d6a0]/40 shadow-lg shadow-[#06d6a0]/10" : ""}`}>
+                  {plan.badge && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[#06d6a0] to-[#c6f135] px-4 py-1 text-xs font-bold text-[#0a0a10]">
+                      {plan.badge}
+                    </div>
+                  )}
+                  <h3 className="mb-2 text-lg font-semibold text-white">{plan.name}</h3>
+                  <div className="mb-1 flex items-baseline gap-1">
+                    {plan.originalPrice && (
+                      <span className="mr-1 text-lg text-[#55556a] line-through">${plan.originalPrice}</span>
+                    )}
+                    <span className="text-4xl font-bold text-white">${price}</span>
+                    <span className="text-[#55556a]">{price > 0 ? "/mo" : ""}</span>
+                  </div>
+                  {annual && savings > 0 && (
+                    <p className="mb-4 text-xs font-semibold text-[#06d6a0]">Save ${savings}/year</p>
+                  )}
+                  {!annual && price === 0 && <div className="mb-4" />}
+                  {!annual && price > 0 && <div className="mb-4" />}
+                  <ul className="mb-8 space-y-3">
+                    {plan.features.map((feat) => (
+                      <li key={feat} className="flex items-center gap-2 text-sm text-[#8888a0]">
+                        <Check className="h-4 w-4 flex-shrink-0 text-[#06d6a0]" />
+                        {feat}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href="/register"
+                    className={`block w-full rounded-2xl py-3.5 text-center text-sm font-semibold transition-all ${
+                      plan.highlight
+                        ? "bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] text-[#0a0a10] hover:scale-[1.02] shadow-lg shadow-[#06d6a0]/20"
+                        : "liquid-glass-pill text-white hover:bg-[rgba(255,255,255,0.06)]"
+                    }`}
+                  >
+                    {plan.cta}
+                  </Link>
                 </div>
-                <ul className="mb-8 space-y-3">
-                  {plan.features.map((feat) => (
-                    <li key={feat} className="flex items-center gap-2 text-sm text-[#8888a0]">
-                      <Check className="h-4 w-4 flex-shrink-0 text-[#06d6a0]" />
-                      {feat}
-                    </li>
-                  ))}
-                </ul>
-                <Link href={plan.name === "Enterprise" ? "#" : "/register"} className={`block w-full rounded-xl py-3 text-center text-sm font-semibold ${plan.highlight ? "bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] text-[#0d0d12]" : "border border-[rgba(255,255,255,0.08)] text-white hover:border-[rgba(255,255,255,0.15)]"}`}>
-                  {plan.cta}
-                </Link>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+
+          {/* Trust badges */}
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-xs text-[#55556a]">
+            <span className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-[#06d6a0]" /> 256-bit SSL encryption
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-[#06d6a0]" /> Cancel anytime
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-[#06d6a0]" /> 14-day free trial on paid plans
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 text-[#06d6a0]" /> 10,000+ traders
+            </span>
           </div>
         </div>
       </section>

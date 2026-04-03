@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import {
   BarChart3,
   TrendingUp,
@@ -49,6 +50,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 export default function AnalyticsPage() {
+  usePageAccent(PAGE_ACCENTS.analytics.accent, PAGE_ACCENTS.analytics.glow);
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<AnalyticsMetrics | null>(null);
   const [equityCurve, setEquityCurve] = useState<EquityPoint[]>([]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import {
   DollarSign,
   ShoppingCart,
@@ -46,6 +47,7 @@ function statusVariant(status: string) {
 }
 
 export default function TradingPage() {
+  usePageAccent(PAGE_ACCENTS.trading.accent, PAGE_ACCENTS.trading.glow);
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<PaperBalance[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);

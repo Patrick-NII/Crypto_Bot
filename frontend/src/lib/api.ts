@@ -174,6 +174,16 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify({ agent_type: agentType, user_id: userId }),
     }),
+  // Auto-trading
+  getAutoTradingStatus: () =>
+    fetchAI<{ enabled: boolean; last_run: string | null; trades_today: number; total_pnl: number }>("/ai/auto-trading/status"),
+  toggleAutoTrading: (enabled: boolean) =>
+    fetchAI<{ enabled: boolean }>("/ai/auto-trading/toggle", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
+  getAutoTradingHistory: () =>
+    fetchAI<Array<{ timestamp: string; analysis: string; executed: number; trades: Array<{ symbol: string; action: string; amount_usd: number }> }>>("/ai/auto-trading/history"),
 };
 
 // ---- Analytics ----

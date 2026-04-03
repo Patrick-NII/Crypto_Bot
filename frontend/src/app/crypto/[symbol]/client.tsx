@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Star, TrendingUp, TrendingDown, BarChart3, DollarSign, Activity } from "lucide-react";
@@ -51,6 +52,7 @@ function fmt(n: number | undefined | null, dec = 2): string {
 }
 
 export default function CryptoDetailClient() {
+  usePageAccent(PAGE_ACCENTS.crypto.accent, PAGE_ACCENTS.crypto.glow);
   const params = useParams();
   const symbol = (params.symbol as string || "BTC").toUpperCase();
 

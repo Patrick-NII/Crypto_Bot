@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import {
   Wallet,
   TrendingUp,
@@ -34,6 +35,7 @@ function SkeletonBlock({ className }: { className?: string }) {
 }
 
 export default function PortfolioPage() {
+  usePageAccent(PAGE_ACCENTS.portfolio.accent, PAGE_ACCENTS.portfolio.glow);
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [activePortfolio, setActivePortfolio] = useState<Portfolio | null>(null);

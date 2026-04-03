@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import {
   BrainCircuit,
   Zap,
@@ -75,6 +76,7 @@ function SignalDisplay({ signal }: { signal: Signal }) {
 }
 
 export default function StrategiesPage() {
+  usePageAccent(PAGE_ACCENTS.strategies.accent, PAGE_ACCENTS.strategies.glow);
   const [loading, setLoading] = useState(true);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);

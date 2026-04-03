@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { GlassCard } from "./glass-card";
 import type { LucideIcon } from "lucide-react";
 
 interface StatCardProps {
@@ -11,38 +10,24 @@ interface StatCardProps {
   className?: string;
 }
 
-export function StatCard({
-  title,
-  value,
-  subtitle,
-  icon: Icon,
-  trend,
-  className,
-}: StatCardProps) {
+export function StatCard({ title, value, subtitle, icon: Icon, trend, className }: StatCardProps) {
   return (
-    <GlassCard className={cn("flex flex-col gap-2 bg-[#14141b] border-[rgba(255,255,255,0.06)]", className)}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider text-[#8888a0]">
-          {title}
-        </span>
-        {Icon && (
-          <Icon className="h-4 w-4 text-[#06d6a0]" />
-        )}
+    <div className={cn("liquid-glass-card p-5", className)}>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{title}</span>
+        {Icon && <Icon className="h-4 w-4 accent-text opacity-60" />}
       </div>
-      <p className="text-2xl font-bold tracking-tight text-white font-mono">{value}</p>
+      <p className="text-2xl font-bold font-mono text-[var(--foreground)]">{value}</p>
       {subtitle && (
-        <p
-          className={cn(
-            "text-sm font-medium",
-            trend === "up" && "text-[#06d6a0]",
-            trend === "down" && "text-danger",
-            trend === "neutral" && "text-[#8888a0]",
-            !trend && "text-[#8888a0]",
-          )}
-        >
+        <p className={cn(
+          "mt-1 text-sm font-medium",
+          trend === "up" && "text-[#06d6a0]",
+          trend === "down" && "text-[#ef4444]",
+          !trend && "text-[var(--text-secondary)]",
+        )}>
           {subtitle}
         </p>
       )}
-    </GlassCard>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import {
   Wallet,
   TrendingUp,
@@ -90,6 +91,7 @@ function fearGreedLabel(value: number) {
 // ============================================================
 
 export default function DashboardPage() {
+  usePageAccent(PAGE_ACCENTS.dashboard.accent, PAGE_ACCENTS.dashboard.glow);
   const [loading, setLoading] = useState(true);
   const [cryptos, setCryptos] = useState<CryptoMarketData[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);

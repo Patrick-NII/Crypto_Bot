@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import {
   Bell,
   BellRing,
@@ -60,6 +61,7 @@ function statusVariant(status: string) {
 }
 
 export default function AlertsPage() {
+  usePageAccent(PAGE_ACCENTS.alerts.accent, PAGE_ACCENTS.alerts.glow);
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<Alert[]>([]);
 

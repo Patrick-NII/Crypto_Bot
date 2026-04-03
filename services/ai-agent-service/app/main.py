@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.chat import router as chat_router
 from app.api.agents import router as agents_router
+from app.api.auto_trading import router as auto_trading_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ app.add_middleware(
 
 app.include_router(chat_router)
 app.include_router(agents_router)
+app.include_router(auto_trading_router)
 
 
 @app.get("/health")

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
 import Link from "next/link";
 import { Search, Star, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import { pricesApi } from "@/lib/api";
@@ -50,6 +51,7 @@ function toggleWatchlist(symbol: string): string[] {
 }
 
 export default function CryptoDiscoverPage() {
+  usePageAccent(PAGE_ACCENTS.crypto.accent, PAGE_ACCENTS.crypto.glow);
   const [cryptos, setCryptos] = useState<CryptoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");

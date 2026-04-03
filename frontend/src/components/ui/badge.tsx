@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
-type BadgeVariant = "default" | "success" | "danger" | "warning" | "info" | "turquoise" | "lime" | "purple";
+export type BadgeVariant = "default" | "success" | "danger" | "warning" | "info" | "accent" | "purple";
 
 interface BadgeProps {
   children: ReactNode;
@@ -10,14 +10,13 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: "bg-[#1a1a24] text-[#8888a0] border-[rgba(255,255,255,0.06)]",
-  success: "bg-[#06d6a0]/15 text-[#06d6a0] border-[#06d6a0]/25",
-  danger: "bg-danger/15 text-danger border-danger/25",
-  warning: "bg-[#c6f135]/15 text-[#c6f135] border-[#c6f135]/25",
-  info: "bg-[#3b82f6]/15 text-[#3b82f6] border-[#3b82f6]/25",
-  turquoise: "bg-[#06d6a0]/15 text-[#06d6a0] border-[#06d6a0]/25",
-  lime: "bg-[#c6f135]/15 text-[#0d0d12] border-[#c6f135]/25 bg-[#c6f135]/20",
-  purple: "bg-[#a855f7]/15 text-[#a855f7] border-[#a855f7]/25",
+  default: "bg-[var(--glass-bg)] text-[var(--text-secondary)] border-[var(--glass-border)]",
+  success: "bg-[#06d6a0]/12 text-[#06d6a0] border-[#06d6a0]/20",
+  danger: "bg-[#ef4444]/12 text-[#ef4444] border-[#ef4444]/20",
+  warning: "bg-[#f59e0b]/12 text-[#f59e0b] border-[#f59e0b]/20",
+  info: "bg-[#3b82f6]/12 text-[#3b82f6] border-[#3b82f6]/20",
+  accent: "accent-bg accent-text",
+  purple: "bg-[#a855f7]/12 text-[#a855f7] border-[#a855f7]/20",
 };
 
 export function Badge({ children, variant = "default", className }: BadgeProps) {

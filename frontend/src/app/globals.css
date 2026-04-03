@@ -1,107 +1,241 @@
 @import "tailwindcss";
 
+/* ============================================================
+   OKAMOEY — iOS Liquid Glass Design System
+   ============================================================ */
+
+/* === Dark Mode (default) === */
 :root {
-  --background: #0d0d12;
-  --surface: #14141b;
-  --elevated: #1a1a24;
-  --foreground: #e8e8ed;
+  --bg: #0a0a10;
+  --surface: #12121a;
+  --elevated: #1a1a26;
+  --foreground: #f0f0f5;
   --text-secondary: #8888a0;
   --text-muted: #55556a;
-  --accent-turquoise: #06d6a0;
-  --accent-turquoise-hover: #0ff0b3;
-  --accent-lime: #c6f135;
-  --accent-lime-hover: #b8e619;
-  --accent-blue: #3b82f6;
-  --glass-bg: rgba(20, 20, 27, 0.8);
-  --glass-bg-strong: rgba(20, 20, 27, 0.9);
-  --glass-border: rgba(255, 255, 255, 0.06);
-  --glass-border-strong: rgba(255, 255, 255, 0.1);
-  --neon-glow: 0 0 20px rgba(6, 214, 160, 0.4), 0 0 40px rgba(198, 241, 53, 0.2);
+
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-bg-strong: rgba(255, 255, 255, 0.07);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.14);
+  --glass-blur: 20px;
+  --glass-saturate: saturate(180%);
+
+  --page-accent: #06d6a0;
+  --page-glow: 6, 214, 160;
+
   --success: #06d6a0;
   --danger: #ef4444;
-  --warning: #c6f135;
+  --warning: #f59e0b;
   --info: #3b82f6;
-  --sidebar-width: 240px;
-  --sidebar-collapsed: 64px;
+
+  --sidebar-width: 280px;
+  --sidebar-collapsed: 72px;
   --header-height: 64px;
+  --radius-glass: 24px;
+  --radius-pill: 9999px;
+  --radius-card: 20px;
+  --radius-btn: 16px;
 }
 
+/* === Light Mode === */
+[data-theme="light"] {
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --elevated: #f0f0f3;
+  --foreground: #1a1a2e;
+  --text-secondary: #6b6b80;
+  --text-muted: #9999aa;
+
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-border-hover: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] body {
+  color-scheme: light;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* === Tailwind Theme Inline === */
 @theme inline {
-  --color-background: var(--background);
+  --color-background: var(--bg);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
   --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
-  --color-accent-turquoise: var(--accent-turquoise);
-  --color-accent-lime: var(--accent-lime);
-  --color-accent-blue: var(--accent-blue);
   --color-success: var(--success);
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-info: var(--info);
-  --color-glass-bg: var(--glass-bg);
-  --color-glass-border: var(--glass-border);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
 }
 
+/* ============================================================
+   Body + Animated Background Orbs
+   ============================================================ */
+
 body {
-  background: var(--background);
+  background: var(--bg);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
   overflow-x: hidden;
+  min-height: 100vh;
 }
 
-/* Background gradient overlay */
-body::before {
+/* Animated orbs — 3 blurred circles that float slowly */
+body::before,
+body::after {
   content: "";
   position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 20% 20%, rgba(6, 214, 160, 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(198, 241, 53, 0.04) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(6, 214, 160, 0.02) 0%, transparent 60%);
+  border-radius: 50%;
   pointer-events: none;
   z-index: 0;
+  filter: blur(120px);
+  opacity: 0.4;
+  will-change: transform;
 }
 
-/* ==========================================
-   Glassmorphism Utility Classes
-   ========================================== */
+body::before {
+  width: 600px;
+  height: 600px;
+  top: -10%;
+  left: -5%;
+  background: radial-gradient(circle, rgba(var(--page-glow), 0.15) 0%, transparent 70%);
+  animation: orb-float-1 20s ease-in-out infinite;
+}
+
+body::after {
+  width: 500px;
+  height: 500px;
+  bottom: -10%;
+  right: -5%;
+  background: radial-gradient(circle, rgba(var(--page-glow), 0.1) 0%, transparent 70%);
+  animation: orb-float-2 25s ease-in-out infinite;
+}
+
+/* Third orb via dedicated element injected by AppShell */
+.orb-center {
+  position: fixed;
+  width: 400px;
+  height: 400px;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(120px);
+  opacity: 0.2;
+  background: radial-gradient(circle, rgba(var(--page-glow), 0.12) 0%, transparent 70%);
+  animation: orb-float-3 30s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes orb-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(40px, 60px) scale(1.05); }
+  66% { transform: translate(-30px, 30px) scale(0.95); }
+}
+
+@keyframes orb-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-50px, -40px) scale(1.08); }
+  66% { transform: translate(30px, -60px) scale(0.92); }
+}
+
+@keyframes orb-float-3 {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-45%, -55%) scale(1.1); }
+}
+
+/* ============================================================
+   Liquid Glass Classes
+   ============================================================ */
 
 @layer utilities {
-  .glass {
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+  .liquid-glass {
+    backdrop-filter: blur(var(--glass-blur)) var(--glass-saturate);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) var(--glass-saturate);
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
-  }
-
-  .glass-strong {
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    background: var(--glass-bg-strong);
-    border: 1px solid var(--glass-border-strong);
-  }
-
-  .glass-card {
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    background: var(--surface);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
+    border-radius: var(--radius-glass);
     box-shadow:
-      0 4px 24px rgba(0, 0, 0, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      0 8px 32px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .liquid-glass-strong {
+    backdrop-filter: blur(24px) var(--glass-saturate);
+    -webkit-backdrop-filter: blur(24px) var(--glass-saturate);
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-glass);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .liquid-glass-card {
+    backdrop-filter: blur(var(--glass-blur)) var(--glass-saturate);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) var(--glass-saturate);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .liquid-glass-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(var(--page-glow), 0.2);
+    box-shadow:
+      0 12px 40px rgba(var(--page-glow), 0.08),
+      0 4px 24px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .liquid-glass-pill {
+    backdrop-filter: blur(12px) var(--glass-saturate);
+    -webkit-backdrop-filter: blur(12px) var(--glass-saturate);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-pill);
+  }
+
+  .accent-glow {
+    box-shadow:
+      0 0 20px rgba(var(--page-glow), 0.3),
+      0 0 40px rgba(var(--page-glow), 0.1);
+  }
+
+  .accent-bg {
+    background: rgba(var(--page-glow), 0.12);
+    border-color: rgba(var(--page-glow), 0.2);
+  }
+
+  .accent-text {
+    color: var(--page-accent);
   }
 
   .glow-text {
-    background: linear-gradient(135deg, var(--accent-turquoise), var(--accent-lime));
+    background: linear-gradient(135deg, var(--page-accent), #c6f135);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 12px rgba(6, 214, 160, 0.4));
+    filter: drop-shadow(0 0 12px rgba(var(--page-glow), 0.4));
   }
 
   .gradient-border {
@@ -116,122 +250,79 @@ body::before {
     inset: 0;
     padding: 1px;
     border-radius: inherit;
-    background: linear-gradient(
-      135deg,
-      var(--accent-turquoise),
-      var(--accent-lime),
-      var(--accent-turquoise)
-    );
+    background: linear-gradient(135deg, var(--page-accent), #c6f135, var(--page-accent));
     background-size: 300% 300%;
     animation: gradient-shift 4s ease infinite;
-    mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask-composite: exclude;
     -webkit-mask-composite: xor;
     pointer-events: none;
   }
 }
 
-/* ==========================================
+/* ============================================================
    Custom Scrollbar
-   ========================================== */
+   ============================================================ */
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.08) transparent; }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
-}
-
-/* ==========================================
+/* ============================================================
    Animations
-   ========================================== */
+   ============================================================ */
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(6, 214, 160, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(6, 214, 160, 0.5), 0 0 40px rgba(198, 241, 53, 0.2);
-  }
+  0%, 100% { box-shadow: 0 0 8px rgba(var(--page-glow), 0.3); }
+  50% { box-shadow: 0 0 20px rgba(var(--page-glow), 0.5), 0 0 40px rgba(var(--page-glow), 0.2); }
 }
 
 @keyframes gradient-shift {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 @keyframes spin-slow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@layer utilities {
+  .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+  .animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
+  .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+  .animate-spin-slow { animation: spin-slow 2s linear infinite; }
+  .animate-shimmer {
+    background: linear-gradient(90deg, transparent, rgba(var(--page-glow), 0.05), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
   }
 }
 
-/* Animation utility classes */
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-out forwards;
-  }
+/* ============================================================
+   Utility: Selection Color
+   ============================================================ */
 
-  .animate-slide-up {
-    animation: slideUp 0.4s ease-out forwards;
-  }
-
-  .animate-pulse-glow {
-    animation: pulse-glow 2s ease-in-out infinite;
-  }
-
-  .animate-spin-slow {
-    animation: spin-slow 2s linear infinite;
-  }
+::selection {
+  background: rgba(var(--page-glow), 0.3);
+  color: var(--foreground);
 }
