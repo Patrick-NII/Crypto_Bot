@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 import {
@@ -19,6 +19,9 @@ import {
   Moon,
   Bot,
   Hand,
+  User,
+  Settings,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -31,13 +34,36 @@ const navItems = [
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
 ] as const;
 
+const SIDEBAR_KEY = "okamoey-sidebar-collapsed";
+
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const router = useRouter();
   const { theme, toggleTheme, tradingMode, setTradingMode } = useTheme();
 
-  const sidebarW = collapsed ? "w-[68px]" : "w-[240px]";
-  const contentPl = collapsed ? "md:pl-[68px]" : "md:pl-[240px]";
+  const [collapsed, setCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(SIDEBAR_KEY);
+    if (saved === "true") setCollapsed(true);
+    setMounted(true);
+  }, []);
+
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem(SIDEBAR_KEY, String(next));
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("demo_user");
+    router.push("/login");
+  };
+
+  const sidebarW = !mounted ? "w-[240px]" : collapsed ? "w-[68px]" : "w-[240px]";
 
   return (
     <>
@@ -56,12 +82,12 @@ export function Sidebar() {
         }}
       >
         {/* Logo */}
-        <div className="flex h-14 items-center justify-between px-4 border-b border-[var(--glass-border)]">
+        <div className="flex h-12 items-center justify-between px-3 border-b border-[var(--glass-border)]">
           {!collapsed && (
-            <span className="glow-text text-lg font-bold tracking-wide">OKAMOEY</span>
+            <span className="glow-text text-base font-bold tracking-wide">OKAMOEY</span>
           )}
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={toggleCollapsed}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all"
           >
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
@@ -99,45 +125,83 @@ export function Sidebar() {
         </nav>
 
         {/* Bottom controls */}
-        <div className="px-2 pb-3 pt-2 space-y-1 border-t border-[var(--glass-border)]">
+        <div className="px-2 pb-2 pt-1.5 space-y-0.5 border-t border-[var(--glass-border)]">
           {/* Manual/Auto toggle */}
           <button
             onClick={() => setTradingMode(tradingMode === "manual" ? "auto" : "manual")}
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all",
+              "flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium transition-all",
               collapsed && "justify-center px-0",
               tradingMode === "auto"
                 ? "bg-[#22c55e]/12 text-[#22c55e]"
                 : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)]",
             )}
           >
-            {tradingMode === "auto" ? <Bot className="h-[18px] w-[18px] shrink-0" /> : <Hand className="h-[18px] w-[18px] shrink-0" />}
+            {tradingMode === "auto" ? <Bot className="h-4 w-4 shrink-0" /> : <Hand className="h-4 w-4 shrink-0" />}
             {!collapsed && (
               <div className="flex flex-1 items-center justify-between">
                 <span>{tradingMode === "auto" ? "Auto" : "Manual"}</span>
                 <div className={cn(
-                  "w-8 h-[18px] rounded-full relative transition-colors",
+                  "w-7 h-4 rounded-full relative transition-colors",
                   tradingMode === "auto" ? "bg-[#22c55e]" : "bg-[var(--glass-border)]",
                 )}>
                   <div className={cn(
-                    "absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-transform",
-                    tradingMode === "auto" ? "translate-x-[14px]" : "translate-x-[2px]",
+                    "absolute top-[2px] h-3 w-3 rounded-full bg-white shadow-sm transition-transform",
+                    tradingMode === "auto" ? "translate-x-[12px]" : "translate-x-[2px]",
                   )} />
                 </div>
               </div>
             )}
           </button>
 
-          {/* Light/Dark toggle */}
-          <button
-            onClick={toggleTheme}
+          {/* Account */}
+          <Link
+            href="/dashboard"
+            title={collapsed ? "Account" : undefined}
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all",
+              "flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all",
               collapsed && "justify-center px-0",
             )}
           >
-            {theme === "dark" ? <Sun className="h-[18px] w-[18px] shrink-0" /> : <Moon className="h-[18px] w-[18px] shrink-0" />}
+            <User className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Account</span>}
+          </Link>
+
+          {/* Settings */}
+          <Link
+            href="/dashboard"
+            title={collapsed ? "Settings" : undefined}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all",
+              collapsed && "justify-center px-0",
+            )}
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+
+          {/* Light/Dark */}
+          <button
+            onClick={toggleTheme}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all",
+              collapsed && "justify-center px-0",
+            )}
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
             {!collapsed && <span>{theme === "dark" ? "Light" : "Dark"}</span>}
+          </button>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[#ef4444]/70 hover:text-[#ef4444] hover:bg-[#ef4444]/8 transition-all",
+              collapsed && "justify-center px-0",
+            )}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Log out</span>}
           </button>
         </div>
       </aside>
