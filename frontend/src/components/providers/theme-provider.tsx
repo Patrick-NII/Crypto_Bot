@@ -27,22 +27,17 @@ export function useTheme() {
   return useContext(ThemeContext);
 }
 
-/** Call this in each page to set its accent color. */
 export function usePageAccent(accent: string, glow: string) {
-  const { pageAccent } = useTheme();
-
   useEffect(() => {
     document.documentElement.style.setProperty("--page-accent", accent);
     document.documentElement.style.setProperty("--page-glow", glow);
     return () => {
-      // Reset to default on unmount
       document.documentElement.style.setProperty("--page-accent", "#06d6a0");
       document.documentElement.style.setProperty("--page-glow", "6,214,160");
     };
   }, [accent, glow]);
 }
 
-// Page accent presets
 export const PAGE_ACCENTS = {
   dashboard: { accent: "#06d6a0", glow: "6,214,160" },
   crypto: { accent: "#a855f7", glow: "168,85,247" },
@@ -53,12 +48,40 @@ export const PAGE_ACCENTS = {
   analytics: { accent: "#ec4899", glow: "236,72,153" },
 } as const;
 
+/**
+ * SVG filter for liquid glass distortion effect.
+ * Uses feTurbulence + feDisplacementMap for subtle refraction.
+ */
+function LiquidGlassFilter() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }}>
+      <defs>
+        <filter id="liquid-distortion" x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.008"
+            numOctaves="2"
+            seed="3"
+            result="noise"
+          />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="noise"
+            scale="12"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
+      </defs>
+    </svg>
+  );
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>("dark");
   const [tradingMode, setTradingModeState] = useState<TradingMode>("manual");
   const [mounted, setMounted] = useState(false);
 
-  // Load persisted preferences
   useEffect(() => {
     const savedTheme = localStorage.getItem("okamoey-theme") as Theme | null;
     const savedMode = localStorage.getItem("okamoey-trading-mode") as TradingMode | null;
@@ -67,7 +90,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setMounted(true);
   }, []);
 
-  // Apply theme to HTML element
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.setAttribute("data-theme", theme);
@@ -94,8 +116,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         pageGlow: "6,214,160",
       }}
     >
+      {mounted && <LiquidGlassFilter />}
       {children}
-      {/* Third animated orb */}
       {mounted && <div className="orb-center" />}
     </ThemeContext.Provider>
   );

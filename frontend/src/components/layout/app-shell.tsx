@@ -16,7 +16,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
-  // During SSR/prerender, just render children without layout
   if (!mounted) {
     return <>{children}</>;
   }
@@ -30,9 +29,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Sidebar />
-      <div className="flex flex-col min-h-screen md:pl-60 transition-all duration-300">
+      <div className="flex flex-col min-h-screen md:pl-[240px] transition-all duration-300 relative z-[1]">
         <Header />
-        <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
+        <main className="flex-1 p-3 md:p-5 pb-20 md:pb-5">
           {children}
         </main>
       </div>
