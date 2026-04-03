@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import redis.asyncio as aioredis
 
@@ -10,7 +10,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_redis_pool: aioredis.Redis | None = None
+_redis_pool: Optional[aioredis.Redis] = None
 
 
 async def get_redis() -> aioredis.Redis:
@@ -38,7 +38,7 @@ async def close_redis() -> None:
         logger.info("Redis connection closed")
 
 
-async def cache_set(key: str, value: Any, ttl: int | None = None) -> bool:
+async def cache_set(key: str, value: Any, ttl: Optional[int] = None) -> bool:
     """Set a value in Redis cache with optional TTL.
 
     Args:
@@ -58,7 +58,7 @@ async def cache_set(key: str, value: Any, ttl: int | None = None) -> bool:
         return False
 
 
-async def cache_get(key: str) -> Any | None:
+async def cache_get(key: str) -> Optional[Any]:
     """Get a value from Redis cache.
 
     Returns:

@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 
+from typing import List, Optional
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -30,7 +31,7 @@ class Portfolio(Base):
         UUID(as_uuid=True), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -40,10 +41,10 @@ class Portfolio(Base):
     )
 
     # Relationships
-    positions: Mapped[list["Position"]] = relationship(
+    positions: Mapped[List["Position"]] = relationship(
         back_populates="portfolio", cascade="all, delete-orphan", lazy="selectin"
     )
-    transactions: Mapped[list["Transaction"]] = relationship(
+    transactions: Mapped[List["Transaction"]] = relationship(
         back_populates="portfolio", cascade="all, delete-orphan", lazy="selectin"
     )
 
@@ -63,7 +64,7 @@ class Position(Base):
     asset_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default="crypto"
     )  # crypto | stock | forex | commodity
-    exchange: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exchange: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     quantity: Mapped[float] = mapped_column(
         Numeric(precision=20, scale=8), nullable=False, default=0
     )
@@ -79,10 +80,10 @@ class Position(Base):
     realized_pnl: Mapped[float] = mapped_column(
         Numeric(precision=20, scale=8), nullable=False, default=0
     )
-    stop_loss_price: Mapped[float | None] = mapped_column(
+    stop_loss_price: Mapped[Optional[float]] = mapped_column(
         Numeric(precision=20, scale=8), nullable=True
     )
-    take_profit_price: Mapped[float | None] = mapped_column(
+    take_profit_price: Mapped[Optional[float]] = mapped_column(
         Numeric(precision=20, scale=8), nullable=True
     )
     opened_at: Mapped[datetime] = mapped_column(
@@ -94,7 +95,7 @@ class Position(Base):
 
     # Relationships
     portfolio: Mapped["Portfolio"] = relationship(back_populates="positions")
-    transactions: Mapped[list["Transaction"]] = relationship(
+    transactions: Mapped[List["Transaction"]] = relationship(
         back_populates="position", cascade="all, delete-orphan", lazy="selectin"
     )
 
@@ -110,7 +111,7 @@ class Transaction(Base):
     portfolio_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False
     )
-    position_id: Mapped[uuid.UUID | None] = mapped_column(
+    position_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("positions.id", ondelete="SET NULL"),
         nullable=True,
@@ -128,14 +129,14 @@ class Transaction(Base):
     fee: Mapped[float] = mapped_column(
         Numeric(precision=20, scale=8), nullable=False, default=0
     )
-    exchange: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    order_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    strategy: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exchange: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    order_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    strategy: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     # Relationships
     portfolio: Mapped["Portfolio"] = relationship(back_populates="transactions")
-    position: Mapped["Position | None"] = relationship(back_populates="transactions")
+    position: Mapped["Optional[Position]"] = relationship(back_populates="transactions")

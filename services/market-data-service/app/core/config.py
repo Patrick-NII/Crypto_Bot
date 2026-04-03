@@ -1,6 +1,7 @@
 """Configuration settings for the Okamoey Market Data Service."""
 
 from pydantic_settings import BaseSettings
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -14,15 +15,15 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    REDIS_PASSWORD: str | None = None
+    REDIS_PASSWORD: Optional[str] = None
 
     # CoinGecko
-    COINGECKO_API_KEY: str | None = None
+    COINGECKO_API_KEY: Optional[str] = None
     COINGECKO_BASE_URL: str = "https://api.coingecko.com/api/v3"
 
     # Binance (via CCXT)
-    BINANCE_API_KEY: str | None = None
-    BINANCE_API_SECRET: str | None = None
+    BINANCE_API_KEY: Optional[str] = None
+    BINANCE_API_SECRET: Optional[str] = None
 
     # Price updates
     PRICE_UPDATE_INTERVAL_SECONDS: int = 30
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     RETRY_BASE_DELAY: float = 1.0
 
     # Default symbols to track
-    DEFAULT_SYMBOLS: list[str] = [
+    DEFAULT_SYMBOLS: List[str] = [
         "BTC", "ETH", "SOL", "BNB", "XRP",
         "ADA", "DOGE", "AVAX", "DOT", "MATIC",
         "LINK", "UNI", "ATOM", "LTC", "NEAR",

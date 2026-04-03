@@ -1,6 +1,7 @@
 """Configuration settings for the Trading Engine service."""
 
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -26,8 +27,8 @@ class Settings(BaseSettings):
     TRADING_MODE: str = "paper"  # "paper" or "live"
 
     # Binance (via CCXT)
-    BINANCE_API_KEY: str | None = None
-    BINANCE_API_SECRET: str | None = None
+    BINANCE_API_KEY: Optional[str] = None
+    BINANCE_API_SECRET: Optional[str] = None
 
     model_config = {"env_prefix": "TRADING_", "env_file": ".env", "extra": "ignore"}
 

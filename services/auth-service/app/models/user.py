@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from typing import Optional
 
 
 class User(Base):
@@ -36,7 +37,7 @@ class User(Base):
         String(255),
         nullable=False,
     )
-    telegram_chat_id: Mapped[str | None] = mapped_column(
+    telegram_chat_id: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
     )

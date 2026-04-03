@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import get_current_user_id
 from app.core.database import get_db
 from app.models.portfolio import Portfolio, Position
+from typing import List
 from app.schemas.portfolio import (
     AllocationEntry,
     PortfolioCreate,
@@ -57,7 +58,7 @@ async def _get_portfolio_or_404(
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[PortfolioResponse])
+@router.get("/", response_model=List[PortfolioResponse])
 async def list_portfolios(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -170,7 +171,7 @@ async def get_portfolio_summary(
     portfolio = await _get_portfolio_or_404(
         portfolio_id, user_id, db, load_positions=True
     )
-    positions: list[Position] = portfolio.positions
+    positions: List[Position] = portfolio.positions
 
     # Gather live prices -------------------------------------------------------
     symbols = list({p.symbol for p in positions})

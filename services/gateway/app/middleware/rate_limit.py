@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -11,9 +12,9 @@ from app.core.config import settings
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
-        self._redis: Redis | None = None
+        self._redis: Optional[Redis] = None
 
-    async def _get_redis(self) -> Redis | None:
+    async def _get_redis(self) -> Optional[Redis]:
         if self._redis is None:
             try:
                 self._redis = Redis(

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from typing import List
 
 router = APIRouter(prefix="/api/v1/ml", tags=["ml"])
 
@@ -44,13 +45,13 @@ class TrainedModel(BaseModel):
     status: str
 
 
-@router.get("/signals", response_model=list[MLSignal])
+@router.get("/signals", response_model=List[MLSignal])
 async def get_ml_signals():
     """Get current ML signals (stub: returns empty list)."""
     return []
 
 
-@router.get("/performance", response_model=list[StrategyPerformance])
+@router.get("/performance", response_model=List[StrategyPerformance])
 async def get_strategy_performance():
     """Strategy performance (stub: returns mock data)."""
     return [
@@ -84,7 +85,7 @@ async def run_backtest(request: BacktestRequest):
     )
 
 
-@router.get("/models", response_model=list[TrainedModel])
+@router.get("/models", response_model=List[TrainedModel])
 async def list_models():
     """List trained models (stub: returns empty list)."""
     return []

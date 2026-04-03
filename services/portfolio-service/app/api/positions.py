@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import get_current_user_id
 from app.core.database import get_db
 from app.models.portfolio import Portfolio, Position, Transaction
+from typing import List, Optional
 from app.schemas.portfolio import (
     PositionCreate,
     PositionResponse,
@@ -67,10 +68,10 @@ async def _get_position_or_404(
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/", response_model=list[PositionResponse])
+@router.get("/", response_model=List[PositionResponse])
 async def list_positions(
-    portfolio_id: uuid.UUID | None = Query(None),
-    symbol: str | None = Query(None),
+    portfolio_id: Optional[uuid.UUID] = Query(None),
+    symbol: Optional[str] = Query(None),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -181,7 +182,7 @@ async def close_position(
     await db.flush()
 
 
-@router.get("/{position_id}/transactions", response_model=list[TransactionResponse])
+@router.get("/{position_id}/transactions", response_model=List[TransactionResponse])
 async def list_position_transactions(
     position_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),

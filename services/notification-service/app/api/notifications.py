@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -8,12 +10,12 @@ router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
 
 class SendNotificationRequest(BaseModel):
-    chat_id: str | None = None
+    chat_id: Optional[str] = None
     message: str
 
 
 class SendAlertRequest(BaseModel):
-    chat_id: str | None = None
+    chat_id: Optional[str] = None
     alert_type: str = "system"
     data: dict = {}
 

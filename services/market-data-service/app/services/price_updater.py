@@ -15,11 +15,12 @@ from app.core.config import settings
 from app.core.redis_client import publish_message
 from app.services.price_fetcher import fetch_prices
 from app.services.websocket_manager import manager
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _running = False
-_task: asyncio.Task | None = None
+_task: Optional[asyncio.Task] = None
 
 
 async def _update_loop() -> None:

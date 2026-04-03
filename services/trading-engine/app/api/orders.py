@@ -10,6 +10,7 @@ from enum import Enum
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,8 @@ class OrderCreate(BaseModel):
     side: OrderSide
     order_type: OrderType
     quantity: float = Field(..., gt=0)
-    price: float | None = Field(None, description="Limit price (required for limit orders)")
-    stop_price: float | None = Field(None, description="Stop price (required for stop_loss orders)")
+    price: Optional[float] = Field(None, description="Limit price (required for limit orders)")
+    stop_price: Optional[float] = Field(None, description="Stop price (required for stop_loss orders)")
 
 
 class OrderResponse(BaseModel):
@@ -45,8 +46,8 @@ class OrderResponse(BaseModel):
     side: OrderSide
     order_type: OrderType
     quantity: float
-    price: float | None
-    stop_price: float | None
+    price: Optional[float]
+    stop_price: Optional[float]
     status: str
     created_at: str
 
@@ -79,8 +80,8 @@ async def create_order(order: OrderCreate) -> OrderResponse:
     )
 
 
-@router.get("/", response_model=list[OrderResponse])
-async def list_orders() -> list[OrderResponse]:
+@router.get("/", response_model=List[OrderResponse])
+async def list_orders() -> List[OrderResponse]:
     """List all orders.
 
     Phase 1 stub: returns an empty list.

@@ -3,11 +3,12 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import Response
 
 from app.core.config import settings
+from typing import Dict, List, Optional
 
 router = APIRouter()
 
 # Map URL prefixes to upstream service base URLs
-ROUTE_TABLE: list[tuple[str, str]] = [
+ROUTE_TABLE: List[tuple[str, str]] = [
     ("/api/v1/auth", settings.AUTH_SERVICE_URL),
     ("/api/v1/portfolios", settings.PORTFOLIO_SERVICE_URL),
     ("/api/v1/positions", settings.PORTFOLIO_SERVICE_URL),
@@ -22,7 +23,7 @@ ROUTE_TABLE: list[tuple[str, str]] = [
 ]
 
 
-def _resolve_upstream(path: str) -> tuple[str, str] | None:
+def _resolve_upstream(path: str) -> Optional[tuple[str, str]]:
     """Return (upstream_base_url, remaining_path) for the given request path."""
     for prefix, upstream_url in ROUTE_TABLE:
         if path == prefix or path.startswith(prefix + "/"):
@@ -31,7 +32,7 @@ def _resolve_upstream(path: str) -> tuple[str, str] | None:
     return None
 
 
-def _forwarded_headers(request: Request) -> dict[str, str]:
+def _forwarded_headers(request: Request) -> Dict[str, str]:
     """Build headers to forward upstream, stripping hop-by-hop headers."""
     skip = {"host", "connection", "keep-alive", "transfer-encoding"}
     return {

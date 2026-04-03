@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Password hashing
@@ -110,7 +111,7 @@ async def get_current_user(
 
     payload = verify_token(credentials.credentials, expected_type="access")
 
-    user_id: str | None = payload.get("sub")
+    user_id: Optional[str] = payload.get("sub")
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

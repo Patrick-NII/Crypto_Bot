@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
+from typing import List
 
 router = APIRouter(prefix="/api/v1/risk", tags=["risk"])
 
@@ -22,7 +23,7 @@ class TradeEvaluation(BaseModel):
 class TradeEvaluationResult(BaseModel):
     approved: bool = True
     risk_score: float = 0.5
-    warnings: list[str] = []
+    warnings: List[str] = []
 
 
 class PortfolioRiskMetrics(BaseModel):

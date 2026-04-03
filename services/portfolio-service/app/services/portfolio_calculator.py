@@ -1,14 +1,14 @@
 """Business logic for portfolio value calculations and price fetching."""
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
 from app.core.config import settings
 
 
-async def fetch_live_prices(symbols: list[str]) -> dict[str, Decimal]:
+async def fetch_live_prices(symbols: List[str]) -> Dict[str, Decimal]:
     """Call the market-data-service to get current prices for *symbols*.
 
     Returns a mapping of symbol -> price.  Symbols that could not be resolved
@@ -24,7 +24,7 @@ async def fetch_live_prices(symbols: list[str]) -> dict[str, Decimal]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
-            data: dict[str, Any] = resp.json()
+            data: Dict[str, Any] = resp.json()
             # Expected shape: {"prices": {"BTC": 60000.0, ...}}
             raw_prices = data.get("prices", data)
             return {
@@ -57,8 +57,8 @@ def calculate_position_pnl(
 
 
 def calculate_portfolio_value(
-    positions: list[Any],
-    prices: dict[str, Decimal] | None = None,
+    positions: List[Any],
+    prices: Optional[Dict[str, Decimal]] = None,
 ) -> Decimal:
     """Sum the market value of all *positions*.
 
@@ -74,15 +74,15 @@ def calculate_portfolio_value(
 
 
 def calculate_allocation(
-    positions: list[Any],
-    prices: dict[str, Decimal] | None = None,
-) -> list[dict[str, Decimal | str]]:
+    positions: List[Any],
+    prices: Optional[Dict[str, Decimal]] = None,
+) -> List[Dict[str, Union[Decimal, str]]]:
     """Return allocation breakdown by ``asset_type``.
 
     Each entry contains *asset_type*, *value*, and *percentage* (0-100).
     """
     prices = prices or {}
-    type_values: dict[str, Decimal] = {}
+    type_values: Dict[str, Decimal] = {}
 
     for pos in positions:
         price = prices.get(pos.symbol, Decimal(str(pos.current_price)))
@@ -90,7 +90,7 @@ def calculate_allocation(
         type_values[pos.asset_type] = type_values.get(pos.asset_type, Decimal("0")) + value
 
     total = sum(type_values.values(), Decimal("0"))
-    allocation: list[dict[str, Decimal | str]] = []
+    allocation: List[Dict[str, Union[Decimal, str]]] = []
     for asset_type, value in type_values.items():
         pct = (value / total * 100) if total else Decimal("0")
         allocation.append(

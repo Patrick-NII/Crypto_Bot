@@ -1,7 +1,7 @@
 """Pydantic models for the Okamoey Market Data Service."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class MultiPriceResponse(BaseModel):
     """Response for multiple symbol price query."""
 
     success: bool = True
-    data: dict[str, PriceData] = Field(
+    data: Dict[str, PriceData] = Field(
         default_factory=dict, description="Map of symbol -> PriceData"
     )
 
@@ -55,7 +55,7 @@ class HistoryResponse(BaseModel):
     success: bool = True
     symbol: str
     interval: str
-    data: list[OHLCVData] = Field(default_factory=list)
+    data: List[OHLCVData] = Field(default_factory=list)
 
 
 class MarketOverview(BaseModel):
@@ -75,7 +75,7 @@ class TopMarketsResponse(BaseModel):
     """Response for top markets query."""
 
     success: bool = True
-    data: list[MarketOverview] = Field(default_factory=list)
+    data: List[MarketOverview] = Field(default_factory=list)
 
 
 class TrendingCoin(BaseModel):
@@ -83,7 +83,7 @@ class TrendingCoin(BaseModel):
 
     symbol: str
     name: str
-    market_cap_rank: int | None = None
+    market_cap_rank: Optional[int] = None
     price_btc: float = 0.0
     score: int = 0
 
@@ -92,7 +92,7 @@ class TrendingResponse(BaseModel):
     """Response for trending coins query."""
 
     success: bool = True
-    data: list[TrendingCoin] = Field(default_factory=list)
+    data: List[TrendingCoin] = Field(default_factory=list)
 
 
 class FearGreedIndex(BaseModel):
@@ -103,8 +103,8 @@ class FearGreedIndex(BaseModel):
         ..., description="e.g. Extreme Fear, Fear, Neutral, Greed, Extreme Greed"
     )
     timestamp: datetime
-    previous_close: int | None = None
-    previous_classification: str | None = None
+    previous_close: Optional[int] = None
+    previous_classification: Optional[str] = None
 
 
 class FearGreedResponse(BaseModel):
@@ -128,14 +128,14 @@ class ExchangesResponse(BaseModel):
     """Response for exchanges list query."""
 
     success: bool = True
-    data: list[ExchangeInfo] = Field(default_factory=list)
+    data: List[ExchangeInfo] = Field(default_factory=list)
 
 
 class WebSocketMessage(BaseModel):
     """WebSocket message format."""
 
     type: str = Field(..., description="Message type: price_update, error, ping, pong")
-    data: dict[str, Any] = Field(default_factory=dict)
+    data: Dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -144,4 +144,4 @@ class ErrorResponse(BaseModel):
 
     success: bool = False
     error: str
-    detail: str | None = None
+    detail: Optional[str] = None

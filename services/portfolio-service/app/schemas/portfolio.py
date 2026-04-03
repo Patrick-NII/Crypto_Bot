@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -13,14 +14,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PortfolioCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: str | None = None
+    description: Optional[str] = None
     is_default: bool = False
 
 
 class PortfolioUpdate(BaseModel):
-    name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
-    is_default: bool | None = None
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    is_default: Optional[bool] = None
 
 
 class PortfolioResponse(BaseModel):
@@ -29,7 +30,7 @@ class PortfolioResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
-    description: str | None = None
+    description: Optional[str] = None
     is_default: bool
     created_at: datetime
     updated_at: datetime
@@ -43,20 +44,20 @@ class PositionCreate(BaseModel):
     portfolio_id: uuid.UUID
     symbol: str = Field(..., min_length=1, max_length=32)
     asset_type: str = Field(default="crypto", max_length=32)
-    exchange: str | None = None
+    exchange: Optional[str] = None
     quantity: Decimal = Field(..., ge=0)
     average_entry_price: Decimal = Field(..., ge=0)
     current_price: Decimal = Field(default=Decimal("0"), ge=0)
-    stop_loss_price: Decimal | None = None
-    take_profit_price: Decimal | None = None
+    stop_loss_price: Optional[Decimal] = None
+    take_profit_price: Optional[Decimal] = None
 
 
 class PositionUpdate(BaseModel):
-    quantity: Decimal | None = Field(None, ge=0)
-    average_entry_price: Decimal | None = Field(None, ge=0)
-    current_price: Decimal | None = Field(None, ge=0)
-    stop_loss_price: Decimal | None = None
-    take_profit_price: Decimal | None = None
+    quantity: Optional[Decimal] = Field(None, ge=0)
+    average_entry_price: Optional[Decimal] = Field(None, ge=0)
+    current_price: Optional[Decimal] = Field(None, ge=0)
+    stop_loss_price: Optional[Decimal] = None
+    take_profit_price: Optional[Decimal] = None
 
 
 class PositionResponse(BaseModel):
@@ -66,14 +67,14 @@ class PositionResponse(BaseModel):
     portfolio_id: uuid.UUID
     symbol: str
     asset_type: str
-    exchange: str | None = None
+    exchange: Optional[str] = None
     quantity: Decimal
     average_entry_price: Decimal
     current_price: Decimal
     unrealized_pnl: Decimal
     realized_pnl: Decimal
-    stop_loss_price: Decimal | None = None
-    take_profit_price: Decimal | None = None
+    stop_loss_price: Optional[Decimal] = None
+    take_profit_price: Optional[Decimal] = None
     opened_at: datetime
     updated_at: datetime
 
@@ -84,17 +85,17 @@ class PositionResponse(BaseModel):
 
 class TransactionCreate(BaseModel):
     portfolio_id: uuid.UUID
-    position_id: uuid.UUID | None = None
+    position_id: Optional[uuid.UUID] = None
     symbol: str = Field(..., min_length=1, max_length=32)
     side: str = Field(..., pattern=r"^(buy|sell)$")
     quantity: Decimal = Field(..., gt=0)
     price: Decimal = Field(..., ge=0)
     fee: Decimal = Field(default=Decimal("0"), ge=0)
-    exchange: str | None = None
-    order_id: str | None = None
-    strategy: str | None = None
-    notes: str | None = None
-    executed_at: datetime | None = None
+    exchange: Optional[str] = None
+    order_id: Optional[str] = None
+    strategy: Optional[str] = None
+    notes: Optional[str] = None
+    executed_at: Optional[datetime] = None
 
 
 class TransactionResponse(BaseModel):
@@ -102,16 +103,16 @@ class TransactionResponse(BaseModel):
 
     id: uuid.UUID
     portfolio_id: uuid.UUID
-    position_id: uuid.UUID | None = None
+    position_id: Optional[uuid.UUID] = None
     symbol: str
     side: str
     quantity: Decimal
     price: Decimal
     fee: Decimal
-    exchange: str | None = None
-    order_id: str | None = None
-    strategy: str | None = None
-    notes: str | None = None
+    exchange: Optional[str] = None
+    order_id: Optional[str] = None
+    strategy: Optional[str] = None
+    notes: Optional[str] = None
     executed_at: datetime
 
 
@@ -120,7 +121,7 @@ class TransactionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PortfolioWithPositions(PortfolioResponse):
-    positions: list[PositionResponse] = []
+    positions: List[PositionResponse] = []
 
 
 # ---------------------------------------------------------------------------
@@ -140,4 +141,4 @@ class PortfolioSummary(BaseModel):
     total_pnl: Decimal
     total_pnl_pct: Decimal
     positions_count: int
-    allocation: list[AllocationEntry]
+    allocation: List[AllocationEntry]

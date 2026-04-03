@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -35,9 +36,9 @@ class TokenRefresh(BaseModel):
 class UserUpdate(BaseModel):
     """Payload for updating a user profile."""
 
-    username: str | None = Field(None, min_length=3, max_length=100)
-    telegram_chat_id: str | None = None
-    risk_profile: str | None = Field(None, pattern=r"^(conservative|moderate|aggressive)$")
+    username: Optional[str] = Field(None, min_length=3, max_length=100)
+    telegram_chat_id: Optional[str] = None
+    risk_profile: Optional[str] = Field(None, pattern=r"^(conservative|moderate|aggressive)$")
 
 
 # ---------------------------------------------------------------------------

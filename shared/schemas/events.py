@@ -3,7 +3,7 @@ Shared event schemas for inter-service communication via Redis pub/sub.
 """
 from enum import Enum
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict
 
 
 class EventType(str, Enum):
@@ -45,7 +45,7 @@ class EventSeverity(str, Enum):
 
 def create_event(
     event_type: EventType,
-    payload: dict[str, Any],
+    payload: Dict[str, Any],
     source: str,
     severity: EventSeverity = EventSeverity.INFO,
 ) -> dict:

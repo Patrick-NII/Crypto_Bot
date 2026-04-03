@@ -17,11 +17,12 @@ import httpx
 from app.core.config import settings
 from app.core.redis_client import cache_get, cache_set
 from app.models.schemas import OHLCVData, PriceData
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 # Mapping of common symbols to CoinGecko IDs
-SYMBOL_TO_COINGECKO: dict[str, str] = {
+SYMBOL_TO_COINGECKO: Dict[str, str] = {
     "BTC": "bitcoin",
     "ETH": "ethereum",
     "SOL": "solana",
@@ -57,7 +58,7 @@ VALID_INTERVALS = {
 }
 
 
-def _get_exchange() -> ccxt.Exchange | None:
+def _get_exchange() -> Optional[ccxt.Exchange]:
     """Create a CCXT Binance exchange instance if keys are available."""
     if settings.BINANCE_API_KEY and settings.BINANCE_API_SECRET:
         return ccxt.binance(
@@ -79,7 +80,7 @@ async def _close_exchange(exchange: ccxt.Exchange) -> None:
         pass
 
 
-async def _fetch_via_ccxt(symbols: list[str]) -> dict[str, PriceData]:
+async def _fetch_via_ccxt(symbols: List[str]) -> Dict[str, PriceData]:
     """Fetch prices from Binance via CCXT.
 
     Args:
@@ -92,7 +93,7 @@ async def _fetch_via_ccxt(symbols: list[str]) -> dict[str, PriceData]:
     if exchange is None:
         return {}
 
-    results: dict[str, PriceData] = {}
+    results: Dict[str, PriceData] = {}
     try:
         await exchange.load_markets()
 
@@ -139,7 +140,7 @@ async def _fetch_via_ccxt(symbols: list[str]) -> dict[str, PriceData]:
     return results
 
 
-async def _fetch_via_coingecko(symbols: list[str]) -> dict[str, PriceData]:
+async def _fetch_via_coingecko(symbols: List[str]) -> Dict[str, PriceData]:
     """Fetch prices from the CoinGecko API.
 
     Args:
@@ -149,7 +150,7 @@ async def _fetch_via_coingecko(symbols: list[str]) -> dict[str, PriceData]:
         Dict mapping symbol -> PriceData for successfully fetched symbols.
     """
     # Map symbols to CoinGecko IDs
-    id_to_symbol: dict[str, str] = {}
+    id_to_symbol: Dict[str, str] = {}
     for s in symbols:
         cg_id = SYMBOL_TO_COINGECKO.get(s.upper())
         if cg_id:
@@ -172,7 +173,7 @@ async def _fetch_via_coingecko(symbols: list[str]) -> dict[str, PriceData]:
     if settings.COINGECKO_API_KEY:
         headers["x-cg-demo-api-key"] = settings.COINGECKO_API_KEY
 
-    results: dict[str, PriceData] = {}
+    results: Dict[str, PriceData] = {}
 
     retry_delay = settings.RETRY_BASE_DELAY
     for attempt in range(settings.MAX_RETRIES):
@@ -227,7 +228,7 @@ async def _fetch_via_coingecko(symbols: list[str]) -> dict[str, PriceData]:
     return results
 
 
-async def fetch_prices(symbols: list[str]) -> dict[str, PriceData]:
+async def fetch_prices(symbols: List[str]) -> Dict[str, PriceData]:
     """Fetch prices from the best available source.
 
     Strategy:
@@ -243,8 +244,8 @@ async def fetch_prices(symbols: list[str]) -> dict[str, PriceData]:
         Dict mapping symbol -> PriceData.
     """
     symbols = [s.upper() for s in symbols]
-    results: dict[str, PriceData] = {}
-    uncached: list[str] = []
+    results: Dict[str, PriceData] = {}
+    uncached: List[str] = []
 
     # 1. Check Redis cache
     for s in symbols:
@@ -286,7 +287,7 @@ async def fetch_prices(symbols: list[str]) -> dict[str, PriceData]:
 
 async def fetch_ohlcv(
     symbol: str, interval: str = "1h", limit: int = 100
-) -> list[OHLCVData]:
+) -> List[OHLCVData]:
     """Fetch OHLCV candlestick data via CCXT.
 
     Args:
@@ -306,7 +307,7 @@ async def fetch_ohlcv(
         return []
 
     pair = f"{symbol.upper()}/USDT"
-    candles: list[OHLCVData] = []
+    candles: List[OHLCVData] = []
 
     try:
         await exchange.load_markets()
@@ -335,7 +336,7 @@ async def fetch_ohlcv(
     return candles
 
 
-async def fetch_top_markets(limit: int = 20) -> list[dict]:
+async def fetch_top_markets(limit: int = 20) -> List[dict]:
     """Fetch top cryptocurrencies by market cap from CoinGecko.
 
     Returns:
@@ -398,7 +399,7 @@ async def fetch_top_markets(limit: int = 20) -> list[dict]:
     return []
 
 
-async def fetch_trending() -> list[dict]:
+async def fetch_trending() -> List[dict]:
     """Fetch trending coins from CoinGecko.
 
     Returns:
@@ -452,7 +453,7 @@ async def fetch_trending() -> list[dict]:
     return []
 
 
-async def fetch_fear_greed() -> dict | None:
+async def fetch_fear_greed() -> Optional[dict]:
     """Fetch the Crypto Fear & Greed Index from alternative.me.
 
     Returns:

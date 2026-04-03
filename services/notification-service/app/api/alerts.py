@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
+from typing import List
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
@@ -24,7 +25,7 @@ class CreateAlertRequest(BaseModel):
     target_value: float = 0.0
 
 
-@router.get("/", response_model=list[Alert])
+@router.get("/", response_model=List[Alert])
 async def list_alerts():
     """List alerts (stub: returns empty list)."""
     return []

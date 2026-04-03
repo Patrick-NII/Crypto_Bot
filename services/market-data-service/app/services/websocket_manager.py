@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import WebSocket
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class ConnectionManager:
     """Manages active WebSocket connections and broadcasts messages."""
 
     def __init__(self) -> None:
-        self._active_connections: list[WebSocket] = []
+        self._active_connections: List[WebSocket] = []
 
     @property
     def active_count(self) -> int:
@@ -52,7 +53,7 @@ class ConnectionManager:
         if not self._active_connections:
             return
 
-        disconnected: list[WebSocket] = []
+        disconnected: List[WebSocket] = []
 
         for connection in self._active_connections:
             try:

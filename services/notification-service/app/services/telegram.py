@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Dict
 
 import httpx
 
@@ -14,7 +14,7 @@ async def send_message(
     chat_id: str,
     text: str,
     parse_mode: str = "HTML",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Send a message via Telegram Bot API using httpx."""
     if not settings.TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_BOT_TOKEN not set, skipping message send")
@@ -37,7 +37,7 @@ async def send_message(
     return result
 
 
-def format_alert(alert_type: str, data: dict[str, Any]) -> str:
+def format_alert(alert_type: str, data: Dict[str, Any]) -> str:
     """Format an alert into an HTML message for Telegram."""
     templates = {
         "trade_executed": (
