@@ -55,6 +55,7 @@ services:
       - ML_SERVICE_URL=http://ml-service:8006
       - NOTIFICATION_SERVICE_URL=http://notification-service:8007
       - AI_AGENT_SERVICE_URL=http://ai-agent-service:8008
+      - MAILING_SERVICE_URL=http://mailing-service:8009
       - REDIS_HOST=redis
       - SECRET_KEY=${SECRET_KEY:-dev-secret}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
@@ -78,6 +79,8 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - MAILING_SERVICE_URL=http://mailing-service:8009
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "${AUTH_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -205,6 +208,27 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8007}:8007"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - okamoey-net
+
+  # ─── Mailing Service ────────────────────────────────────────
+  mailing-service:
+    build:
+      context: ./services/mailing-service
+      dockerfile: Dockerfile
+    container_name: okamoey-mailing
+    environment:
+      - REDIS_HOST=redis
+      - SMTP_HOST=${SMTP_HOST:-smtp.resend.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - MAIL_FROM=${MAIL_FROM:-noreply@okamoey.com}
+    ports:
+      - "${MAILING_SERVICE_PORT:-8009}:8009"
     depends_on:
       redis:
         condition: service_healthy

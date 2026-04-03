@@ -73,3 +73,39 @@ class TokenPayload(BaseModel):
 
     sub: str
     exp: int
+
+
+# ---------------------------------------------------------------------------
+# Email verification & password reset
+# ---------------------------------------------------------------------------
+
+
+class VerifyEmailRequest(BaseModel):
+    """Token received via email link."""
+
+    token: str
+
+
+class PasswordResetRequest(BaseModel):
+    """Request a password reset email."""
+
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    """Reset password using a token."""
+
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class LogoutRequest(BaseModel):
+    """Payload for logging out."""
+
+    refresh_token: str
+
+
+class MessageResponse(BaseModel):
+    """Generic message response."""
+
+    message: str

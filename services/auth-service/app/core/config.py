@@ -31,5 +31,17 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Email verification & password reset
+    VERIFICATION_TOKEN_EXPIRE_HOURS: int = 24
+    RESET_TOKEN_EXPIRE_HOURS: int = 1
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # Mailing service
+    MAILING_SERVICE_URL: str = "http://localhost:8009"
+
+    # Rate limiting
+    LOGIN_RATE_LIMIT: int = 5  # max attempts
+    LOGIN_RATE_WINDOW: int = 300  # seconds (5 min)
+
 
 settings = Settings()

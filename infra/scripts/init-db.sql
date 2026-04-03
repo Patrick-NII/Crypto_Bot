@@ -156,6 +156,81 @@ CREATE TABLE IF NOT EXISTS strategy_performance (
 
 SELECT create_hypertable('strategy_performance', 'time', if_not_exists => TRUE);
 
+-- ─── Subscriptions ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    plan VARCHAR(20) NOT NULL DEFAULT 'free', -- free, pro, enterprise
+    stripe_customer_id VARCHAR(255),
+    stripe_subscription_id VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'active', -- active, cancelled, past_due, trialing
+    current_period_start TIMESTAMPTZ,
+    current_period_end TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── AI Conversations ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    agent_type VARCHAR(30) NOT NULL,
+    messages JSONB DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── AI Memory (long-term knowledge) ──────────────────────────
+CREATE TABLE IF NOT EXISTS ai_memory (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    key VARCHAR(100) NOT NULL,
+    value TEXT NOT NULL,
+    memory_type VARCHAR(20) DEFAULT 'preference', -- preference, fact, strategy
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── Email Logs ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS email_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    recipient VARCHAR(255) NOT NULL,
+    template VARCHAR(50) NOT NULL,
+    subject VARCHAR(255),
+    status VARCHAR(20) DEFAULT 'sent', -- sent, failed, bounced
+    sent_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── User Sessions ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+-- ─── CGU Acceptances ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cgu_acceptances (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    version VARCHAR(20) NOT NULL,
+    accepted_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── API Keys (exchange connections) ───────────────────────────
+CREATE TABLE IF NOT EXISTS api_keys (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    exchange VARCHAR(50) NOT NULL,
+    encrypted_key TEXT NOT NULL,
+    encrypted_secret TEXT NOT NULL,
+    label VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ─── Indexes ────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_positions_portfolio ON positions(portfolio_id);
 CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
@@ -163,3 +238,9 @@ CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_portfolio ON transactions(portfolio_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_user_active ON alerts(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe ON subscriptions(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS idx_ai_conversations_user ON ai_conversations(user_id, agent_type);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_email_logs_recipient ON email_logs(recipient);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
