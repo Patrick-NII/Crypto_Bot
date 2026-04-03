@@ -1,0 +1,161 @@
+{
+  
+  "ethereum": [
+    {
+      "date": "2025-05-11",
+      "amount": 0.01095437,
+      "price": 2282.19,
+      "total": 25.0,
+      "fees": 1.99,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-14",
+      "amount": 0.03628488,
+      "price": 2618.17,
+      "total": 95.0,
+      "fees": 1.98,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-15",
+      "amount": 0.05618883,
+      "price": 2669.57,
+      "total": 150.0,
+      "fees": 3.42,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-15",
+      "amount": 0.01875126,
+      "price": 2666.49,
+      "total": 50.0,
+      "fees": 2.48,
+      "type": "Achat"
+    }
+  ],
+  "bitcoin": [
+    {
+      "date": "2025-05-11",
+      "amount": 0.00026601,
+      "price": 93978.05,
+      "total": 25.0,
+      "fees": 1.99,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-06-14",
+      "amount": 0.00868966,
+      "price": 92063.38,
+      "total": 800.0,
+      "fees": 11.92,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-06-24",
+      "amount": 0.0053827,
+      "price": 92890.07,
+      "total": 500.0,
+      "fees": 12.45,
+      "type": "Achat"
+    }
+  ],
+  "solana": [
+    {
+      "date": "2025-06-20",
+      "amount": 0.008084,
+      "price": 123.69,
+      "total": 1.0,
+      "fees": 0.49,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-06-29",
+      "amount": 2.0,
+      "price": 130.11,
+      "total": 260.23,
+      "fees": 6.48,
+      "type": "Achat"
+    }
+  ],
+  "render-token": [
+    {
+      "date": "2025-06-24",
+      "amount": 102.91,
+      "price": 2.8616,
+      "total": 300,
+      "fees": 0.98,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-06-23",
+      "amount": 0.37,
+      "price": 1.0,
+      "total": 0.37,
+      "fees": 0.0,
+      "type": "Revente"
+    }
+  ],
+  "avalanche-2": [
+    {
+      "date": "2025-07-14",
+      "amount": 3.0,
+      "price": 18.52,
+      "total": 55.57,
+      "fees": 1.99,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-15",
+      "amount": 2.68953468,
+      "price": 18.59,
+      "total": 50.0,
+      "fees": 2.49,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-15",
+      "amount": 2.14254082,
+      "price": 18.67,
+      "total": 40.0,
+      "fees": 2.39,
+      "type": "Achat"
+    }
+  ],
+  "fetch-ai": [
+    {
+      "date": "2025-07-15",
+      "amount": 241.85119338,
+      "price": 0.62,
+      "total": 150.0,
+      "fees": 4.48,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-15",
+      "amount": 96.86299247,
+      "price": 0.62,
+      "total": 60.0,
+      "fees": 2.58,
+      "type": "Achat"
+    }
+  ],
+  "arbitrum": [
+    {
+      "date": "2025-07-15",
+      "amount": 271.26303173,
+      "price": 0.37,
+      "total": 100.0,
+      "fees": 3.49,
+      "type": "Achat"
+    },
+    {
+      "date": "2025-07-15",
+      "amount": 163.22016332,
+      "price": 0.37,
+      "total": 60.0,
+      "fees": 2.58,
+      "type": "Achat"
+    }
+  ]
+}

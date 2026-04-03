@@ -1,0 +1,66 @@
+{
+  "dogecoin": {
+    "qty": 1771.62837,
+    "avg_price": 0.17721,
+    "invested": 313.95,
+    "sold": 281.46,
+    "fees_buy": 6.95,
+    "fees_sell": 4.26
+  },
+  "ethereum": {
+    "qty": 0.122179,
+    "avg_price": 2699.88363,
+    "invested": 329.87,
+    "sold": 0,
+    "fees_buy": 9.87,
+    "fees_sell": 0
+  },
+  "bitcoin": {
+    "qty": 0.014338,
+    "avg_price": 94247.81199,
+    "invested": 1351.36,
+    "sold": 0,
+    "fees_buy": 26.36,
+    "fees_sell": 0
+  },
+  "solana": {
+    "qty": 2.008084,
+    "avg_price": 133.56015,
+    "invested": 268.2,
+    "sold": 0,
+    "fees_buy": 6.97,
+    "fees_sell": 0
+  },
+  "render-token": {
+    "qty": 0.738958,
+    "avg_price": 4.032703,
+    "invested": 2.98,
+    "sold": 1.0,
+    "fees_buy": 0.98,
+    "fees_sell": 0.0
+  },
+  "avalanche-2": {
+    "qty": 7.832075,
+    "avg_price": 19.463551,
+    "invested": 152.44,
+    "sold": 0,
+    "fees_buy": 6.87,
+    "fees_sell": 0
+  },
+  "fetch-ai": {
+    "qty": 338.714186,
+    "avg_price": 0.640835,
+    "invested": 217.06,
+    "sold": 0,
+    "fees_buy": 7.06,
+    "fees_sell": 0
+  },
+  "arbitrum": {
+    "qty": 434.483195,
+    "avg_price": 0.382224,
+    "invested": 166.07,
+    "sold": 0,
+    "fees_buy": 6.07,
+    "fees_sell": 0
+  }
+}
