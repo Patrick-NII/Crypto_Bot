@@ -249,8 +249,48 @@ export const portfolioApi = {
 
 // ---- Trading ----
 
+const BINANCE_PROXY = "http://localhost:3001";
+
+async function fetchBinance<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BINANCE_PROXY}${path}`, {
+    headers: { "Content-Type": "application/json", ...init?.headers },
+    ...init,
+  });
+  if (!res.ok) throw new Error(`Binance ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+interface BinanceBalance {
+  asset: string;
+  free: number;
+  locked: number;
+}
+
+export const binanceApi = {
+  getBalances: () => fetchBinance<BinanceBalance[]>("/balances"),
+  getAccount: () => fetchBinance<Record<string, unknown>>("/account"),
+  getTicker: (symbol: string) => fetchBinance<Record<string, string>>(`/ticker?symbol=${symbol}USDT`),
+  placeOrder: (params: { symbol: string; side: string; type: string; quantity?: string; quoteOrderQty?: string }) =>
+    fetchBinance<Record<string, unknown>>("/order", { method: "POST", body: JSON.stringify(params) }),
+  getOpenOrders: (symbol?: string) => fetchBinance<unknown[]>(`/orders${symbol ? `?symbol=${symbol}` : ""}`),
+  getMyTrades: (symbol: string) => fetchBinance<unknown[]>(`/trades?symbol=${symbol}USDT`),
+  health: () => fetchBinance<{ status: string; connected: boolean }>("/health"),
+};
+
 export const tradingApi = {
-  getBalances: () => fetchJson<PaperBalance[]>("/trades/balances"),
+  getBalances: () =>
+    withFallback(
+      () => fetchJson<PaperBalance[]>("/trades/balances"),
+      async () => {
+        const balances = await binanceApi.getBalances();
+        return balances.map((b) => ({
+          currency: b.asset,
+          available: b.free,
+          reserved: b.locked,
+          total: b.free + b.locked,
+        }));
+      },
+    ),
   placeOrder: (data: {
     symbol: string;
     side: OrderSide;
@@ -259,18 +299,47 @@ export const tradingApi = {
     price?: number;
     stop_price?: number;
   }) =>
-    fetchJson<TradeResult>("/orders", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    withFallback(
+      () => fetchJson<TradeResult>("/orders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+      async () => {
+        // Live Binance order via proxy
+        const params: Record<string, string> = {
+          symbol: `${data.symbol}USDT`,
+          side: data.side.toUpperCase(),
+          type: data.order_type === "market" ? "MARKET" : "LIMIT",
+        };
+        if (data.order_type === "market") {
+          params.quoteOrderQty = String(Math.round(data.quantity * 100) / 100);
+        } else {
+          params.quantity = String(data.quantity);
+          if (data.price) params.price = String(data.price);
+          params.timeInForce = "GTC";
+        }
+        const result = await binanceApi.placeOrder(params as { symbol: string; side: string; type: string; quantity?: string; quoteOrderQty?: string });
+        return {
+          order_id: String(result.orderId || ""),
+          status: "open" as const,
+          filled_price: Number(result.price || 0),
+          filled_quantity: Number(result.executedQty || 0),
+          message: `Order placed on Binance: ${result.status}`,
+        } as TradeResult;
+      },
+    ),
   getOrders: (params?: { status?: string }) => {
     const qs = params?.status ? `?status=${params.status}` : "";
-    return fetchJson<Order[]>(`/orders${qs}`);
+    return withFallback(
+      () => fetchJson<Order[]>(`/orders${qs}`),
+      async () => {
+        const orders = await binanceApi.getOpenOrders();
+        return orders as unknown as Order[];
+      },
+    );
   },
   cancelOrder: (orderId: string) =>
-    fetchJson<{ success: boolean }>(`/orders/${orderId}/cancel`, {
-      method: "POST",
-    }),
+    fetchJson<{ success: boolean }>(`/orders/${orderId}/cancel`, { method: "POST" }),
 };
 
 // ---- Signals (ML Service) ----

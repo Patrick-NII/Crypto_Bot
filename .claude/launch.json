@@ -7,6 +7,13 @@
       "runtimeArgs": ["server.mjs", "3000"],
       "port": 3000,
       "cwd": "frontend"
+    },
+    {
+      "name": "binance-proxy",
+      "runtimeExecutable": "/opt/homebrew/bin/node",
+      "runtimeArgs": ["binance-proxy.mjs"],
+      "port": 3001,
+      "cwd": "frontend"
     }
   ]
 }
