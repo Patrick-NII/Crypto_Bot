@@ -2,555 +2,217 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
-import {
-  Wallet,
-  TrendingUp,
-  Percent,
-  Plus,
-  X,
-  Edit3,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
-import { portfolioApi } from "@/lib/api";
-import type { Portfolio, Position, Transaction } from "@/lib/types";
-import { formatCurrency, formatPercent, formatRelative, cn } from "@/lib/utils";
-import { GlassCard } from "@/components/ui/glass-card";
-import { StatCard } from "@/components/ui/stat-card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { PriceChart } from "@/components/charts/price-chart";
+import { useCurrency } from "@/components/providers/currency-provider";
+import { Wallet, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
+import { pricesApi, binanceApi } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-const PIE_COLORS = ["#06d6a0", "#c6f135", "#06b6d4", "#3b82f6", "#8b5cf6", "#ef4444"];
-
-function SkeletonBlock({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-lg bg-white/5", className)} />;
+interface HoldingData {
+  asset: string;
+  free: number;
+  locked: number;
+  total: number;
+  price: number;
+  value: number;
+  change24h: number;
+  image: string;
 }
 
 export default function PortfolioPage() {
   usePageAccent(PAGE_ACCENTS.portfolio.accent, PAGE_ACCENTS.portfolio.glow);
+  const { format } = useCurrency();
+
+  const [holdings, setHoldings] = useState<HoldingData[]>([]);
+  const [totalValue, setTotalValue] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [activePortfolio, setActivePortfolio] = useState<Portfolio | null>(null);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<string>("");
 
-  // Stop-loss editing
-  const [editingStopLoss, setEditingStopLoss] = useState<string | null>(null);
-  const [stopLossValue, setStopLossValue] = useState("");
-
-  // Sort state
-  const [sortField, setSortField] = useState<"symbol" | "pnl" | "pnl_pct">("pnl");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-
-  // Expanded position for mini chart
-  const [expandedPosition, setExpandedPosition] = useState<string | null>(null);
-
-  const fetchData = useCallback(async () => {
+  const fetchPortfolio = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const data = await portfolioApi.list();
-      setPortfolios(data);
-      if (data.length > 0) {
-        const p = data[0];
-        setActivePortfolio(p);
-        const [posData, txData] = await Promise.allSettled([
-          portfolioApi.getPositions(p.id),
-          portfolioApi.getTransactions(p.id),
-        ]);
-        if (posData.status === "fulfilled") setPositions(posData.value);
-        if (txData.status === "fulfilled") setTransactions(txData.value.slice(0, 10));
+      // Fetch Binance balances and crypto prices in parallel
+      const [balResult, cryptoResult] = await Promise.allSettled([
+        binanceApi.getBalances(),
+        pricesApi.getAllCryptos(250),
+      ]);
+
+      const balances = balResult.status === "fulfilled" ? balResult.value : [];
+      const cryptoRes = cryptoResult.status === "fulfilled" ? cryptoResult.value : { data: [] };
+
+      if (balances.length === 0) {
+        setError("Could not load Binance balances. Make sure the proxy is running: node frontend/binance-proxy.mjs");
+        setLoading(false);
+        return;
       }
-    } catch {
-      // handle error
+
+      const cryptos = cryptoRes.data as unknown as Array<{
+        symbol: string; current_price: number; price_change_percentage_24h: number; image: string;
+      }>;
+
+      // Build holdings with prices
+      let total = 0;
+      const items: HoldingData[] = [];
+
+      for (const b of balances) {
+        const amt = b.free + b.locked;
+        if (amt <= 0) continue;
+
+        // Stablecoins
+        if (["USDT", "BUSD", "USDC", "USD", "FDUSD"].includes(b.asset)) {
+          total += amt;
+          items.push({ asset: b.asset, free: b.free, locked: b.locked, total: amt, price: 1, value: amt, change24h: 0, image: "" });
+          continue;
+        }
+
+        // Find price
+        const crypto = cryptos.find((c) => c.symbol?.toUpperCase() === b.asset.toUpperCase());
+        const price = crypto?.current_price ?? 0;
+        const value = amt * price;
+        total += value;
+
+        items.push({
+          asset: b.asset,
+          free: b.free,
+          locked: b.locked,
+          total: amt,
+          price,
+          value,
+          change24h: crypto?.price_change_percentage_24h ?? 0,
+          image: crypto?.image ?? "",
+        });
+      }
+
+      // Sort by value descending
+      items.sort((a, b) => b.value - a.value);
+      setHoldings(items);
+      setTotalValue(total);
+      setLastUpdate(new Date().toLocaleTimeString());
+    } catch (err) {
+      setError("Could not load portfolio. Make sure the Binance proxy is running (node frontend/binance-proxy.mjs)");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return;
-    setCreating(true);
-    try {
-      await portfolioApi.create({ name: newName, description: newDesc });
-      setNewName("");
-      setNewDesc("");
-      setShowCreateForm(false);
-      fetchData();
-    } catch {
-      // handle error
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleClosePosition = async (positionId: string) => {
-    try {
-      await portfolioApi.closePosition(positionId);
-      fetchData();
-    } catch {
-      // handle error
-    }
-  };
-
-  const handleUpdateStopLoss = async (positionId: string) => {
-    if (!stopLossValue || isNaN(Number(stopLossValue))) return;
-    try {
-      await portfolioApi.updateStopLoss(positionId, Number(stopLossValue));
-      setEditingStopLoss(null);
-      setStopLossValue("");
-      fetchData();
-    } catch {
-      // handle error
-    }
-  };
-
-  const toggleSort = (field: typeof sortField) => {
-    if (sortField === field) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDir("desc");
-    }
-  };
-
-  const sortedPositions = [...positions].sort((a, b) => {
-    const mult = sortDir === "asc" ? 1 : -1;
-    if (sortField === "symbol") return mult * a.symbol.localeCompare(b.symbol);
-    return mult * ((a[sortField] ?? 0) - (b[sortField] ?? 0));
-  });
-
-  // Allocation chart data
-  const allocationData = positions.reduce<Record<string, number>>((acc, p) => {
-    const type = p.asset_type || "other";
-    acc[type] = (acc[type] || 0) + p.current_price * p.quantity;
-    return acc;
-  }, {});
-  const pieData = Object.entries(allocationData).map(([name, value]) => ({
-    name,
-    value,
-  }));
-
-  const SortIcon = ({ field }: { field: typeof sortField }) => {
-    if (sortField !== field) return null;
-    return sortDir === "asc" ? (
-      <ChevronUp className="inline h-3 w-3" />
-    ) : (
-      <ChevronDown className="inline h-3 w-3" />
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="relative z-10 min-h-screen p-4 md:p-8">
-        <h1 className="mb-8 text-3xl font-bold glow-text">Portfolio</h1>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <SkeletonBlock key={i} className="h-24" />
-          ))}
-        </div>
-        <SkeletonBlock className="mt-6 h-96" />
-      </div>
-    );
-  }
-
-  const totalValue = activePortfolio?.total_value ?? 0;
-  const totalPnl = activePortfolio?.total_pnl ?? 0;
-  const totalPnlPct = activePortfolio?.total_pnl_pct ?? 0;
+    fetchPortfolio();
+    const interval = setInterval(fetchPortfolio, 30000); // refresh every 30s
+    return () => clearInterval(interval);
+  }, [fetchPortfolio]);
 
   return (
-    <div className="relative z-10 min-h-screen p-4 md:p-8">
-      {/* Header */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-bold glow-text">Portfolio</h1>
-        <Button onClick={() => setShowCreateForm(!showCreateForm)}>
-          <Plus className="h-4 w-4" />
-          Create Portfolio
-        </Button>
+    <div className="mx-auto max-w-4xl">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold glow-text">Portfolio</h1>
+          <p className="text-[11px] text-[var(--text-muted)]">Binance wallet &middot; Live balances</p>
+        </div>
+        <button onClick={fetchPortfolio} className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all">
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          {lastUpdate && <span>{lastUpdate}</span>}
+        </button>
       </div>
 
-      {/* Create Form */}
-      {showCreateForm && (
-        <GlassCard className="mb-6">
-          <h3 className="mb-4 text-base font-semibold text-[#e8e8ed]">
-            New Portfolio
-          </h3>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-[#55556a]">Name</label>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="My Portfolio"
-                className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-[#55556a]">
-                Description
-              </label>
-              <input
-                type="text"
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                placeholder="Optional description"
-                className="w-full rounded-lg border border-white/[0.06] bg-[#1a1a24] px-3 py-2 text-sm text-[#e8e8ed] outline-none focus:border-[#06d6a0]/50"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleCreate} loading={creating}>
-                Create
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setShowCreateForm(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </GlassCard>
-      )}
+      {/* Total value — no heavy frame */}
+      <div className="mb-6">
+        <p className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider mb-1">Total Value</p>
+        <p className="text-4xl font-bold text-[var(--foreground)]">{format(totalValue)}</p>
+        <p className="text-xs text-[var(--text-muted)] mt-1">{holdings.length} assets</p>
+      </div>
 
-      {/* Portfolio tabs (if multiple) */}
-      {portfolios.length > 1 && (
-        <div className="mb-6 flex gap-2 overflow-x-auto">
-          {portfolios.map((p) => (
-            <button
-              key={p.id}
-              onClick={async () => {
-                setActivePortfolio(p);
-                const [posData, txData] = await Promise.allSettled([
-                  portfolioApi.getPositions(p.id),
-                  portfolioApi.getTransactions(p.id),
-                ]);
-                if (posData.status === "fulfilled") setPositions(posData.value);
-                if (txData.status === "fulfilled")
-                  setTransactions(txData.value.slice(0, 10));
-              }}
-              className={cn(
-                "shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                activePortfolio?.id === p.id
-                  ? "bg-[#06d6a0]/20 text-[#06d6a0] border border-[#06d6a0]/30"
-                  : "border border-white/[0.06] text-[#8888a0] hover:text-[#e8e8ed] hover:bg-white/5",
-              )}
-            >
-              {p.name}
-            </button>
-          ))}
+      {/* Allocation bar */}
+      {holdings.length > 0 && totalValue > 0 && (
+        <div className="mb-6">
+          <div className="flex h-3 rounded-full overflow-hidden gap-0.5">
+            {holdings.slice(0, 8).map((h, i) => {
+              const pct = (h.value / totalValue) * 100;
+              if (pct < 1) return null;
+              const colors = ["#a855f7", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#06d6a0", "#6366f1"];
+              return (
+                <div
+                  key={h.asset}
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${pct}%`, background: colors[i % colors.length] }}
+                  title={`${h.asset}: ${pct.toFixed(1)}%`}
+                />
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-3 mt-2">
+            {holdings.slice(0, 6).map((h, i) => {
+              const pct = (h.value / totalValue) * 100;
+              const colors = ["#a855f7", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#ec4899"];
+              return (
+                <span key={h.asset} className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                  <span className="h-2 w-2 rounded-full" style={{ background: colors[i % colors.length] }} />
+                  {h.asset} {pct.toFixed(1)}%
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          title="Total Value"
-          value={formatCurrency(totalValue)}
-          icon={Wallet}
-        />
-        <StatCard
-          title="Total P&L"
-          value={formatCurrency(totalPnl)}
-          trend={totalPnl >= 0 ? "up" : "down"}
-          icon={TrendingUp}
-        />
-        <StatCard
-          title="P&L %"
-          value={formatPercent(totalPnlPct)}
-          trend={totalPnlPct >= 0 ? "up" : "down"}
-          icon={Percent}
-        />
-      </div>
+      {/* Error */}
+      {error && (
+        <div className="mb-4 rounded-xl p-3 text-[12px] text-[#ef4444] bg-[#ef4444]/8">
+          {error}
+        </div>
+      )}
 
-      {/* Main content: positions table + allocation chart */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Positions Table (2/3) */}
-        <GlassCard className="lg:col-span-2">
-          <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">Positions</h2>
-          {sortedPositions.length === 0 ? (
-            <p className="text-sm text-[#55556a]">No open positions</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
-                    <th
-                      className="cursor-pointer pb-3 pr-3"
-                      onClick={() => toggleSort("symbol")}
-                    >
-                      Asset <SortIcon field="symbol" />
-                    </th>
-                    <th className="pb-3 pr-3">Type</th>
-                    <th className="pb-3 pr-3 text-right">Qty</th>
-                    <th className="hidden pb-3 pr-3 text-right sm:table-cell">
-                      Avg Entry
-                    </th>
-                    <th className="pb-3 pr-3 text-right">Current</th>
-                    <th
-                      className="cursor-pointer pb-3 pr-3 text-right"
-                      onClick={() => toggleSort("pnl")}
-                    >
-                      P&L <SortIcon field="pnl" />
-                    </th>
-                    <th
-                      className="cursor-pointer pb-3 pr-3 text-right"
-                      onClick={() => toggleSort("pnl_pct")}
-                    >
-                      P&L% <SortIcon field="pnl_pct" />
-                    </th>
-                    <th className="pb-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedPositions.map((pos) => (
-                    <>
-                      <tr
-                        key={pos.id}
-                        className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02] cursor-pointer"
-                        onClick={() =>
-                          setExpandedPosition(
-                            expandedPosition === pos.id ? null : pos.id,
-                          )
-                        }
-                      >
-                        <td className="py-3 pr-3 font-semibold text-[#e8e8ed]">
-                          {pos.symbol}
-                        </td>
-                        <td className="py-3 pr-3">
-                          <Badge variant="info">{pos.asset_type}</Badge>
-                        </td>
-                        <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
-                          {pos.quantity}
-                        </td>
-                        <td className="hidden py-3 pr-3 text-right font-mono text-[#8888a0] sm:table-cell">
-                          {formatCurrency(pos.avg_entry_price)}
-                        </td>
-                        <td className="py-3 pr-3 text-right font-mono text-[#e8e8ed]">
-                          {formatCurrency(pos.current_price)}
-                        </td>
-                        <td
-                          className={cn(
-                            "py-3 pr-3 text-right font-mono font-semibold",
-                            pos.pnl >= 0 ? "text-[#06d6a0]" : "text-[#ef4444]",
-                          )}
-                        >
-                          {formatCurrency(pos.pnl)}
-                        </td>
-                        <td
-                          className={cn(
-                            "py-3 pr-3 text-right font-mono font-semibold",
-                            pos.pnl_pct >= 0 ? "text-[#06d6a0]" : "text-[#ef4444]",
-                          )}
-                        >
-                          {formatPercent(pos.pnl_pct)}
-                        </td>
-                        <td
-                          className="py-3 text-right"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-center justify-end gap-1">
-                            {editingStopLoss === pos.id ? (
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  value={stopLossValue}
-                                  onChange={(e) =>
-                                    setStopLossValue(e.target.value)
-                                  }
-                                  placeholder="Stop price"
-                                  className="w-20 rounded border border-white/[0.06] bg-[#1a1a24] px-2 py-1 text-xs text-[#e8e8ed] outline-none"
-                                />
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateStopLoss(pos.id)}
-                                >
-                                  Set
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setEditingStopLoss(null)}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setEditingStopLoss(pos.id);
-                                    setStopLossValue(
-                                      pos.stop_loss?.toString() ?? "",
-                                    );
-                                  }}
-                                  title="Edit stop-loss"
-                                >
-                                  <Edit3 className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  onClick={() => handleClosePosition(pos.id)}
-                                >
-                                  Close
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {/* Expanded mini chart row */}
-                      {expandedPosition === pos.id && (
-                        <tr key={`${pos.id}-chart`}>
-                          <td colSpan={8} className="p-3">
-                            <div className="rounded-lg border border-white/[0.06] bg-[#14141b] p-3">
-                              <PriceChart
-                                symbol={pos.symbol}
-                                height={120}
-                                type="line"
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </GlassCard>
-
-        {/* Allocation Chart (1/3) */}
-        <GlassCard>
-          <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">Allocation</h2>
-          {pieData.length === 0 ? (
-            <p className="text-center text-sm text-[#55556a]">
-              No positions to display
-            </p>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={4}
-                    stroke="none"
-                  >
-                    {pieData.map((_, i) => (
-                      <Cell
-                        key={i}
-                        fill={PIE_COLORS[i % PIE_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "rgba(13,13,18,0.95)",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      borderRadius: "0.5rem",
-                      color: "#e8e8ed",
-                    }}
-                    formatter={(value) => formatCurrency(Number(value))}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="mt-3 flex flex-wrap justify-center gap-3">
-                {pieData.map((entry, i) => (
-                  <div key={entry.name} className="flex items-center gap-1.5">
-                    <div
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{
-                        background: PIE_COLORS[i % PIE_COLORS.length],
-                      }}
-                    />
-                    <span className="text-xs capitalize text-[#8888a0]">
-                      {entry.name}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </GlassCard>
-      </div>
-
-      {/* Recent Transactions */}
-      <GlassCard className="mt-6">
-        <h2 className="mb-4 text-lg font-semibold text-[#e8e8ed]">
-          Recent Transactions
-        </h2>
-        {transactions.length === 0 ? (
-          <p className="text-sm text-[#55556a]">No transactions yet</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wider text-[#55556a]">
-                  <th className="pb-3 pr-3">Time</th>
-                  <th className="pb-3 pr-3">Symbol</th>
-                  <th className="pb-3 pr-3">Side</th>
-                  <th className="pb-3 pr-3 text-right">Qty</th>
-                  <th className="pb-3 pr-3 text-right">Price</th>
-                  <th className="pb-3 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((tx) => (
-                  <tr
-                    key={tx.id}
-                    className="border-b border-white/[0.06] transition-colors hover:bg-white/[0.02]"
-                  >
-                    <td className="py-3 pr-3 text-[#8888a0]">
-                      {formatRelative(tx.timestamp)}
-                    </td>
-                    <td className="py-3 pr-3 font-semibold text-[#e8e8ed]">
-                      {tx.symbol}
-                    </td>
-                    <td className="py-3 pr-3">
-                      <Badge variant={tx.side === "buy" ? "success" : "danger"}>
-                        {tx.side.toUpperCase()}
-                      </Badge>
-                    </td>
-                    <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
-                      {tx.quantity}
-                    </td>
-                    <td className="py-3 pr-3 text-right font-mono text-[#8888a0]">
-                      {formatCurrency(tx.price)}
-                    </td>
-                    <td className="py-3 text-right font-mono text-[#e8e8ed]">
-                      {formatCurrency(tx.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Holdings list — minimal, no cards per item */}
+      {loading && holdings.length === 0 ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-xl" style={{ background: "var(--glass-bg)" }} />)}
+        </div>
+      ) : holdings.length === 0 ? (
+        <div className="py-16 text-center">
+          <Wallet className="h-10 w-10 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
+          <p className="text-sm text-[var(--text-muted)]">No assets in your wallet</p>
+          <p className="text-[11px] text-[var(--text-muted)] mt-1 opacity-60">Start by depositing on Binance</p>
+        </div>
+      ) : (
+        <div className="space-y-0.5">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-2 py-1 text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
+            <span className="w-8" />
+            <span className="flex-1">Asset</span>
+            <span className="w-24 text-right">Balance</span>
+            <span className="w-24 text-right hidden sm:block">Price</span>
+            <span className="w-24 text-right">Value</span>
+            <span className="w-16 text-right hidden sm:block">24h</span>
           </div>
-        )}
-      </GlassCard>
+
+          {holdings.map((h) => {
+            const pos = h.change24h >= 0;
+            return (
+              <div key={h.asset} className="flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-[var(--glass-bg)] transition-all">
+                {h.image ? <img src={h.image} alt="" className="h-7 w-7 rounded-full flex-shrink-0" /> : <div className="h-7 w-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--glass-bg)" }}>{h.asset.slice(0, 2)}</div>}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-semibold text-[var(--foreground)]">{h.asset}</p>
+                  {h.locked > 0 && <p className="text-[9px] text-[var(--text-muted)]">{h.locked.toFixed(4)} locked</p>}
+                </div>
+                <div className="w-24 text-right">
+                  <p className="text-[11px] font-mono text-[var(--foreground)]">{h.total < 1 ? h.total.toFixed(6) : h.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                </div>
+                <div className="w-24 text-right hidden sm:block">
+                  <p className="text-[11px] text-[var(--text-secondary)]">{h.price > 0 ? format(h.price) : "—"}</p>
+                </div>
+                <div className="w-24 text-right">
+                  <p className="text-[11px] font-semibold text-[var(--foreground)]">{format(h.value)}</p>
+                </div>
+                <div className="w-16 text-right hidden sm:block">
+                  <p className={cn("text-[10px] font-medium", pos ? "text-[#22c55e]" : "text-[#ef4444]")}>
+                    {h.change24h !== 0 ? `${pos ? "+" : ""}${h.change24h.toFixed(1)}%` : "—"}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

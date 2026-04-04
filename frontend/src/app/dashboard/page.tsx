@@ -18,7 +18,7 @@ import {
   Tooltip,
 } from "recharts";
 import { pricesApi, portfolioApi, tradingApi, binanceApi } from "@/lib/api";
-import { AutoTradingMonitor } from "@/components/trading/auto-trading-monitor";
+// Signal Monitor moved to /crypto (trading page)
 import type {
   CryptoMarketData,
   Order,
@@ -338,10 +338,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ---- Trading Signals + Auto Monitor ---- */}
-      <div className="mt-6">
-        <AutoTradingMonitor />
-      </div>
 
       {/* ---- Main Content: 2-column layout ---- */}
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">

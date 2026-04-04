@@ -29,9 +29,8 @@ import {
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Crypto", href: "/crypto", icon: CircleDollarSign },
+  { label: "Trading", href: "/crypto", icon: CircleDollarSign },
   { label: "Portfolio", href: "/portfolio", icon: Wallet },
-  { label: "Trading", href: "/trading", icon: ArrowLeftRight },
   { label: "Strategies", href: "/strategies", icon: Brain },
   { label: "News", href: "/news", icon: Newspaper },
   { label: "Alerts", href: "/alerts", icon: Bell },
