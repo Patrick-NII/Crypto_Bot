@@ -5,10 +5,11 @@ import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provid
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Star, TrendingUp, TrendingDown, BarChart3, DollarSign, Activity } from "lucide-react";
-import { pricesApi } from "@/lib/api";
+import { pricesApi, signalsApi } from "@/lib/api";
 import { priceWs } from "@/lib/websocket";
 import { PriceChart } from "@/components/charts/price-chart";
 import { QuickTradeModal } from "@/components/trading/quick-trade-modal";
+import { SignalBadge, IndicatorBar, type SignalAction } from "@/components/trading/signal-badge";
 import { cn } from "@/lib/utils";
 
 interface CoinData {
@@ -61,6 +62,7 @@ export default function CryptoDetailClient() {
   const [loading, setLoading] = useState(true);
   const [tradeModal, setTradeModal] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
+  const [signal, setSignal] = useState<{ action: string; confidence: number; score: number; reasoning: string; indicators: Array<{ name: string; value: number; signal: number; description: string }> } | null>(null);
 
   useEffect(() => {
     setIsWatched(getWatchlist().includes(symbol));
@@ -75,6 +77,9 @@ export default function CryptoDetailClient() {
         setLivePrice(price);
       }
     }).catch(() => {}).finally(() => setLoading(false));
+
+    // Fetch trading signal
+    signalsApi.getSignal(symbol).then(setSignal).catch(() => {});
   }, [symbol]);
 
   useEffect(() => {
@@ -109,12 +114,25 @@ export default function CryptoDetailClient() {
         </button>
       </div>
 
-      <div className="mb-6">
-        <p className="text-4xl font-bold text-white">{fmt(price)}</p>
-        <p className={cn("mt-1 text-sm font-medium", positive ? "text-[#06d6a0]" : "text-red-400")}>{positive ? "+" : ""}{changePct.toFixed(2)}% today</p>
+      <div className="mb-4">
+        <p className="text-4xl font-bold text-[var(--foreground)]">{fmt(price)}</p>
+        <div className="flex items-center gap-3 mt-1.5">
+          <p className={cn("text-sm font-medium", positive ? "text-[#22c55e]" : "text-[#ef4444]")}>{positive ? "+" : ""}{changePct.toFixed(2)}% today</p>
+          {signal && <SignalBadge action={signal.action as SignalAction} confidence={signal.confidence} size="md" />}
+        </div>
       </div>
 
-      <div className="mb-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#14141b] p-4">
+      {/* Indicators */}
+      {signal && signal.indicators.length > 0 && (
+        <div className="liquid-glass-card p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {signal.indicators.map((ind) => (
+            <IndicatorBar key={ind.name} name={ind.name} value={ind.value} signal={ind.signal} description={ind.description} />
+          ))}
+          <div className="sm:col-span-3 text-[10px] text-[var(--text-muted)] mt-1">{signal.reasoning}</div>
+        </div>
+      )}
+
+      <div className="mb-6 liquid-glass-card p-4">
         <PriceChart symbol={symbol} height={400} type="candlestick" showIntervals defaultInterval="1M" />
       </div>
 

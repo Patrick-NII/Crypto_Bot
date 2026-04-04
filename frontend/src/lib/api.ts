@@ -273,6 +273,86 @@ export const tradingApi = {
     }),
 };
 
+// ---- Signals (ML Service) ----
+
+interface SignalData {
+  symbol: string;
+  action: string;
+  confidence: number;
+  score: number;
+  reasoning: string;
+  indicators: Array<{ name: string; value: number; signal: number; description: string }>;
+  timestamp: string;
+}
+
+// Client-side signal generation using CoinGecko OHLC data
+async function cgGenerateSignal(symbol: string): Promise<SignalData> {
+  const cgId = SYM_TO_CG[symbol.toUpperCase()];
+  if (!cgId) return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Unknown", indicators: [], timestamp: new Date().toISOString() };
+
+  const ohlc = await fetchCG<number[][]>(`/coins/${cgId}/ohlc`, { vs_currency: "usd", days: "30" });
+  const closes = ohlc.map((c) => c[4]);
+  if (closes.length < 15) return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Insufficient data", indicators: [], timestamp: new Date().toISOString() };
+
+  // RSI
+  const gains: number[] = []; const losses: number[] = [];
+  for (let i = 1; i < closes.length; i++) { const d = closes[i] - closes[i-1]; gains.push(Math.max(d,0)); losses.push(Math.max(-d,0)); }
+  const period = 14;
+  const avgGain = gains.slice(-period).reduce((a,b)=>a+b,0)/period;
+  const avgLoss = losses.slice(-period).reduce((a,b)=>a+b,0)/period;
+  const rsi = avgLoss === 0 ? 100 : 100 - 100/(1 + avgGain/avgLoss);
+  const rsiSignal = rsi < 30 ? 0.7 : rsi < 45 ? 0.3 : rsi > 70 ? -0.7 : rsi > 55 ? -0.3 : 0;
+
+  // EMA cross
+  const ema = (arr: number[], p: number) => { const k=2/(p+1); const r=[arr[0]]; for(let i=1;i<arr.length;i++) r.push(arr[i]*k+r[i-1]*(1-k)); return r; };
+  const e9 = ema(closes, 9); const e21 = ema(closes, 21);
+  const emaDiff = e9[e9.length-1] - e21[e21.length-1];
+  const prevDiff = e9[e9.length-2] - e21[e21.length-2];
+  const emaSignal = (emaDiff > 0 && prevDiff <= 0) ? 0.7 : (emaDiff < 0 && prevDiff >= 0) ? -0.7 : emaDiff > 0 ? 0.3 : emaDiff < 0 ? -0.3 : 0;
+
+  // Bollinger
+  const sma20 = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
+  const std20 = Math.sqrt(closes.slice(-20).reduce((a,b)=>a+(b-sma20)**2,0)/20);
+  const upper = sma20+2*std20; const lower = sma20-2*std20;
+  const pos = (upper-lower) === 0 ? 0.5 : (closes[closes.length-1]-lower)/(upper-lower);
+  const bbSignal = pos < 0.2 ? 0.6 : pos < 0.4 ? 0.2 : pos > 0.8 ? -0.6 : pos > 0.6 ? -0.2 : 0;
+
+  // Composite
+  const score = (rsiSignal*1.2 + emaSignal*1.1 + bbSignal*1.0) / 3.3;
+  const action = score > 0.5 ? "STRONG_BUY" : score > 0.25 ? "BUY" : score > 0.08 ? "ACCUMULATE" : score > -0.08 ? "HOLD" : score > -0.25 ? "REDUCE" : score > -0.5 ? "SELL" : "STRONG_SELL";
+
+  return {
+    symbol: symbol.toUpperCase(),
+    action,
+    confidence: Math.min(Math.abs(score), 1),
+    score: Math.round(score * 1000) / 1000,
+    reasoning: `RSI=${rsi.toFixed(0)}, EMA${emaDiff>0?"+":"-"}, BB${pos<0.3?"low":pos>0.7?"high":"mid"}`,
+    indicators: [
+      { name: "RSI", value: Math.round(rsi), signal: rsiSignal, description: `RSI ${rsi.toFixed(0)} — ${rsi<30?"Oversold":rsi>70?"Overbought":"Neutral"}` },
+      { name: "EMA Cross", value: Math.round(emaDiff*100)/100, signal: emaSignal, description: `EMA 9/21 ${emaDiff>0?"bullish":"bearish"}` },
+      { name: "Bollinger", value: Math.round(pos*100)/100, signal: bbSignal, description: `Price at ${(pos*100).toFixed(0)}% of bands` },
+    ],
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export const signalsApi = {
+  getSignal: (symbol: string) =>
+    withFallback(
+      () => fetchJson<SignalData>(`/ml/signals/${symbol}`),
+      () => cgGenerateSignal(symbol),
+    ),
+  getAllSignals: () =>
+    withFallback(
+      () => fetchJson<{ signals: SignalData[] }>("/ml/signals").then(r => r.signals),
+      async () => {
+        const syms = ["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","LINK"];
+        const results = await Promise.allSettled(syms.map(s => cgGenerateSignal(s)));
+        return results.filter((r): r is PromiseFulfilledResult<SignalData> => r.status === "fulfilled").map(r => r.value);
+      },
+    ),
+};
+
 // ---- Strategies ----
 
 export const strategiesApi = {
