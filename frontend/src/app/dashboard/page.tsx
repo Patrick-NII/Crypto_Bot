@@ -17,7 +17,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { pricesApi, portfolioApi, tradingApi } from "@/lib/api";
+import { pricesApi, portfolioApi, tradingApi, binanceApi } from "@/lib/api";
 import { AutoTradingMonitor } from "@/components/trading/auto-trading-monitor";
 import type {
   CryptoMarketData,
@@ -134,6 +134,43 @@ export default function DashboardPage() {
         );
       }
       if (fgData.status === "fulfilled") setFearGreed(fgData.value.value);
+
+      // Try fetching real Binance balances for portfolio value
+      try {
+        const balances = await binanceApi.getBalances();
+        if (balances.length > 0) {
+          // Calculate total portfolio value in USD using crypto prices
+          let totalValue = 0;
+          for (const b of balances) {
+            const total = b.free + b.locked;
+            if (total <= 0) continue;
+            if (b.asset === "USDT" || b.asset === "BUSD" || b.asset === "USD") {
+              totalValue += total;
+            } else {
+              // Find price from loaded cryptos
+              const crypto = allCryptosResult.status === "fulfilled"
+                ? allCryptosResult.value.data.find((c) => c.symbol.toUpperCase() === b.asset.toUpperCase())
+                : null;
+              const price = (crypto as unknown as Record<string, number>)?.current_price ?? (crypto as unknown as Record<string, number>)?.price ?? 0;
+              totalValue += total * price;
+            }
+          }
+          if (totalValue > 0) {
+            setPortfolio({
+              id: "binance-live",
+              name: "Binance Live",
+              total_value: totalValue,
+              total_pnl: 0,
+              total_pnl_pct: 0,
+              positions: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+      } catch {
+        // Binance proxy not running or no permissions — silent
+      }
     } catch {
       // Errors handled per-request above
     } finally {
