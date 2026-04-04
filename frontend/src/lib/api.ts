@@ -70,11 +70,18 @@ const SYM_TO_CG: Record<string, string> = {
   XLM: "stellar", VET: "vechain", HBAR: "hedera-hashgraph", EOS: "eos", CRO: "crypto-com-chain",
 };
 
+// ---- Currency helper ----
+
+function getActiveCurrency(): string {
+  if (typeof window === "undefined") return "usd";
+  return localStorage.getItem("okamoey-currency") || "usd";
+}
+
 // ---- CoinGecko Direct Fallbacks ----
 
 async function cgGetAllCryptos(limit: number): Promise<AllCryptosResponse> {
   const data = await fetchCG<Array<Record<string, unknown>>>("/coins/markets", {
-    vs_currency: "usd",
+    vs_currency: getActiveCurrency(),
     order: "market_cap_desc",
     per_page: String(limit),
     page: "1",
@@ -133,7 +140,7 @@ async function cgGetOHLCV(symbol: string, interval: string, limit: number): Prom
   else days = "max";
 
   const data = await fetchCG<number[][]>(`/coins/${cgId}/ohlc`, {
-    vs_currency: "usd",
+    vs_currency: getActiveCurrency(),
     days,
   });
 
@@ -333,6 +340,11 @@ export const aiApi = {
     }),
   getAutoTradingHistory: () =>
     fetchAI<Array<{ timestamp: string; analysis: string; executed: number; trades: Array<{ symbol: string; action: string; amount_usd: number }> }>>("/ai/auto-trading/history"),
+  analyzePerformance: (metrics: Record<string, unknown>) =>
+    fetchAI<{ analysis: string; provider: string; model: string }>("/ai/analyze-performance", {
+      method: "POST",
+      body: JSON.stringify({ metrics }),
+    }),
 };
 
 // ---- Analytics ----

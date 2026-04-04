@@ -9,7 +9,10 @@ import {
   AlertTriangle,
   Activity,
   Shield,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
+import { aiApi } from "@/lib/api";
 import {
   LineChart,
   Line,
@@ -59,6 +62,8 @@ export default function AnalyticsPage() {
   >([]);
   const [tradingActivity, setTradingActivity] = useState<TradingActivity[]>([]);
   const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -115,7 +120,59 @@ export default function AnalyticsPage() {
 
   return (
     <div className="relative z-10 min-h-screen p-4 md:p-8">
-      <h1 className="mb-8 text-3xl font-bold glow-text">Analytics</h1>
+      <h1 className="mb-6 text-2xl font-bold glow-text">Analytics</h1>
+
+      {/* AI Performance Advisor */}
+      <div className="liquid-glass-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4.5 w-4.5 accent-text" />
+            <h2 className="text-sm font-semibold text-[var(--foreground)]">AI Performance Advisor</h2>
+          </div>
+          <button
+            onClick={async () => {
+              setAiLoading(true);
+              try {
+                // Check cache first
+                const cached = localStorage.getItem("okamoey-ai-analysis");
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  if (Date.now() - parsed.ts < 3600000) { setAiAnalysis(parsed.text); setAiLoading(false); return; }
+                }
+                const metricsData = {
+                  sharpe_ratio: metrics?.sharpe_ratio ?? 0,
+                  win_rate: metrics?.win_rate ?? 0,
+                  max_drawdown: metrics?.max_drawdown ?? 0,
+                  total_pnl: metrics?.total_pnl ?? 0,
+                  total_trades: metrics?.total_trades ?? 0,
+                  volatility: metrics?.volatility ?? 0,
+                  sortino_ratio: metrics?.sortino_ratio ?? 0,
+                  calmar_ratio: metrics?.calmar_ratio ?? 0,
+                };
+                const res = await aiApi.analyzePerformance(metricsData);
+                setAiAnalysis(res.analysis);
+                localStorage.setItem("okamoey-ai-analysis", JSON.stringify({ text: res.analysis, ts: Date.now() }));
+              } catch {
+                setAiAnalysis("AI analysis is unavailable. Connect your OpenAI API key in the environment to enable this feature.");
+              } finally { setAiLoading(false); }
+            }}
+            disabled={aiLoading}
+            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-medium accent-bg accent-text hover:scale-[1.02] transition-all disabled:opacity-50"
+          >
+            {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {aiLoading ? "Analyzing..." : "Get AI Analysis"}
+          </button>
+        </div>
+        {aiAnalysis ? (
+          <div className="prose prose-sm max-w-none text-[13px] text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+            {aiAnalysis}
+          </div>
+        ) : (
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Click &quot;Get AI Analysis&quot; for personalized insights on your trading performance, strengths, weaknesses, and actionable recommendations.
+          </p>
+        )}
+      </div>
 
       {/* Top Row: Key Metrics */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

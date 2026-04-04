@@ -12,6 +12,7 @@ import {
   Brain,
   Bell,
   BarChart3,
+  Newspaper,
   PanelLeftClose,
   PanelLeftOpen,
   CircleDollarSign,
@@ -30,6 +31,7 @@ const navItems = [
   { label: "Portfolio", href: "/portfolio", icon: Wallet },
   { label: "Trading", href: "/trading", icon: ArrowLeftRight },
   { label: "Strategies", href: "/strategies", icon: Brain },
+  { label: "News", href: "/news", icon: Newspaper },
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
 ] as const;
@@ -169,7 +171,7 @@ export function Sidebar() {
 
           {/* Settings */}
           <Link
-            href="/dashboard"
+            href="/settings"
             title={collapsed ? "Settings" : undefined}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all",

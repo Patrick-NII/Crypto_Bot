@@ -87,3 +87,48 @@ async def clear_chat(req: ClearRequest) -> dict:
     """Clear conversation history for a user+agent pair."""
     await clear_history(req.user_id, req.agent_type)
     return {"status": "cleared", "agent_type": req.agent_type}
+
+
+class PerformanceAnalysisRequest(BaseModel):
+    metrics: dict = Field(..., description="User performance metrics")
+
+
+PERF_SYSTEM_PROMPT = """You are an expert crypto trading performance analyst for the Okamoey platform.
+Analyze the user's trading metrics and provide actionable advice.
+
+Structure your response in markdown with these sections:
+## Performance Summary
+Brief overview of the user's performance.
+
+## Strengths
+What the user is doing well (2-3 points with data).
+
+## Weaknesses
+Areas that need improvement (2-3 points with data).
+
+## Recommendations
+Specific, actionable suggestions to improve (3-5 points).
+
+## Risk Assessment
+Current risk level and suggestions for adjustment.
+
+Be specific. Reference actual numbers. Be encouraging but honest."""
+
+
+@router.post("/analyze-performance")
+async def analyze_performance(req: PerformanceAnalysisRequest) -> dict:
+    """Analyze user trading performance and generate AI advice."""
+    context = f"User trading performance metrics:\n{req.metrics}"
+    messages = [{"role": "user", "content": context}]
+
+    try:
+        reply, provider, model = await chat_completion(
+            messages, PERF_SYSTEM_PROMPT, Complexity.COMPLEX
+        )
+        return {
+            "analysis": reply,
+            "provider": provider,
+            "model": model,
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
