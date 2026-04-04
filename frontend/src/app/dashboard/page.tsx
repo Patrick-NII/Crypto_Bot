@@ -187,8 +187,8 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="relative z-10 min-h-screen p-4 md:p-8">
-        <h1 className="mb-8 text-3xl font-bold glow-text">Dashboard</h1>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <h1 className="mb-4 md:mb-6 text-xl md:text-2xl font-bold glow-text">Dashboard</h1>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <StatCardSkeleton key={i} />
           ))}
@@ -219,10 +219,10 @@ export default function DashboardPage() {
   return (
     <div className="relative z-10 min-h-screen p-4 md:p-8">
       {/* Page Title */}
-      <h1 className="mb-8 text-3xl font-bold glow-text">Dashboard</h1>
+      <h1 className="mb-4 md:mb-6 text-xl md:text-2xl font-bold glow-text">Dashboard</h1>
 
       {/* ---- Top Row: StatCards ---- */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           title="Portfolio Value"
           value={formatCurrency(portfolioValue)}

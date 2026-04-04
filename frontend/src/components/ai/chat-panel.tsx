@@ -92,7 +92,7 @@ export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#06d6a0] to-[#0ff0b3] shadow-lg shadow-[#06d6a0]/25 transition-transform hover:scale-105 active:scale-95"
+          className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex h-12 w-12 md:h-14 md:w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#06d6a0] to-[#0ff0b3] shadow-lg shadow-[#06d6a0]/25 transition-transform hover:scale-105 active:scale-95"
           title="Open AI Assistant"
         >
           <Sparkles className="h-6 w-6 text-[#0d0d12]" />
@@ -102,7 +102,8 @@ export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
       {/* Panel */}
       <div
         className={cn(
-          "fixed bottom-0 right-0 z-50 flex h-[600px] w-[400px] flex-col rounded-tl-2xl border border-[rgba(255,255,255,0.08)] bg-[#0d0d12]/95 backdrop-blur-xl transition-transform duration-300",
+          "fixed bottom-0 right-0 z-[60] flex h-[80vh] md:h-[600px] w-full md:w-[400px] flex-col rounded-t-2xl md:rounded-tl-2xl md:rounded-tr-none border border-[var(--glass-border)] backdrop-blur-xl transition-transform duration-300",
+          "bg-[var(--surface)]",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
