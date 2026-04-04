@@ -1,6 +1,6 @@
 // ============================================================
 // Okamoey Trading Platform - API Client
-// Gateway-first with CoinGecko direct fallback
+// Binance API via local proxy (primary) + Gateway fallback
 // ============================================================
 
 import type {
@@ -31,285 +31,75 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-const CG_BASE = "https://api.coingecko.com/api/v3";
+const BINANCE_PROXY = "http://localhost:3001";
+const AI_BASE = process.env.NEXT_PUBLIC_AI_URL ?? "http://localhost:8008/api/v1";
 
 // ---- Helpers ----
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout — fail fast to fallback
+  const timeout = setTimeout(() => controller.abort(), 3000);
   try {
     const res = await fetch(`${API_BASE}${url}`, {
       headers: { "Content-Type": "application/json", ...init?.headers },
       ...init,
       signal: controller.signal,
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "Unknown error");
-      throw new Error(`API ${res.status}: ${text}`);
-    }
+    if (!res.ok) throw new Error(`API ${res.status}`);
     return res.json() as Promise<T>;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchCG<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-  const qs = new URLSearchParams(params).toString();
-  const url = `${CG_BASE}${path}${qs ? `?${qs}` : ""}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
-  return res.json() as Promise<T>;
+async function fetchBinance<T>(path: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${BINANCE_PROXY}${path}`, {
+      headers: { "Content-Type": "application/json", ...init?.headers },
+      ...init,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Binance ${res.status}`);
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-// Symbol → CoinGecko ID mapping
-const SYM_TO_CG: Record<string, string> = {
-  BTC: "bitcoin", ETH: "ethereum", SOL: "solana", BNB: "binancecoin", XRP: "ripple",
-  ADA: "cardano", DOGE: "dogecoin", AVAX: "avalanche-2", DOT: "polkadot", MATIC: "matic-network",
-  LINK: "chainlink", UNI: "uniswap", ATOM: "cosmos", LTC: "litecoin", NEAR: "near",
-  APT: "aptos", ARB: "arbitrum", OP: "optimism", FIL: "filecoin", AAVE: "aave",
-  SHIB: "shiba-inu", TRX: "tron", TON: "the-open-network", SUI: "sui", SEI: "sei-network",
-  PEPE: "pepe", WLD: "worldcoin-wld", INJ: "injective-protocol", TIA: "celestia",
-  JUP: "jupiter-exchange-solana", ONDO: "ondo-finance", RENDER: "render-token",
-  FET: "fetch-ai", STX: "blockstack", IMX: "immutable-x", MKR: "maker", GRT: "the-graph",
-  ALGO: "algorand", FTM: "fantom", SAND: "the-sandbox", MANA: "decentraland",
-  AXS: "axie-infinity", THETA: "theta-token", EGLD: "elrond-erd-2", FLOW: "flow",
-  XLM: "stellar", VET: "vechain", HBAR: "hedera-hashgraph", EOS: "eos", CRO: "crypto-com-chain",
-};
-
-// ---- Currency helper ----
+async function fetchAI<T>(url: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`${AI_BASE}${url}`, {
+      headers: { "Content-Type": "application/json", ...init?.headers },
+      ...init,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`AI API ${res.status}`);
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function getActiveCurrency(): string {
   if (typeof window === "undefined") return "usd";
   return localStorage.getItem("okamoey-currency") || "usd";
 }
 
-// ---- CoinGecko Direct Fallbacks ----
+// ---- Binance data helpers ----
 
-async function cgGetAllCryptos(limit: number): Promise<AllCryptosResponse> {
-  const data = await fetchCG<Array<Record<string, unknown>>>("/coins/markets", {
-    vs_currency: getActiveCurrency(),
-    order: "market_cap_desc",
-    per_page: String(limit),
-    page: "1",
-    sparkline: "true",
-    price_change_percentage: "24h",
-  });
-
-  return {
-    data: data.map((coin) => {
-      const sparkline = coin.sparkline_in_7d as { price?: number[] } | null;
-      return {
-        symbol: String(coin.symbol ?? "").toUpperCase(),
-        name: String(coin.name ?? ""),
-        price: Number(coin.current_price ?? 0),
-        change_24h: Number(coin.price_change_24h ?? 0),
-        change_pct_24h: Number(coin.price_change_percentage_24h ?? 0),
-        volume_24h: Number(coin.total_volume ?? 0),
-        market_cap: Number(coin.market_cap ?? 0),
-        sparkline: sparkline?.price ?? [],
-        rank: Number(coin.market_cap_rank ?? 0),
-        // Extra fields for discover page
-        id: String(coin.id ?? ""),
-        image: String(coin.image ?? ""),
-        current_price: Number(coin.current_price ?? 0),
-        market_cap_rank: Number(coin.market_cap_rank ?? 0),
-        price_change_percentage_24h: Number(coin.price_change_percentage_24h ?? 0),
-        total_volume: Number(coin.total_volume ?? 0),
-        sparkline_in_7d: sparkline?.price ?? null,
-        high_24h: Number(coin.high_24h ?? 0),
-        low_24h: Number(coin.low_24h ?? 0),
-        circulating_supply: Number(coin.circulating_supply ?? 0),
-        total_supply: Number(coin.total_supply ?? 0),
-        ath: Number(coin.ath ?? 0),
-        ath_change_percentage: Number(coin.ath_change_percentage ?? 0),
-      };
-    }),
-    total: data.length,
-    page: 1,
-    limit,
-  };
-}
-
-// CoinGecko chart data — uses /market_chart for short intervals (more up-to-date), /ohlc for longer
-async function cgGetOHLCV(symbol: string, interval: string, limit: number): Promise<OHLCVPoint[]> {
-  const cgId = SYM_TO_CG[symbol.toUpperCase()];
-  if (!cgId) return [];
-
-  const currency = getActiveCurrency();
-
-  // For 1H and 1D views, use /market_chart which has fresher data (up to current minute)
-  if (interval === "1m" || interval === "5m" || limit <= 288) {
-    const days = interval === "1m" ? "1" : "1";
-    const data = await fetchCG<{ prices: number[][] }>(`/coins/${cgId}/market_chart`, {
-      vs_currency: currency,
-      days,
-    });
-    const prices = data.prices ?? [];
-    if (prices.length < 2) return [];
-
-    // Convert price points to OHLCV-like candles (5-min aggregation)
-    const bucketMs = interval === "1m" ? 60000 : 300000;
-    const candles: OHLCVPoint[] = [];
-    let bucket: number[] = [];
-    let bucketStart = 0;
-
-    for (const [ts, price] of prices) {
-      const bk = Math.floor(ts / bucketMs) * bucketMs;
-      if (bk !== bucketStart && bucket.length > 0) {
-        candles.push({
-          time: Math.floor(bucketStart / 1000),
-          open: bucket[0],
-          high: Math.max(...bucket),
-          low: Math.min(...bucket),
-          close: bucket[bucket.length - 1],
-          volume: 0,
-        });
-        bucket = [];
-      }
-      bucketStart = bk;
-      bucket.push(price);
-    }
-    if (bucket.length > 0) {
-      candles.push({
-        time: Math.floor(bucketStart / 1000),
-        open: bucket[0],
-        high: Math.max(...bucket),
-        low: Math.min(...bucket),
-        close: bucket[bucket.length - 1],
-        volume: 0,
-      });
-    }
-    return candles;
-  }
-
-  // For longer intervals, use /ohlc endpoint
-  let days = "30";
-  if (interval === "1h" || limit <= 168) days = "7";
-  else if (interval === "4h" || limit <= 180) days = "30";
-  else if (interval === "1d" && limit <= 90) days = "90";
-  else if (interval === "1d" && limit <= 365) days = "365";
-  else days = "max";
-
-  const data = await fetchCG<number[][]>(`/coins/${cgId}/ohlc`, {
-    vs_currency: currency,
-    days,
-  });
-
-  return data.map((d) => ({
-    time: Math.floor(d[0] / 1000),
-    open: d[1],
-    high: d[2],
-    low: d[3],
-    close: d[4],
-    volume: 0,
-  }));
-}
-
-async function cgGetFearGreed(): Promise<{ value: number; label: string }> {
-  try {
-    const data = await fetch("https://api.alternative.me/fng/?limit=1&format=json").then((r) => r.json());
-    const entry = data?.data?.[0];
-    return {
-      value: Number(entry?.value ?? 50),
-      label: String(entry?.value_classification ?? "Neutral"),
-    };
-  } catch {
-    return { value: 50, label: "Neutral" };
-  }
-}
-
-async function cgSearchAssets(query: string): Promise<SearchResponse> {
-  const data = await fetchCG<{ coins: Array<Record<string, unknown>> }>("/search", { query });
-  return {
-    results: (data.coins ?? []).slice(0, 20).map((c) => ({
-      symbol: String(c.symbol ?? "").toUpperCase(),
-      name: String(c.name ?? ""),
-      asset_type: "crypto" as const,
-      market_cap: Number(c.market_cap_rank ?? 0),
-    })),
-    total: data.coins?.length ?? 0,
-  };
-}
-
-// ---- API with fallback pattern ----
-
-async function withFallback<T>(primary: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
-  try {
-    return await primary();
-  } catch {
-    return fallback();
-  }
-}
-
-// ---- Prices / Market Data ----
-
-export const pricesApi = {
-  getOverview: () => fetchJson<MarketOverview>("/markets/overview"),
-  getCrypto: () => fetchJson<CryptoPrice[]>("/prices/crypto"),
-  getCryptoBySymbol: (symbol: string) =>
-    fetchJson<CryptoPrice>(`/prices/crypto/${symbol}`),
-  getStocks: () => fetchJson<CryptoPrice[]>("/prices/stocks"),
-
-  getFearGreed: () =>
-    withFallback(
-      () => fetchJson<{ value: number; label: string }>("/markets/fear-greed"),
-      () => cgGetFearGreed(),
-    ),
-
-  searchAssets: (query: string, limit = 20) =>
-    withFallback(
-      () => fetchJson<SearchResponse>(`/prices/search?q=${encodeURIComponent(query)}&limit=${limit}`),
-      () => cgSearchAssets(query),
-    ),
-
-  getAllCryptos: (limit = 20, _page = 1) =>
-    withFallback(
-      () => fetchJson<AllCryptosResponse>(`/markets/all?limit=${limit}&page=${_page}`),
-      () => cgGetAllCryptos(limit),
-    ),
-
-  getOHLCV: (symbol: string, interval = "1d", limit = 90) =>
-    withFallback(
-      () => fetchJson<OHLCVPoint[]>(`/prices/history/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}`),
-      () => cgGetOHLCV(symbol, interval, limit),
-    ),
-};
-
-// ---- Portfolio ----
-
-export const portfolioApi = {
-  list: () => fetchJson<Portfolio[]>("/portfolios"),
-  get: (id: string) => fetchJson<Portfolio>(`/portfolios/${id}`),
-  create: (data: { name: string; description?: string }) =>
-    fetchJson<Portfolio>("/portfolios", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  getPositions: (portfolioId: string) =>
-    fetchJson<Position[]>(`/portfolios/${portfolioId}/positions`),
-  getTransactions: (portfolioId: string) =>
-    fetchJson<Transaction[]>(`/portfolios/${portfolioId}/transactions`),
-  closePosition: (positionId: string) =>
-    fetchJson<TradeResult>(`/positions/${positionId}/close`, { method: "POST" }),
-  updateStopLoss: (positionId: string, stopLoss: number) =>
-    fetchJson<Position>(`/positions/${positionId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ stop_loss: stopLoss }),
-    }),
-};
-
-// ---- Trading ----
-
-const BINANCE_PROXY = "http://localhost:3001";
-
-async function fetchBinance<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BINANCE_PROXY}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) throw new Error(`Binance ${res.status}`);
-  return res.json() as Promise<T>;
+interface BinanceTicker {
+  symbol: string;
+  priceChange: string;
+  priceChangePercent: string;
+  lastPrice: string;
+  highPrice: string;
+  lowPrice: string;
+  volume: string;
+  quoteVolume: string;
 }
 
 interface BinanceBalance {
@@ -317,6 +107,120 @@ interface BinanceBalance {
   free: number;
   locked: number;
 }
+
+// In-memory cache to avoid hammering Binance on every page nav
+let _tickerCache: { data: BinanceTicker[]; ts: number } | null = null;
+const TICKER_CACHE_MS = 10000; // 10s cache
+
+async function getAllTickers(): Promise<BinanceTicker[]> {
+  if (_tickerCache && Date.now() - _tickerCache.ts < TICKER_CACHE_MS) {
+    return _tickerCache.data;
+  }
+  try {
+    const data = await fetchBinance<BinanceTicker[]>("/ticker24h");
+    // Filter to USDT pairs only
+    const usdt = data.filter((t) => t.symbol.endsWith("USDT"));
+    _tickerCache = { data: usdt, ts: Date.now() };
+    return usdt;
+  } catch {
+    return _tickerCache?.data ?? [];
+  }
+}
+
+// ---- Prices / Market Data (ALL from Binance) ----
+
+export const pricesApi = {
+  getAllCryptos: async (limit = 250): Promise<AllCryptosResponse> => {
+    const tickers = await getAllTickers();
+
+    // Sort by quote volume (proxy for market cap)
+    const sorted = [...tickers].sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume)).slice(0, limit);
+
+    return {
+      data: sorted.map((t, i) => {
+        const sym = t.symbol.replace("USDT", "");
+        return {
+          symbol: sym,
+          name: sym,
+          price: parseFloat(t.lastPrice),
+          change_24h: parseFloat(t.priceChange),
+          change_pct_24h: parseFloat(t.priceChangePercent),
+          volume_24h: parseFloat(t.quoteVolume),
+          market_cap: 0,
+          rank: i + 1,
+          // Extra fields for pages
+          id: sym.toLowerCase(),
+          image: "",
+          current_price: parseFloat(t.lastPrice),
+          market_cap_rank: i + 1,
+          price_change_percentage_24h: parseFloat(t.priceChangePercent),
+          total_volume: parseFloat(t.quoteVolume),
+          sparkline_in_7d: null,
+          high_24h: parseFloat(t.highPrice),
+          low_24h: parseFloat(t.lowPrice),
+        };
+      }),
+      total: sorted.length,
+      page: 1,
+      limit,
+    };
+  },
+
+  getOHLCV: async (symbol: string, interval = "1d", limit = 90): Promise<OHLCVPoint[]> => {
+    // Map our interval labels to Binance kline intervals
+    const intervalMap: Record<string, string> = {
+      "1m": "1m", "5m": "5m", "1h": "1h", "4h": "4h", "1d": "1d", "1w": "1w",
+    };
+    const binanceInterval = intervalMap[interval] || "1h";
+    const pair = `${symbol.toUpperCase()}USDT`;
+
+    try {
+      const data = await fetchBinance<number[][]>(`/klines?symbol=${pair}&interval=${binanceInterval}&limit=${limit}`);
+      return data.map((k) => ({
+        time: Math.floor(Number(k[0]) / 1000),
+        open: parseFloat(String(k[1])),
+        high: parseFloat(String(k[2])),
+        low: parseFloat(String(k[3])),
+        close: parseFloat(String(k[4])),
+        volume: parseFloat(String(k[5])),
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  getFearGreed: async (): Promise<{ value: number; label: string }> => {
+    try {
+      const r = await fetch("https://api.alternative.me/fng/?limit=1&format=json");
+      const d = await r.json();
+      const e = d?.data?.[0];
+      return { value: Number(e?.value ?? 50), label: String(e?.value_classification ?? "Neutral") };
+    } catch {
+      return { value: 50, label: "Neutral" };
+    }
+  },
+
+  searchAssets: async (query: string): Promise<SearchResponse> => {
+    const tickers = await getAllTickers();
+    const q = query.toUpperCase();
+    const matches = tickers
+      .filter((t) => t.symbol.replace("USDT", "").includes(q))
+      .slice(0, 20)
+      .map((t) => ({
+        symbol: t.symbol.replace("USDT", ""),
+        name: t.symbol.replace("USDT", ""),
+        asset_type: "crypto" as const,
+      }));
+    return { results: matches, total: matches.length };
+  },
+
+  getOverview: () => fetchJson<MarketOverview>("/markets/overview"),
+  getCrypto: () => fetchJson<CryptoPrice[]>("/prices/crypto"),
+  getCryptoBySymbol: (symbol: string) => fetchJson<CryptoPrice>(`/prices/crypto/${symbol}`),
+  getStocks: () => fetchJson<CryptoPrice[]>("/prices/stocks"),
+};
+
+// ---- Binance Account ----
 
 export const binanceApi = {
   getBalances: () => fetchBinance<BinanceBalance[]>("/balances"),
@@ -329,72 +233,76 @@ export const binanceApi = {
   health: () => fetchBinance<{ status: string; connected: boolean }>("/health"),
 };
 
+// ---- Portfolio ----
+
+export const portfolioApi = {
+  list: () => fetchJson<Portfolio[]>("/portfolios"),
+  get: (id: string) => fetchJson<Portfolio>(`/portfolios/${id}`),
+  create: (data: { name: string; description?: string }) =>
+    fetchJson<Portfolio>("/portfolios", { method: "POST", body: JSON.stringify(data) }),
+  getPositions: (portfolioId: string) => fetchJson<Position[]>(`/portfolios/${portfolioId}/positions`),
+  getTransactions: (portfolioId: string) => fetchJson<Transaction[]>(`/portfolios/${portfolioId}/transactions`),
+  closePosition: (positionId: string) => fetchJson<TradeResult>(`/positions/${positionId}/close`, { method: "POST" }),
+  updateStopLoss: (positionId: string, stopLoss: number) =>
+    fetchJson<Position>(`/positions/${positionId}`, { method: "PATCH", body: JSON.stringify({ stop_loss: stopLoss }) }),
+};
+
+// ---- Trading ----
+
 export const tradingApi = {
-  getBalances: () =>
-    withFallback(
-      () => fetchJson<PaperBalance[]>("/trades/balances"),
-      async () => {
-        const balances = await binanceApi.getBalances();
-        return balances.map((b) => ({
-          currency: b.asset,
-          available: b.free,
-          reserved: b.locked,
-          total: b.free + b.locked,
-        }));
-      },
-    ),
-  placeOrder: (data: {
-    symbol: string;
-    side: OrderSide;
-    order_type: OrderType;
-    quantity: number;
-    price?: number;
-    stop_price?: number;
-  }) =>
-    withFallback(
-      () => fetchJson<TradeResult>("/orders", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-      async () => {
-        // Live Binance order via proxy
-        const params: Record<string, string> = {
-          symbol: `${data.symbol}USDT`,
-          side: data.side.toUpperCase(),
-          type: data.order_type === "market" ? "MARKET" : "LIMIT",
-        };
-        if (data.order_type === "market") {
-          params.quoteOrderQty = String(Math.round(data.quantity * 100) / 100);
-        } else {
-          params.quantity = String(data.quantity);
-          if (data.price) params.price = String(data.price);
-          params.timeInForce = "GTC";
-        }
-        const result = await binanceApi.placeOrder(params as { symbol: string; side: string; type: string; quantity?: string; quoteOrderQty?: string });
-        return {
-          order_id: String(result.orderId || ""),
-          status: "open" as const,
-          filled_price: Number(result.price || 0),
-          filled_quantity: Number(result.executedQty || 0),
-          message: `Order placed on Binance: ${result.status}`,
-        } as TradeResult;
-      },
-    ),
-  getOrders: (params?: { status?: string }) => {
-    const qs = params?.status ? `?status=${params.status}` : "";
-    return withFallback(
-      () => fetchJson<Order[]>(`/orders${qs}`),
-      async () => {
-        const orders = await binanceApi.getOpenOrders();
-        return orders as unknown as Order[];
-      },
-    );
+  getBalances: async (): Promise<PaperBalance[]> => {
+    try {
+      const balances = await binanceApi.getBalances();
+      return balances.map((b) => ({
+        currency: b.asset,
+        available: b.free,
+        reserved: b.locked,
+        total: b.free + b.locked,
+      }));
+    } catch {
+      return [];
+    }
   },
+
+  placeOrder: async (data: {
+    symbol: string; side: OrderSide; order_type: OrderType; quantity: number; price?: number;
+  }): Promise<TradeResult> => {
+    const params: Record<string, string> = {
+      symbol: `${data.symbol}USDT`,
+      side: data.side.toUpperCase(),
+      type: data.order_type === "market" ? "MARKET" : "LIMIT",
+    };
+    if (data.order_type === "market") {
+      params.quoteOrderQty = String(Math.round(data.quantity * 100) / 100);
+    } else {
+      params.quantity = String(data.quantity);
+      if (data.price) params.price = String(data.price);
+      params.timeInForce = "GTC";
+    }
+    const result = await binanceApi.placeOrder(params as { symbol: string; side: string; type: string; quantity?: string; quoteOrderQty?: string });
+    return {
+      order_id: String(result.orderId || ""),
+      status: "open" as const,
+      filled_price: Number(result.price || 0),
+      filled_quantity: Number(result.executedQty || 0),
+      message: `Order placed: ${result.status}`,
+    } as TradeResult;
+  },
+
+  getOrders: async (): Promise<Order[]> => {
+    try {
+      const orders = await binanceApi.getOpenOrders();
+      return orders as unknown as Order[];
+    } catch {
+      return [];
+    }
+  },
+
   cancelOrder: (orderId: string) =>
     fetchJson<{ success: boolean }>(`/orders/${orderId}/cancel`, { method: "POST" }),
 };
 
-// ---- Signals (ML Service) ----
+// ---- Signals (computed from Binance klines) ----
 
 interface SignalData {
   symbol: string;
@@ -406,40 +314,41 @@ interface SignalData {
   timestamp: string;
 }
 
-// Client-side signal generation using CoinGecko OHLC data
-async function cgGenerateSignal(symbol: string): Promise<SignalData> {
-  const cgId = SYM_TO_CG[symbol.toUpperCase()];
-  if (!cgId) return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Unknown", indicators: [], timestamp: new Date().toISOString() };
+async function computeSignal(symbol: string): Promise<SignalData> {
+  const closes: number[] = [];
+  try {
+    const klines = await pricesApi.getOHLCV(symbol, "1h", 100);
+    for (const k of klines) closes.push(k.close);
+  } catch { /* empty */ }
 
-  const ohlc = await fetchCG<number[][]>(`/coins/${cgId}/ohlc`, { vs_currency: "usd", days: "30" });
-  const closes = ohlc.map((c) => c[4]);
-  if (closes.length < 15) return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Insufficient data", indicators: [], timestamp: new Date().toISOString() };
+  if (closes.length < 15) {
+    return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Insufficient data", indicators: [], timestamp: new Date().toISOString() };
+  }
 
   // RSI
   const gains: number[] = []; const losses: number[] = [];
   for (let i = 1; i < closes.length; i++) { const d = closes[i] - closes[i-1]; gains.push(Math.max(d,0)); losses.push(Math.max(-d,0)); }
-  const period = 14;
-  const avgGain = gains.slice(-period).reduce((a,b)=>a+b,0)/period;
-  const avgLoss = losses.slice(-period).reduce((a,b)=>a+b,0)/period;
-  const rsi = avgLoss === 0 ? 100 : 100 - 100/(1 + avgGain/avgLoss);
-  const rsiSignal = rsi < 30 ? 0.7 : rsi < 45 ? 0.3 : rsi > 70 ? -0.7 : rsi > 55 ? -0.3 : 0;
+  const p = 14;
+  const avgG = gains.slice(-p).reduce((a,b)=>a+b,0)/p;
+  const avgL = losses.slice(-p).reduce((a,b)=>a+b,0)/p;
+  const rsi = avgL === 0 ? 100 : 100 - 100/(1 + avgG/avgL);
+  const rsiSig = rsi < 30 ? 0.7 : rsi < 45 ? 0.3 : rsi > 70 ? -0.7 : rsi > 55 ? -0.3 : 0;
 
   // EMA cross
-  const ema = (arr: number[], p: number) => { const k=2/(p+1); const r=[arr[0]]; for(let i=1;i<arr.length;i++) r.push(arr[i]*k+r[i-1]*(1-k)); return r; };
+  const ema = (arr: number[], n: number) => { const k=2/(n+1); const r=[arr[0]]; for(let i=1;i<arr.length;i++) r.push(arr[i]*k+r[i-1]*(1-k)); return r; };
   const e9 = ema(closes, 9); const e21 = ema(closes, 21);
-  const emaDiff = e9[e9.length-1] - e21[e21.length-1];
-  const prevDiff = e9[e9.length-2] - e21[e21.length-2];
-  const emaSignal = (emaDiff > 0 && prevDiff <= 0) ? 0.7 : (emaDiff < 0 && prevDiff >= 0) ? -0.7 : emaDiff > 0 ? 0.3 : emaDiff < 0 ? -0.3 : 0;
+  const ed = e9[e9.length-1] - e21[e21.length-1];
+  const pd = e9[e9.length-2] - e21[e21.length-2];
+  const emaSig = (ed > 0 && pd <= 0) ? 0.7 : (ed < 0 && pd >= 0) ? -0.7 : ed > 0 ? 0.3 : ed < 0 ? -0.3 : 0;
 
   // Bollinger
-  const sma20 = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
-  const std20 = Math.sqrt(closes.slice(-20).reduce((a,b)=>a+(b-sma20)**2,0)/20);
-  const upper = sma20+2*std20; const lower = sma20-2*std20;
+  const s20 = closes.slice(-20); const mean = s20.reduce((a,b)=>a+b,0)/20;
+  const std = Math.sqrt(s20.reduce((a,b)=>a+(b-mean)**2,0)/20);
+  const upper = mean+2*std; const lower = mean-2*std;
   const pos = (upper-lower) === 0 ? 0.5 : (closes[closes.length-1]-lower)/(upper-lower);
-  const bbSignal = pos < 0.2 ? 0.6 : pos < 0.4 ? 0.2 : pos > 0.8 ? -0.6 : pos > 0.6 ? -0.2 : 0;
+  const bbSig = pos < 0.2 ? 0.6 : pos < 0.4 ? 0.2 : pos > 0.8 ? -0.6 : pos > 0.6 ? -0.2 : 0;
 
-  // Composite
-  const score = (rsiSignal*1.2 + emaSignal*1.1 + bbSignal*1.0) / 3.3;
+  const score = (rsiSig*1.2 + emaSig*1.1 + bbSig*1.0) / 3.3;
   const action = score > 0.5 ? "STRONG_BUY" : score > 0.25 ? "BUY" : score > 0.08 ? "ACCUMULATE" : score > -0.08 ? "HOLD" : score > -0.25 ? "REDUCE" : score > -0.5 ? "SELL" : "STRONG_SELL";
 
   return {
@@ -447,31 +356,23 @@ async function cgGenerateSignal(symbol: string): Promise<SignalData> {
     action,
     confidence: Math.min(Math.abs(score), 1),
     score: Math.round(score * 1000) / 1000,
-    reasoning: `RSI=${rsi.toFixed(0)}, EMA${emaDiff>0?"+":"-"}, BB${pos<0.3?"low":pos>0.7?"high":"mid"}`,
+    reasoning: `RSI=${rsi.toFixed(0)}, EMA${ed>0?"+":"-"}, BB${pos<0.3?"low":pos>0.7?"high":"mid"}`,
     indicators: [
-      { name: "RSI", value: Math.round(rsi), signal: rsiSignal, description: `RSI ${rsi.toFixed(0)} — ${rsi<30?"Oversold":rsi>70?"Overbought":"Neutral"}` },
-      { name: "EMA Cross", value: Math.round(emaDiff*100)/100, signal: emaSignal, description: `EMA 9/21 ${emaDiff>0?"bullish":"bearish"}` },
-      { name: "Bollinger", value: Math.round(pos*100)/100, signal: bbSignal, description: `Price at ${(pos*100).toFixed(0)}% of bands` },
+      { name: "RSI", value: Math.round(rsi), signal: rsiSig, description: `RSI ${rsi.toFixed(0)} — ${rsi<30?"Oversold":rsi>70?"Overbought":"Neutral"}` },
+      { name: "EMA Cross", value: Math.round(ed*100)/100, signal: emaSig, description: `EMA 9/21 ${ed>0?"bullish":"bearish"}` },
+      { name: "Bollinger", value: Math.round(pos*100)/100, signal: bbSig, description: `Price at ${(pos*100).toFixed(0)}% of bands` },
     ],
     timestamp: new Date().toISOString(),
   };
 }
 
 export const signalsApi = {
-  getSignal: (symbol: string) =>
-    withFallback(
-      () => fetchJson<SignalData>(`/ml/signals/${symbol}`),
-      () => cgGenerateSignal(symbol),
-    ),
-  getAllSignals: () =>
-    withFallback(
-      () => fetchJson<{ signals: SignalData[] }>("/ml/signals").then(r => r.signals),
-      async () => {
-        const syms = ["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","LINK"];
-        const results = await Promise.allSettled(syms.map(s => cgGenerateSignal(s)));
-        return results.filter((r): r is PromiseFulfilledResult<SignalData> => r.status === "fulfilled").map(r => r.value);
-      },
-    ),
+  getSignal: (symbol: string) => computeSignal(symbol),
+  getAllSignals: async () => {
+    const syms = ["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","LINK"];
+    const results = await Promise.allSettled(syms.map(s => computeSignal(s)));
+    return results.filter((r): r is PromiseFulfilledResult<SignalData> => r.status === "fulfilled").map(r => r.value);
+  },
 };
 
 // ---- Strategies ----
@@ -480,79 +381,35 @@ export const strategiesApi = {
   list: () => fetchJson<Strategy[]>("/ml/strategies"),
   get: (id: string) => fetchJson<Strategy>(`/ml/strategies/${id}`),
   generateSignal: (strategyId: string, symbol: string) =>
-    fetchJson<Signal>(`/ml/strategies/${strategyId}/signal`, {
-      method: "POST",
-      body: JSON.stringify({ symbol }),
-    }),
+    fetchJson<Signal>(`/ml/strategies/${strategyId}/signal`, { method: "POST", body: JSON.stringify({ symbol }) }),
   updateParams: (strategyId: string, params: Record<string, unknown>) =>
-    fetchJson<Strategy>(`/ml/strategies/${strategyId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ parameters: params }),
-    }),
+    fetchJson<Strategy>(`/ml/strategies/${strategyId}`, { method: "PATCH", body: JSON.stringify({ parameters: params }) }),
 };
 
 // ---- Alerts ----
 
 export const alertsApi = {
   list: () => fetchJson<Alert[]>("/alerts"),
-  create: (data: CreateAlertPayload) =>
-    fetchJson<Alert>("/alerts", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  delete: (id: string) =>
-    fetchJson<{ success: boolean }>(`/alerts/${id}`, { method: "DELETE" }),
+  create: (data: CreateAlertPayload) => fetchJson<Alert>("/alerts", { method: "POST", body: JSON.stringify(data) }),
+  delete: (id: string) => fetchJson<{ success: boolean }>(`/alerts/${id}`, { method: "DELETE" }),
 };
 
 // ---- AI Agents ----
 
-const AI_BASE = process.env.NEXT_PUBLIC_AI_URL ?? "http://localhost:8008/api/v1";
-
-async function fetchAI<T>(url: string, init?: RequestInit): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-  try {
-    const res = await fetch(`${AI_BASE}${url}`, {
-      headers: { "Content-Type": "application/json", ...init?.headers },
-      ...init,
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "Unknown error");
-      throw new Error(`AI API ${res.status}: ${text}`);
-    }
-    return res.json() as Promise<T>;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export const aiApi = {
   getAgents: () => fetchAI<AIAgent[]>("/ai/agents"),
   chat: (message: string, agentType: string, userId = "default") =>
-    fetchAI<ChatResponse>("/ai/chat", {
-      method: "POST",
-      body: JSON.stringify({ message, agent_type: agentType, user_id: userId }),
-    }),
+    fetchAI<ChatResponse>("/ai/chat", { method: "POST", body: JSON.stringify({ message, agent_type: agentType, user_id: userId }) }),
   clearChat: (agentType: string, userId = "default") =>
-    fetchAI<{ status: string }>("/ai/chat/clear", {
-      method: "POST",
-      body: JSON.stringify({ agent_type: agentType, user_id: userId }),
-    }),
+    fetchAI<{ status: string }>("/ai/chat/clear", { method: "POST", body: JSON.stringify({ agent_type: agentType, user_id: userId }) }),
   getAutoTradingStatus: () =>
     fetchAI<{ enabled: boolean; last_run: string | null; trades_today: number; total_pnl: number }>("/ai/auto-trading/status"),
   toggleAutoTrading: (enabled: boolean) =>
-    fetchAI<{ enabled: boolean }>("/ai/auto-trading/toggle", {
-      method: "POST",
-      body: JSON.stringify({ enabled }),
-    }),
+    fetchAI<{ enabled: boolean }>("/ai/auto-trading/toggle", { method: "POST", body: JSON.stringify({ enabled }) }),
   getAutoTradingHistory: () =>
     fetchAI<Array<{ timestamp: string; analysis: string; executed: number; trades: Array<{ symbol: string; action: string; amount_usd: number }> }>>("/ai/auto-trading/history"),
   analyzePerformance: (metrics: Record<string, unknown>) =>
-    fetchAI<{ analysis: string; provider: string; model: string }>("/ai/analyze-performance", {
-      method: "POST",
-      body: JSON.stringify({ metrics }),
-    }),
+    fetchAI<{ analysis: string; provider: string; model: string }>("/ai/analyze-performance", { method: "POST", body: JSON.stringify({ metrics }) }),
 };
 
 // ---- Analytics ----
@@ -560,9 +417,7 @@ export const aiApi = {
 export const analyticsApi = {
   getMetrics: () => fetchJson<AnalyticsMetrics>("/risk/analytics/metrics"),
   getEquityCurve: () => fetchJson<EquityPoint[]>("/risk/analytics/equity"),
-  getStrategyComparison: () =>
-    fetchJson<StrategyComparison[]>("/risk/analytics/strategies"),
-  getTradingActivity: () =>
-    fetchJson<TradingActivity[]>("/risk/analytics/activity"),
+  getStrategyComparison: () => fetchJson<StrategyComparison[]>("/risk/analytics/strategies"),
+  getTradingActivity: () => fetchJson<TradingActivity[]>("/risk/analytics/activity"),
   getRiskMetrics: () => fetchJson<RiskMetrics>("/risk/metrics"),
 };

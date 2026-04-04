@@ -8,12 +8,12 @@ import { cn } from "@/lib/utils";
 
 const INTERVALS = [
   { label: "1H", value: "1m", limit: 60 },
+  { label: "4H", value: "5m", limit: 48 },
   { label: "1D", value: "5m", limit: 288 },
   { label: "1W", value: "1h", limit: 168 },
   { label: "1M", value: "4h", limit: 180 },
   { label: "3M", value: "1d", limit: 90 },
   { label: "1Y", value: "1d", limit: 365 },
-  { label: "ALL", value: "1w", limit: 500 },
 ] as const;
 
 interface PriceChartProps {

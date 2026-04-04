@@ -129,6 +129,35 @@ createServer(async (req, res) => {
       res.end(JSON.stringify(data));
     }
 
+    // GET /klines?symbol=BTCUSDT&interval=1m&limit=500 — candlestick data (PUBLIC, no auth)
+    else if (path === "/klines") {
+      const symbol = url.searchParams.get("symbol") || "BTCUSDT";
+      const interval = url.searchParams.get("interval") || "1h";
+      const limit = url.searchParams.get("limit") || "500";
+      const { status, data } = await binancePublic("/api/v3/klines", { symbol, interval, limit });
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    }
+
+    // GET /ticker24h?symbol=BTCUSDT — 24h stats (PUBLIC)
+    else if (path === "/ticker24h") {
+      const symbol = url.searchParams.get("symbol");
+      const params = symbol ? { symbol } : {};
+      const { status, data } = await binancePublic("/api/v3/ticker/24hr", params);
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    }
+
+    // GET /price?symbol=BTCUSDT — current price (PUBLIC)
+    else if (path === "/price") {
+      const symbol = url.searchParams.get("symbol");
+      const params = symbol ? { symbol } : {};
+      const endpoint = symbol ? "/api/v3/ticker/price" : "/api/v3/ticker/price";
+      const { status, data } = await binancePublic(endpoint, params);
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    }
+
     // Health check
     else if (path === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
