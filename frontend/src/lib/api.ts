@@ -131,33 +131,78 @@ async function cgGetAllCryptos(limit: number): Promise<AllCryptosResponse> {
   };
 }
 
-// CoinGecko OHLC endpoint (returns [timestamp, open, high, low, close])
+// CoinGecko chart data — uses /market_chart for short intervals (more up-to-date), /ohlc for longer
 async function cgGetOHLCV(symbol: string, interval: string, limit: number): Promise<OHLCVPoint[]> {
   const cgId = SYM_TO_CG[symbol.toUpperCase()];
   if (!cgId) return [];
 
-  // Map interval to CoinGecko days parameter
+  const currency = getActiveCurrency();
+
+  // For 1H and 1D views, use /market_chart which has fresher data (up to current minute)
+  if (interval === "1m" || interval === "5m" || limit <= 288) {
+    const days = interval === "1m" ? "1" : "1";
+    const data = await fetchCG<{ prices: number[][] }>(`/coins/${cgId}/market_chart`, {
+      vs_currency: currency,
+      days,
+    });
+    const prices = data.prices ?? [];
+    if (prices.length < 2) return [];
+
+    // Convert price points to OHLCV-like candles (5-min aggregation)
+    const bucketMs = interval === "1m" ? 60000 : 300000;
+    const candles: OHLCVPoint[] = [];
+    let bucket: number[] = [];
+    let bucketStart = 0;
+
+    for (const [ts, price] of prices) {
+      const bk = Math.floor(ts / bucketMs) * bucketMs;
+      if (bk !== bucketStart && bucket.length > 0) {
+        candles.push({
+          time: Math.floor(bucketStart / 1000),
+          open: bucket[0],
+          high: Math.max(...bucket),
+          low: Math.min(...bucket),
+          close: bucket[bucket.length - 1],
+          volume: 0,
+        });
+        bucket = [];
+      }
+      bucketStart = bk;
+      bucket.push(price);
+    }
+    if (bucket.length > 0) {
+      candles.push({
+        time: Math.floor(bucketStart / 1000),
+        open: bucket[0],
+        high: Math.max(...bucket),
+        low: Math.min(...bucket),
+        close: bucket[bucket.length - 1],
+        volume: 0,
+      });
+    }
+    return candles;
+  }
+
+  // For longer intervals, use /ohlc endpoint
   let days = "30";
-  if (interval === "1m" || limit <= 60) days = "1";
-  else if (interval === "5m" || limit <= 288) days = "1";
-  else if (interval === "1h" || limit <= 168) days = "7";
+  if (interval === "1h" || limit <= 168) days = "7";
   else if (interval === "4h" || limit <= 180) days = "30";
   else if (interval === "1d" && limit <= 90) days = "90";
   else if (interval === "1d" && limit <= 365) days = "365";
   else days = "max";
 
   const data = await fetchCG<number[][]>(`/coins/${cgId}/ohlc`, {
-    vs_currency: getActiveCurrency(),
+    vs_currency: currency,
     days,
   });
 
   return data.map((d) => ({
-    time: Math.floor(d[0] / 1000), // ms → seconds for lightweight-charts
+    time: Math.floor(d[0] / 1000),
     open: d[1],
     high: d[2],
     low: d[3],
     close: d[4],
-    volume: 0, // OHLC endpoint doesn't include volume
+    volume: 0,
   }));
 }
 

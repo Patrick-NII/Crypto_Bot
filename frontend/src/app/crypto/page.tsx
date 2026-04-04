@@ -2,9 +2,12 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
-import Link from "next/link";
-import { Search, Star, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
-import { pricesApi } from "@/lib/api";
+import { useCurrency } from "@/components/providers/currency-provider";
+import { Search, Star, TrendingUp, TrendingDown, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { pricesApi, signalsApi } from "@/lib/api";
+import { PriceChart } from "@/components/charts/price-chart";
+import { SignalBadge, IndicatorBar, type SignalAction } from "@/components/trading/signal-badge";
+import { QuickTradeModal } from "@/components/trading/quick-trade-modal";
 import { cn } from "@/lib/utils";
 
 interface CryptoItem {
@@ -18,6 +21,9 @@ interface CryptoItem {
   price_change_percentage_24h: number;
   total_volume: number;
   sparkline_in_7d: number[] | null;
+  high_24h?: number;
+  low_24h?: number;
+  ath?: number;
 }
 
 type Tab = "all" | "gainers" | "losers" | "watchlist";
@@ -32,7 +38,7 @@ function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }
   const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(" ");
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="flex-shrink-0">
-      <polyline fill="none" stroke={positive ? "#06d6a0" : "#ef4444"} strokeWidth="1.5" points={points} />
+      <polyline fill="none" stroke={positive ? "#22c55e" : "#ef4444"} strokeWidth="1.5" points={points} />
     </svg>
   );
 }
@@ -52,18 +58,34 @@ function toggleWatchlist(symbol: string): string[] {
 
 export default function CryptoDiscoverPage() {
   usePageAccent(PAGE_ACCENTS.crypto.accent, PAGE_ACCENTS.crypto.glow);
+  const { format } = useCurrency();
+
   const [cryptos, setCryptos] = useState<CryptoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [selected, setSelected] = useState<CryptoItem | null>(null);
+  const [signal, setSignal] = useState<{ action: string; confidence: number; indicators: Array<{ name: string; value: number; signal: number; description: string }> } | null>(null);
+  const [tradeModal, setTradeModal] = useState(false);
 
   useEffect(() => {
     setWatchlist(getWatchlist());
     pricesApi.getAllCryptos(250).then((res) => {
-      setCryptos(res.data as unknown as CryptoItem[]);
+      const data = res.data as unknown as CryptoItem[];
+      setCryptos(data);
+      if (data.length > 0) setSelected(data[0]); // Select BTC by default
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  // Fetch signal when selected crypto changes
+  useEffect(() => {
+    if (!selected) return;
+    setSignal(null);
+    signalsApi.getSignal(selected.symbol?.toUpperCase()).then((s) => {
+      setSignal({ action: s.action, confidence: s.confidence, indicators: s.indicators });
+    }).catch(() => {});
+  }, [selected]);
 
   const filtered = useMemo(() => {
     let list = [...cryptos];
@@ -77,66 +99,185 @@ export default function CryptoDiscoverPage() {
     return list;
   }, [cryptos, search, tab, watchlist]);
 
-  const formatPrice = (p: number) => {
-    if (!p) return "$0.00";
-    if (p >= 1) return `$${p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    if (p >= 0.001) return `$${p.toFixed(4)}`;
-    return `$${p.toFixed(8)}`;
-  };
+  const pct = selected?.price_change_percentage_24h ?? 0;
+  const positive = pct >= 0;
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <h1 className="mb-1 text-3xl font-bold glow-text">Crypto</h1>
-      <p className="mb-6 text-sm text-[#55556a]">{cryptos.length} assets available</p>
+    <div className="mx-auto max-w-7xl">
+      <h1 className="mb-1 text-xl md:text-2xl font-bold glow-text">Crypto</h1>
+      <p className="mb-4 text-xs text-[var(--text-muted)]">{cryptos.length} assets available</p>
 
-      <div className="mb-5 flex items-center gap-2 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#14141b] px-4 py-3">
-        <Search className="h-4 w-4 text-[#55556a]" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search crypto..." className="flex-1 bg-transparent text-sm text-white outline-none placeholder-[#55556a]" />
-      </div>
+      {/* ─── Main Layout: Chart left/top + List right/bottom ─── */}
+      <div className="flex flex-col lg:flex-row gap-4">
 
-      <div className="mb-5 flex gap-1 overflow-x-auto">
-        {([
-          { id: "all" as Tab, label: "All", icon: BarChart3 },
-          { id: "gainers" as Tab, label: "Top Gainers", icon: TrendingUp },
-          { id: "losers" as Tab, label: "Top Losers", icon: TrendingDown },
-          { id: "watchlist" as Tab, label: "Watchlist", icon: Star },
-        ]).map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={cn("flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-all", tab === t.id ? "bg-[#06d6a0]/15 text-[#06d6a0]" : "text-[#55556a] hover:text-[#8888a0]")}>
-            <t.icon className="h-3.5 w-3.5" /> {t.label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="space-y-3">{Array.from({ length: 10 }).map((_, i) => <div key={i} className="h-16 animate-pulse rounded-xl bg-[#14141b]" />)}</div>
-      ) : (
-        <div className="space-y-1">
-          {filtered.map((c) => {
-            const positive = (c.price_change_percentage_24h ?? 0) >= 0;
-            const isWatched = watchlist.includes(c.symbol?.toUpperCase());
-            return (
-              <div key={c.id || c.symbol} className="group flex items-center gap-3 rounded-xl px-3 py-3 transition-all hover:bg-[rgba(255,255,255,0.02)]">
-                <button onClick={() => setWatchlist(toggleWatchlist(c.symbol))} className={cn("flex-shrink-0 transition-colors", isWatched ? "text-[#c6f135]" : "text-[#2a2a3a] hover:text-[#55556a]")}>
-                  <Star className="h-4 w-4" fill={isWatched ? "currentColor" : "none"} />
-                </button>
-                <Link href={`/crypto/${c.symbol?.toUpperCase()}`} className="flex flex-1 items-center gap-3 min-w-0">
-                  <span className="w-6 text-right text-[10px] text-[#3a3a4a]">{c.market_cap_rank}</span>
-                  {c.image && <img src={c.image} alt={c.symbol} className="h-8 w-8 rounded-full" />}
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white">{c.symbol?.toUpperCase()}</p>
-                    <p className="truncate text-xs text-[#55556a]">{c.name}</p>
+        {/* ─── Left: Selected crypto chart + info ─── */}
+        <div className="lg:w-[55%] xl:w-[60%] space-y-3 flex-shrink-0">
+          {selected && (
+            <>
+              {/* Crypto header */}
+              <div className="liquid-glass-card p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    {selected.image && <img src={selected.image} alt={selected.symbol} className="h-10 w-10 rounded-full" />}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-[var(--foreground)]">{selected.symbol?.toUpperCase()}</h2>
+                        <span className="text-[10px] rounded-md px-1.5 py-0.5 text-[var(--text-muted)]" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>#{selected.market_cap_rank}</span>
+                      </div>
+                      <p className="text-xs text-[var(--text-muted)]">{selected.name}</p>
+                    </div>
                   </div>
-                </Link>
-                <div className="hidden sm:block"><MiniSparkline data={c.sparkline_in_7d ?? []} positive={positive} /></div>
-                <Link href={`/crypto/${c.symbol?.toUpperCase()}`} className="flex flex-col items-end">
-                  <p className="text-sm font-semibold text-white">{formatPrice(c.current_price)}</p>
-                  <p className={cn("text-xs font-medium", positive ? "text-[#06d6a0]" : "text-red-400")}>{positive ? "+" : ""}{(c.price_change_percentage_24h ?? 0).toFixed(2)}%</p>
-                </Link>
+                  <div className="flex items-center gap-2">
+                    {signal && <SignalBadge action={signal.action as SignalAction} confidence={signal.confidence} size="sm" />}
+                    <button
+                      onClick={() => setWatchlist(toggleWatchlist(selected.symbol))}
+                      className={cn("p-1.5 rounded-lg", watchlist.includes(selected.symbol?.toUpperCase()) ? "text-[#c6f135]" : "text-[var(--text-muted)] hover:text-[var(--foreground)]")}
+                    >
+                      <Star className="h-4 w-4" fill={watchlist.includes(selected.symbol?.toUpperCase()) ? "currentColor" : "none"} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Price */}
+                <div className="flex items-baseline gap-3 mb-3">
+                  <span className="text-3xl font-bold text-[var(--foreground)]">{format(selected.current_price)}</span>
+                  <span className={cn("text-sm font-medium flex items-center gap-0.5", positive ? "text-[#22c55e]" : "text-[#ef4444]")}>
+                    {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+                    {positive ? "+" : ""}{pct.toFixed(2)}%
+                  </span>
+                </div>
+
+                {/* Quick stats row */}
+                <div className="grid grid-cols-3 gap-2 text-[10px]">
+                  <div className="rounded-lg p-2" style={{ background: "var(--glass-bg)" }}>
+                    <span className="text-[var(--text-muted)]">24h High</span>
+                    <p className="text-[var(--foreground)] font-semibold mt-0.5">{format(selected.high_24h ?? 0)}</p>
+                  </div>
+                  <div className="rounded-lg p-2" style={{ background: "var(--glass-bg)" }}>
+                    <span className="text-[var(--text-muted)]">24h Low</span>
+                    <p className="text-[var(--foreground)] font-semibold mt-0.5">{format(selected.low_24h ?? 0)}</p>
+                  </div>
+                  <div className="rounded-lg p-2" style={{ background: "var(--glass-bg)" }}>
+                    <span className="text-[var(--text-muted)]">Volume</span>
+                    <p className="text-[var(--foreground)] font-semibold mt-0.5">${((selected.total_volume ?? 0) / 1e6).toFixed(0)}M</p>
+                  </div>
+                </div>
               </div>
-            );
-          })}
-          {filtered.length === 0 && <div className="py-16 text-center text-sm text-[#55556a]">{tab === "watchlist" ? "No favorites yet. Tap the star to add." : "No results found."}</div>}
+
+              {/* Chart */}
+              <div className="liquid-glass-card p-3">
+                <PriceChart
+                  key={selected.symbol}
+                  symbol={selected.symbol?.toUpperCase()}
+                  height={320}
+                  type="candlestick"
+                  showIntervals
+                  defaultInterval="1D"
+                />
+              </div>
+
+              {/* Indicators */}
+              {signal && signal.indicators.length > 0 && (
+                <div className="liquid-glass-card p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {signal.indicators.map((ind) => (
+                    <IndicatorBar key={ind.name} name={ind.name} value={ind.value} signal={ind.signal} description={ind.description} />
+                  ))}
+                </div>
+              )}
+
+              {/* Buy/Sell buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTradeModal(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold bg-[#22c55e] text-white hover:bg-[#16a34a] transition-all"
+                >
+                  <TrendingUp className="h-4 w-4" /> Buy {selected.symbol?.toUpperCase()}
+                </button>
+                <button
+                  onClick={() => setTradeModal(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-bold border border-[#ef4444]/30 bg-[#ef4444]/10 text-[#ef4444] hover:bg-[#ef4444]/20 transition-all"
+                >
+                  <TrendingDown className="h-4 w-4" /> Sell {selected.symbol?.toUpperCase()}
+                </button>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* ─── Right: Crypto List ─── */}
+        <div className="lg:w-[45%] xl:w-[40%] flex flex-col min-h-0">
+          {/* Search + Tabs */}
+          <div className="mb-3 flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
+            <Search className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." className="flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder-[var(--text-muted)]" />
+          </div>
+
+          <div className="mb-3 flex gap-1 overflow-x-auto">
+            {([
+              { id: "all" as Tab, label: "All", icon: BarChart3 },
+              { id: "gainers" as Tab, label: "Gainers", icon: TrendingUp },
+              { id: "losers" as Tab, label: "Losers", icon: TrendingDown },
+              { id: "watchlist" as Tab, label: "Watchlist", icon: Star },
+            ]).map((t) => (
+              <button key={t.id} onClick={() => setTab(t.id)} className={cn("flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-[11px] font-medium transition-all", tab === t.id ? "accent-bg accent-text" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                <t.icon className="h-3 w-3" /> {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto max-h-[65vh] lg:max-h-[75vh] space-y-0.5 pr-1">
+            {loading ? (
+              Array.from({ length: 15 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-xl" style={{ background: "var(--glass-bg)" }} />)
+            ) : (
+              filtered.map((c) => {
+                const pos = (c.price_change_percentage_24h ?? 0) >= 0;
+                const isSelected = selected?.symbol === c.symbol;
+                const isWatched = watchlist.includes(c.symbol?.toUpperCase());
+                return (
+                  <button
+                    key={c.id || c.symbol}
+                    onClick={() => setSelected(c)}
+                    className={cn(
+                      "w-full flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all",
+                      isSelected ? "accent-bg ring-1 ring-[var(--page-accent)]/30" : "hover:bg-[var(--glass-bg)]",
+                    )}
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setWatchlist(toggleWatchlist(c.symbol)); }}
+                      className={cn("flex-shrink-0", isWatched ? "text-[#c6f135]" : "text-[var(--elevated)]")}
+                    >
+                      <Star className="h-3.5 w-3.5" fill={isWatched ? "currentColor" : "none"} />
+                    </button>
+                    <span className="w-5 text-right text-[9px] text-[var(--text-muted)]">{c.market_cap_rank}</span>
+                    {c.image && <img src={c.image} alt="" className="h-6 w-6 rounded-full flex-shrink-0" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold text-[var(--foreground)] truncate">{c.symbol?.toUpperCase()}</p>
+                      <p className="text-[10px] text-[var(--text-muted)] truncate">{c.name}</p>
+                    </div>
+                    <div className="hidden sm:block"><MiniSparkline data={c.sparkline_in_7d ?? []} positive={pos} /></div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-[12px] font-semibold text-[var(--foreground)]">{format(c.current_price)}</p>
+                      <p className={cn("text-[10px] font-medium", pos ? "text-[#22c55e]" : "text-[#ef4444]")}>{pos ? "+" : ""}{(c.price_change_percentage_24h ?? 0).toFixed(2)}%</p>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+            {!loading && filtered.length === 0 && (
+              <div className="py-12 text-center text-xs text-[var(--text-muted)]">{tab === "watchlist" ? "No favorites yet." : "No results."}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Trade Modal */}
+      {tradeModal && selected && (
+        <QuickTradeModal
+          symbol={selected.symbol?.toUpperCase()}
+          price={selected.current_price}
+          onClose={() => setTradeModal(false)}
+        />
       )}
     </div>
   );

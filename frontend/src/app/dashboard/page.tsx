@@ -110,7 +110,7 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     try {
       const [allCryptosResult, portfolios, orderData, fgData] = await Promise.allSettled([
-        pricesApi.getAllCryptos(20),
+        pricesApi.getAllCryptos(250),
         portfolioApi.list(),
         tradingApi.getOrders(),
         pricesApi.getFearGreed(),
@@ -181,7 +181,7 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchData();
     const interval = setInterval(() => {
-      pricesApi.getAllCryptos(20).then((res) => setCryptos(res.data)).catch(() => {});
+      pricesApi.getAllCryptos(250).then((res) => setCryptos(res.data)).catch(() => {});
     }, 30_000);
     return () => clearInterval(interval);
   }, [fetchData]);
