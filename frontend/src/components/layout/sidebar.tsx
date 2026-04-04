@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/providers/theme-provider";
+import { openChatGlobal } from "@/components/ai/chat-wrapper";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -25,6 +26,7 @@ import {
   Newspaper,
   Menu,
   X,
+  Sparkles,
 } from "lucide-react";
 
 const navItems = [
@@ -133,6 +135,14 @@ export function Sidebar() {
             </div>
           )}
         </button>
+
+        {/* AI Chat — visible in mobile drawer, hidden on desktop sidebar */}
+        {isMobile && (
+          <button onClick={() => { openChatGlobal(); }} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[#06d6a0] hover:bg-[#06d6a0]/8 transition-all">
+            <Sparkles className="h-4 w-4 shrink-0" />
+            <span>AI Assistant</span>
+          </button>
+        )}
 
         <Link href="/settings" className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all", centerClass)}>
           <Settings className="h-4 w-4 shrink-0" />

@@ -176,8 +176,11 @@ export const pricesApi = {
 
     try {
       const data = await fetchBinance<number[][]>(`/klines?symbol=${pair}&interval=${binanceInterval}&limit=${limit}`);
+      // Binance timestamps are UTC. lightweight-charts displays as-is (no tz conversion).
+      // We shift by local timezone offset so chart shows local time.
+      const tzOffsetSec = -(new Date().getTimezoneOffset() * 60);
       return data.map((k) => ({
-        time: Math.floor(Number(k[0]) / 1000),
+        time: Math.floor(Number(k[0]) / 1000) + tzOffsetSec,
         open: parseFloat(String(k[1])),
         high: parseFloat(String(k[2])),
         low: parseFloat(String(k[3])),

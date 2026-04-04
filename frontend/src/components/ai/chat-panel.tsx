@@ -9,10 +9,14 @@ import { cn } from "@/lib/utils";
 interface ChatPanelProps {
   agentType: string;
   agentName?: string;
+  externalOpen?: boolean;
+  onExternalClose?: () => void;
 }
 
-export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
+export function ChatPanel({ agentType, agentName, externalOpen, onExternalClose }: ChatPanelProps) {
   const [open, setOpen] = useState(false);
+  const isOpen = externalOpen ?? open;
+  const handleClose = () => { setOpen(false); onExternalClose?.(); };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,7 +33,7 @@ export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
 
   // Focus input when panel opens
   useEffect(() => {
-    if (open && inputRef.current) {
+    if (isOpen && inputRef.current) {
       inputRef.current.focus();
     }
   }, [open]);
@@ -88,11 +92,11 @@ export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
 
   return (
     <>
-      {/* Floating toggle button */}
-      {!open && (
+      {/* Floating toggle button — hidden on mobile (in hamburger menu instead) */}
+      {!isOpen && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex h-12 w-12 md:h-14 md:w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#06d6a0] to-[#0ff0b3] shadow-lg shadow-[#06d6a0]/25 transition-transform hover:scale-105 active:scale-95"
+          className="hidden md:flex fixed bottom-6 right-6 z-50 h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#06d6a0] to-[#0ff0b3] shadow-lg shadow-[#06d6a0]/25 transition-transform hover:scale-105 active:scale-95"
           title="Open AI Assistant"
         >
           <Sparkles className="h-6 w-6 text-[#0d0d12]" />
@@ -104,7 +108,7 @@ export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
         className={cn(
           "fixed bottom-0 right-0 z-[60] flex h-[80vh] md:h-[600px] w-full md:w-[400px] flex-col rounded-t-2xl md:rounded-tl-2xl md:rounded-tr-none border border-[var(--glass-border)] backdrop-blur-xl transition-transform duration-300",
           "bg-[var(--surface)]",
-          open ? "translate-x-0" : "translate-x-full",
+          isOpen ? "translate-x-0" : "translate-x-full",
         )}
       >
         {/* Header */}
@@ -129,7 +133,7 @@ export function ChatPanel({ agentType, agentName }: ChatPanelProps) {
               <Trash2 className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setOpen(false)}
+              onClick={handleClose}
               className="rounded-lg p-1.5 text-[#55556a] transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-[#8888a0]"
             >
               <X className="h-4 w-4" />
