@@ -1,0 +1,8 @@
+# 🔁 Toutes les 15 min : info_wallet
+*/15 * * * * /bin/bash -c 'cd /Users/nii/Documents/Crypto_Bot && source env/bin/activate && export $(grep -v "^#" .env | xargs) && ./run.sh'
+
+# 📈 Tous les Mardis à 12h30 : Analyse marché
+30 12 * * 2 /bin/bash -c 'cd /Users/nii/Documents/Crypto_Bot && source env/bin/activate && export $(grep -v "^#" .env | xargs) && ./run.sh'
+
+# 🔍 Toutes les 6h : Analyse opportunités
+0 */6 * * * /bin/bash -c 'cd /Users/nii/Documents/Crypto_Bot && source env/bin/activate && export $(grep -v "^#" .env | xargs) && ./run.sh' 

@@ -1,0 +1,149 @@
+[Fri Jul 18 23:20:33 CEST 2025] Lancement du script
+[Fri Jul 18 23:49:10 CEST 2025] Test du script cron
+PWD: /Users/nii/Documents/Crypto_Bot
+USER: nii
+Environnement virtuel trouvé
+Environnement activé
+Fichier .env trouvé
+[Fri Jul 18 23:49:25 CEST 2025] Test du script cron
+PWD: /Users/nii/Documents/Crypto_Bot
+USER: nii
+Environnement virtuel trouvé
+Environnement activé
+Fichier .env trouvé
+Variables d'environnement chargées
+Test des scripts Python...
+info_wallet.py trouvé
+info_wallet.py exécuté
+analyse_marche.py trouvé
+analyse_marche.py exécuté
+analyse_opportunites.py trouvé
+analyse_opportunites.py exécuté
+[Fri Jul 18 23:50:17 CEST 2025] Test terminé
+[Fri Jul 18 23:50:20 CEST 2025] Lancement info_wallet.py
+[Fri Jul 18 23:50:22 CEST 2025] Lancement analyse_marche.py
+[Fri Jul 18 23:50:56 CEST 2025] Lancement analyse_opportunites.py
+[Fri Jul 18 23:52:49 CEST 2025] Lancement info_wallet.py
+[Fri Jul 18 23:52:51 CEST 2025] Lancement analyse_marche.py
+[Fri Jul 18 23:53:18 CEST 2025] Lancement analyse_opportunites.py
+[Fri Jul 18 23:55:27 CEST 2025] Lancement info_wallet.py
+[Fri Jul 18 23:55:30 CEST 2025] Lancement analyse_marche.py
+[Fri Jul 18 23:56:14 CEST 2025] Lancement analyse_opportunites.py
+[Sat Jul 19 00:02:34 CEST 2025] Lancement info_wallet.py
+[Sat Jul 19 00:02:37 CEST 2025] Lancement analyse_marche.py
+[Sat Jul 19 00:03:12 CEST 2025] Lancement analyse_opportunites.py
+[Sat Jul 19 00:04:25 CEST 2025] Lancement info_wallet.py
+[Sat Jul 19 00:04:28 CEST 2025] Lancement analyse_marche.py
+[Sat Jul 19 00:05:02 CEST 2025] Lancement analyse_opportunites.py
+[Sat Jul 19 00:16:00 CEST 2025] Lancement info_wallet.py
+[Sat Jul 19 00:16:03 CEST 2025] Lancement analyse_marche.py
+[Sat Jul 19 00:16:28 CEST 2025] Lancement analyse_opportunites.py
+[Sat Jul 19 00:31:13 CEST 2025] Lancement info_wallet.py
+[Sat Jul 19 00:31:16 CEST 2025] Lancement analyse_marche.py
+[Sat Jul 19 00:31:36 CEST 2025] Lancement analyse_opportunites.py
+[Sat Jul 19 00:32:56 CEST 2025] Lancement info_wallet.py
+[Sat Jul 19 00:32:58 CEST 2025] Lancement analyse_marche.py
+[Sat Jul 19 00:33:26 CEST 2025] Lancement analyse_opportunites.py
+[Sat Jul 26 15:46:10 CEST 2025] Lancement info_wallet.py
+[Sat Jul 26 15:46:14 CEST 2025] Lancement analyse_marche.py
+[Sat Jul 26 15:46:40 CEST 2025] Lancement analyse_opportunites.py
+[Fri Aug 29 12:47:23 CEST 2025] Lancement info_wallet.py
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/info_wallet.py", line 3, in <module>
+    import requests
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/__init__.py", line 164, in <module>
+    from .api import delete, get, head, options, patch, post, put, request
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/api.py", line 11, in <module>
+    from . import sessions
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/sessions.py", line 15, in <module>
+    from .adapters import HTTPAdapter
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/adapters.py", line 81, in <module>
+    _preloaded_ssl_context.load_verify_locations(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        extract_zipped_paths(DEFAULT_CA_BUNDLE_PATH)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+FileNotFoundError: [Errno 2] No such file or directory
+[Fri Aug 29 12:47:23 CEST 2025] Lancement analyse_marche.py
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/analyse_marche.py", line 2, in <module>
+    import requests
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/__init__.py", line 164, in <module>
+    from .api import delete, get, head, options, patch, post, put, request
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/api.py", line 11, in <module>
+    from . import sessions
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/sessions.py", line 15, in <module>
+    from .adapters import HTTPAdapter
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/adapters.py", line 81, in <module>
+    _preloaded_ssl_context.load_verify_locations(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        extract_zipped_paths(DEFAULT_CA_BUNDLE_PATH)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+FileNotFoundError: [Errno 2] No such file or directory
+[Fri Aug 29 12:47:23 CEST 2025] Lancement analyse_opportunites.py
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/analyse_opportunites.py", line 2, in <module>
+    import requests
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/__init__.py", line 164, in <module>
+    from .api import delete, get, head, options, patch, post, put, request
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/api.py", line 11, in <module>
+    from . import sessions
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/sessions.py", line 15, in <module>
+    from .adapters import HTTPAdapter
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/requests/adapters.py", line 81, in <module>
+    _preloaded_ssl_context.load_verify_locations(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        extract_zipped_paths(DEFAULT_CA_BUNDLE_PATH)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+FileNotFoundError: [Errno 2] No such file or directory
+[Fri Aug 29 13:30:35 CEST 2025] Lancement info_wallet.py
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/info_wallet.py", line 4, in <module>
+    import matplotlib.pyplot as plt
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/pyplot.py", line 57, in <module>
+    import matplotlib.colorbar
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/colorbar.py", line 19, in <module>
+    from matplotlib import _api, cbook, collections, cm, colors, contour, ticker
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/collections.py", line 21, in <module>
+    from . import (_api, _path, artist, cbook, colorizer as mcolorizer, colors as mcolors,
+                   _docstring, hatch as mhatch, lines as mlines, path as mpath, transforms)
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/artist.py", line 1855, in <module>
+    Artist._update_set_signature_and_docstring()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/artist.py", line 177, in _update_set_signature_and_docstring
+    + kwdoc(cls))
+      ~~~~~^^^^^
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/artist.py", line 1850, in kwdoc
+    if mpl.rcParams['docstring.hardcopy'] else
+       ^^^^^^^^^^^^
+AttributeError: module 'matplotlib' has no attribute 'rcParams'
+[Fri Aug 29 13:30:36 CEST 2025] Lancement analyse_marche.py
+[Fri Aug 29 13:30:58 CEST 2025] Lancement analyse_opportunites.py
+[Fri Aug 29 13:36:46 CEST 2025] Lancement info_wallet.py
+Traceback (most recent call last):
+  File "/Users/nii/Documents/Crypto_Bot/info_wallet.py", line 4, in <module>
+    import matplotlib.pyplot as plt
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/pyplot.py", line 57, in <module>
+    import matplotlib.colorbar
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/colorbar.py", line 19, in <module>
+    from matplotlib import _api, cbook, collections, cm, colors, contour, ticker
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/collections.py", line 21, in <module>
+    from . import (_api, _path, artist, cbook, colorizer as mcolorizer, colors as mcolors,
+                   _docstring, hatch as mhatch, lines as mlines, path as mpath, transforms)
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/artist.py", line 1855, in <module>
+    Artist._update_set_signature_and_docstring()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/artist.py", line 177, in _update_set_signature_and_docstring
+    + kwdoc(cls))
+      ~~~~~^^^^^
+  File "/Users/nii/Documents/Crypto_Bot/env/lib/python3.13/site-packages/matplotlib/artist.py", line 1850, in kwdoc
+    if mpl.rcParams['docstring.hardcopy'] else
+       ^^^^^^^^^^^^
+AttributeError: module 'matplotlib' has no attribute 'rcParams'
+[Fri Aug 29 13:36:47 CEST 2025] Lancement analyse_marche.py
+[Fri Aug 29 13:37:05 CEST 2025] Lancement analyse_opportunites.py

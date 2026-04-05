@@ -148,6 +148,8 @@ services:
       - RISK_SERVICE_URL=http://risk-service:8005
       - PORTFOLIO_SERVICE_URL=http://portfolio-service:8002
       - AUTH_SERVICE_URL=http://auth-service:8001
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - TRADING_MODE=${TRADING_MODE:-paper}
       - BINANCE_API_KEY=${BINANCE_API_KEY:-}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
@@ -252,6 +254,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - MARKET_DATA_URL=http://market-data-service:8003
       - PORTFOLIO_URL=http://portfolio-service:8002
       - TRADING_URL=http://trading-engine:8004

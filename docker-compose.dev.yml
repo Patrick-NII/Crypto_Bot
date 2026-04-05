@@ -25,6 +25,20 @@ services:
     networks:
       - okamoey-net
 
+  # Trading-only frontend on port 3200 for the Trading branch
+  frontend-trading:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: okamoey-frontend-trading
+    ports:
+      - "${TRADING_FRONTEND_PORT:-3200}:80"
+    depends_on:
+      gateway-dev:
+        condition: service_started
+    networks:
+      - okamoey-net
+
   # Dev gateway on port 8100 — routes to the SAME backend services
   gateway-dev:
     build:
@@ -49,7 +63,9 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
       - RATE_LIMIT_PER_MINUTE=500
     networks:
-      - okamoey-net
+      okamoey-net:
+        aliases:
+          - okamoey-gateway
 
 networks:
   okamoey-net:

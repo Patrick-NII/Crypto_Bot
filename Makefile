@@ -4,6 +4,7 @@
 #
 #   make dev           Start dev environment (frontend:3100, gateway:8100)
 #   make staging       Start staging environment (frontend:3000, gateway:8000)
+#   make trading       Start trading-only environment (frontend:3200, gateway:8100)
 #   make stop          Stop all containers
 #   make build         Build all Docker images
 #   make logs          Tail logs for all services
@@ -19,7 +20,7 @@ COMPOSE_DEV   := $(COMPOSE) -p okamoey-dev -f docker-compose.dev.yml
 REGISTRY      := ghcr.io/patrick-nii
 VERSION       := $(shell git rev-parse --short HEAD 2>/dev/null || echo "latest")
 
-.PHONY: dev staging stop build logs status clean promote db-reset push help
+.PHONY: dev staging trading stop build logs status clean promote db-reset push help
 
 # ── Default ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ help:
 	@echo "  Environments:"
 	@echo "    make dev            Start dev env       (frontend:3100)"
 	@echo "    make staging        Start staging env   (frontend:3000)"
+	@echo "    make trading        Start trading env   (frontend:3200)"
 	@echo "    make stop           Stop all containers"
 	@echo "    make stop-dev       Stop dev only"
 	@echo ""
@@ -67,6 +69,15 @@ staging: ## Start staging environment
 	@echo "▸ Starting STAGING environment (frontend:3000, gateway:8000)..."
 	$(COMPOSE) up -d
 	@echo "✓ Staging ready at http://localhost:3000"
+
+trading: ## Start trading-only environment on 3200 without the staging frontend
+	@echo "▸ Starting TRADING environment (frontend:3200, gateway:8100)..."
+	docker compose -p practical-swirles -f docker-compose.yml up -d \
+		postgres redis auth-service portfolio-service market-data-service \
+		trading-engine risk-service ml-service notification-service \
+		mailing-service ai-agent-service news-service binance-proxy
+	docker compose -p okamoey-dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build gateway-dev frontend-trading
+	@echo "✓ Trading ready at http://localhost:3200/crypto"
 
 stop: ## Stop all containers (both environments)
 	@echo "▸ Stopping all containers..."

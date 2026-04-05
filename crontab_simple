@@ -1,0 +1,8 @@
+# 🔁 Toutes les 15 min : info_wallet
+*/15 * * * * /Users/nii/Documents/Crypto_Bot/cron_simple.sh
+
+# 📈 Tous les Mardis à 12h30 : Analyse marché
+30 12 * * 2 /Users/nii/Documents/Crypto_Bot/cron_simple.sh
+
+# 🔍 Toutes les 6h : Analyse opportunités
+0 */6 * * * /Users/nii/Documents/Crypto_Bot/cron_simple.sh 
