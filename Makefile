@@ -15,7 +15,7 @@
 # =============================================================================
 
 COMPOSE       := docker compose
-COMPOSE_DEV   := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_DEV   := $(COMPOSE) -p okamoey-dev -f docker-compose.dev.yml
 REGISTRY      := ghcr.io/patrick-nii
 VERSION       := $(shell git rev-parse --short HEAD 2>/dev/null || echo "latest")
 
@@ -25,20 +25,35 @@ VERSION       := $(shell git rev-parse --short HEAD 2>/dev/null || echo "latest"
 
 help:
 	@echo ""
-	@echo "  Okamoey — available commands:"
+	@echo "  Okamoey v$(CURRENT_VERSION) — available commands:"
 	@echo ""
-	@echo "  make dev            Start dev env       (frontend:3100)"
-	@echo "  make staging        Start staging env   (frontend:3000)"
-	@echo "  make stop           Stop all containers"
-	@echo "  make build          Build all images"
-	@echo "  make logs           Tail all service logs"
-	@echo "  make logs-auth      Tail auth-service logs"
-	@echo "  make logs-frontend  Tail frontend logs"
-	@echo "  make status         Show running containers"
-	@echo "  make clean          Stop + remove everything"
-	@echo "  make promote        Merge dev → staging"
-	@echo "  make push           Push images to registry"
-	@echo "  make db-reset       Reset database (DESTRUCTIVE)"
+	@echo "  Environments:"
+	@echo "    make dev            Start dev env       (frontend:3100)"
+	@echo "    make staging        Start staging env   (frontend:3000)"
+	@echo "    make stop           Stop all containers"
+	@echo "    make stop-dev       Stop dev only"
+	@echo ""
+	@echo "  Build & Deploy:"
+	@echo "    make build          Build all images"
+	@echo "    make push           Push images to registry"
+	@echo "    make promote        Merge dev → staging"
+	@echo "    make release        Release staging → main (production)"
+	@echo ""
+	@echo "  Versioning:"
+	@echo "    make version        Show current version"
+	@echo "    make patch          Bump patch  ($(CURRENT_VERSION) → fix)"
+	@echo "    make minor          Bump minor  ($(CURRENT_VERSION) → feature)"
+	@echo "    make major          Bump major  ($(CURRENT_VERSION) → breaking)"
+	@echo ""
+	@echo "  Monitoring:"
+	@echo "    make status         Show running containers"
+	@echo "    make logs           Tail all service logs"
+	@echo "    make logs-auth      Tail auth-service"
+	@echo "    make logs-frontend  Tail frontend"
+	@echo ""
+	@echo "  Maintenance:"
+	@echo "    make clean          Stop + remove everything"
+	@echo "    make db-reset       Reset database (DESTRUCTIVE)"
 	@echo ""
 
 # ── Environments ─────────────────────────────────────────────────────────────
@@ -53,10 +68,16 @@ staging: ## Start staging environment
 	$(COMPOSE) up -d
 	@echo "✓ Staging ready at http://localhost:3000"
 
-stop: ## Stop all containers
+stop: ## Stop all containers (both environments)
 	@echo "▸ Stopping all containers..."
+	-$(COMPOSE_DEV) down 2>/dev/null
 	$(COMPOSE) down
 	@echo "✓ All stopped"
+
+stop-dev: ## Stop dev only
+	@echo "▸ Stopping DEV..."
+	$(COMPOSE_DEV) down
+	@echo "✓ Dev stopped"
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +143,7 @@ promote: ## Merge dev into staging
 
 clean: ## Stop and remove containers, networks, orphans
 	@echo "▸ Cleaning up..."
+	-$(COMPOSE_DEV) down --remove-orphans 2>/dev/null
 	$(COMPOSE) down --remove-orphans
 	@echo "✓ Clean"
 
@@ -130,3 +152,50 @@ db-reset: ## Reset database (DESTRUCTIVE — drops all data)
 	@read -p "  Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ] || exit 1
 	$(COMPOSE) down -v
 	@echo "✓ Volumes removed. Run 'make staging' or 'make dev' to recreate."
+
+# ── Versioning ──────────────────────────────────────────────────────────────
+# Semantic versioning: MAJOR.MINOR.PATCH
+# make patch  → 0.9.0 → 0.9.1  (bug fix)
+# make minor  → 0.9.1 → 0.10.0 (new feature)
+# make major  → 0.10.0 → 1.0.0 (breaking change)
+
+CURRENT_VERSION := $(shell cat VERSION 2>/dev/null || echo "0.0.0")
+
+version: ## Show current version
+	@echo "Current version: v$(CURRENT_VERSION)"
+
+patch: ## Bump patch version (0.9.0 → 0.9.1)
+	@NEW=$$(echo "$(CURRENT_VERSION)" | awk -F. '{printf "%d.%d.%d", $$1, $$2, $$3+1}') && \
+	echo "$$NEW" > VERSION && \
+	echo "▸ Version bumped: v$(CURRENT_VERSION) → v$$NEW" && \
+	git add VERSION && \
+	git commit -m "chore: bump version to v$$NEW" && \
+	git tag "v$$NEW" && \
+	echo "✓ Tagged v$$NEW — push with: git push && git push --tags"
+
+minor: ## Bump minor version (0.9.0 → 0.10.0)
+	@NEW=$$(echo "$(CURRENT_VERSION)" | awk -F. '{printf "%d.%d.0", $$1, $$2+1}') && \
+	echo "$$NEW" > VERSION && \
+	echo "▸ Version bumped: v$(CURRENT_VERSION) → v$$NEW" && \
+	git add VERSION && \
+	git commit -m "chore: bump version to v$$NEW" && \
+	git tag "v$$NEW" && \
+	echo "✓ Tagged v$$NEW — push with: git push && git push --tags"
+
+major: ## Bump major version (0.9.0 → 1.0.0)
+	@NEW=$$(echo "$(CURRENT_VERSION)" | awk -F. '{printf "%d.0.0", $$1+1}') && \
+	echo "$$NEW" > VERSION && \
+	echo "▸ Version bumped: v$(CURRENT_VERSION) → v$$NEW" && \
+	git add VERSION && \
+	git commit -m "chore: bump version to v$$NEW" && \
+	git tag "v$$NEW" && \
+	echo "✓ Tagged v$$NEW — push with: git push && git push --tags"
+
+release: ## Tag current version as release + promote to main
+	@echo "▸ Releasing v$(CURRENT_VERSION) to production..."
+	git tag -f "v$(CURRENT_VERSION)" && \
+	git checkout main && \
+	git merge staging --no-edit -m "release: v$(CURRENT_VERSION)" && \
+	git push origin main --tags && \
+	git checkout - && \
+	echo "✓ Released v$(CURRENT_VERSION) to main"

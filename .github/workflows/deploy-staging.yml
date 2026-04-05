@@ -1,6 +1,6 @@
 # =============================================================================
 # Deploy Staging — Triggered on push/merge to staging branch
-# Builds images, tags them, pushes to GitHub Container Registry
+# Builds images with version tags, pushes to GitHub Container Registry
 # =============================================================================
 
 name: Deploy Staging
@@ -18,8 +18,20 @@ permissions:
   packages: write
 
 jobs:
+  # Read version once for all jobs
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=$(cat VERSION 2>/dev/null || echo '0.0.0')" >> "$GITHUB_OUTPUT"
+
   build-and-push:
     name: Build & Push (${{ matrix.service }})
+    needs: version
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -60,6 +72,22 @@ jobs:
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ needs.version.outputs.version }}
+            APP_ENV=staging
+            BUILD_SHA=${{ github.sha }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:staging
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:v${{ needs.version.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:staging-${{ github.sha }}
+
+  summary:
+    name: Deploy summary
+    needs: [version, build-and-push]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "## Staging deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** v${{ needs.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${GITHUB_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Images:** pushed to ghcr.io" >> $GITHUB_STEP_SUMMARY

@@ -7,6 +7,7 @@ import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { openChatGlobal } from "@/components/ai/chat-wrapper";
 import { cn } from "@/lib/utils";
+import { VERSION_DISPLAY, APP_ENV, ENV_COLOR } from "@/lib/version";
 import {
   LayoutDashboard,
   Wallet,
@@ -158,6 +159,23 @@ export function Sidebar() {
           <LogOut className="h-4 w-4 shrink-0" />
           {showLabel && <span>Log out</span>}
         </button>
+
+        {/* Version badge */}
+        <div className={cn("flex items-center gap-1.5 px-3 pt-2", centerClass)}>
+          {showLabel ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-mono text-[var(--text-muted)]">{VERSION_DISPLAY}</span>
+              <span
+                className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase"
+                style={{ backgroundColor: `${ENV_COLOR[APP_ENV] ?? "#888"}20`, color: ENV_COLOR[APP_ENV] ?? "#888" }}
+              >
+                {APP_ENV === "production" ? "prod" : APP_ENV === "staging" ? "preprod" : "dev"}
+              </span>
+            </div>
+          ) : (
+            <span className="text-[9px] font-mono text-[var(--text-muted)] truncate">{VERSION_DISPLAY}</span>
+          )}
+        </div>
       </div>
     );
   }

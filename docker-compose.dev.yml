@@ -1,20 +1,57 @@
 # =============================================================================
-# Okamoey — DEV environment override
-# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-# Or simply: make dev
+# Okamoey — DEV environment overlay
+# Usage: make dev  (or docker compose -p okamoey-dev -f ... up -d)
 #
-# Overrides ports for frontend (3100) and gateway (8100) so dev and staging
-# can coexist on the same machine. Shares postgres, redis, and all backend
-# services with staging to keep resource usage manageable.
+# Launches ONLY frontend + gateway on separate ports (3100, 8100).
+# Backend services (auth, portfolio, trading, etc.) are shared with staging.
+# Postgres and Redis are shared too.
+#
+# This means staging must be running first: make staging
+# Then: make dev (adds dev frontend + gateway on top)
 # =============================================================================
 
 services:
-  frontend:
+  # Dev frontend on port 3100
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: okamoey-frontend-dev
     ports:
       - "${DEV_FRONTEND_PORT:-3100}:80"
+    depends_on:
+      gateway-dev:
+        condition: service_started
+    networks:
+      - okamoey-net
 
-  gateway:
+  # Dev gateway on port 8100 — routes to the SAME backend services
+  gateway-dev:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
     container_name: okamoey-gateway-dev
     ports:
       - "${DEV_GATEWAY_PORT:-8100}:8000"
+    environment:
+      - AUTH_SERVICE_URL=http://okamoey-auth:8001
+      - PORTFOLIO_SERVICE_URL=http://okamoey-portfolio:8002
+      - MARKET_DATA_SERVICE_URL=http://okamoey-market-data:8003
+      - TRADING_ENGINE_URL=http://okamoey-trading:8004
+      - RISK_SERVICE_URL=http://okamoey-risk:8005
+      - ML_SERVICE_URL=http://okamoey-ml:8006
+      - NOTIFICATION_SERVICE_URL=http://okamoey-notifications:8007
+      - AI_AGENT_SERVICE_URL=http://okamoey-ai-agent:8008
+      - MAILING_SERVICE_URL=http://okamoey-mailing:8009
+      - NEWS_SERVICE_URL=http://okamoey-news:8011
+      - REDIS_HOST=okamoey-redis
+      - SECRET_KEY=${SECRET_KEY:-dev-secret}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
+      - RATE_LIMIT_PER_MINUTE=500
+    networks:
+      - okamoey-net
+
+networks:
+  okamoey-net:
+    external: true
+    name: practical-swirles_okamoey-net

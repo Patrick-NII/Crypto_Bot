@@ -1,6 +1,6 @@
 # =============================================================================
 # CI — Runs on every push and pull request
-# Validates code quality and builds Docker images
+# On dev branch: validates + auto-promotes to staging if CI passes
 # =============================================================================
 
 name: CI
@@ -14,6 +14,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/okamoey
+
+permissions:
+  contents: write
 
 jobs:
   # ── Frontend checks ──────────────────────────────────────────────
@@ -64,4 +67,39 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ hashFiles('VERSION') != '' && '$(cat VERSION)' || '0.0.0-ci' }}
+            APP_ENV=ci
+            BUILD_SHA=${{ github.sha }}
           tags: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:ci-${{ github.sha }}
+
+  # ── Auto-promote dev → staging ───────────────────────────────────
+  promote-to-staging:
+    name: Promote dev → staging
+    needs: [frontend, docker-build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION 2>/dev/null || echo '0.0.0')" >> "$GITHUB_OUTPUT"
+
+      - name: Merge dev into staging
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout staging
+          git merge dev --no-edit -m "ci: promote dev → staging (v${{ steps.version.outputs.version }}, ${{ github.sha }})"
+          git push origin staging
+
+      - name: Summary
+        run: |
+          echo "## Promoted to staging" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** dev → staging" >> $GITHUB_STEP_SUMMARY
