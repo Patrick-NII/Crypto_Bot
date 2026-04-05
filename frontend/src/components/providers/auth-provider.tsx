@@ -130,10 +130,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
-  const hasToken =
-    typeof window !== "undefined"
-      ? Boolean(localStorage.getItem("access_token"))
-      : false;
+  // Derive hasToken from ready state to avoid hydration mismatch.
+  // On the server and initial client render, hasToken is always false.
+  // After mount, fetchUser runs and sets loading/ready which triggers re-render.
+  const hasToken = ready ? user !== null : false;
 
   const value = useMemo<AuthContextValue>(() => {
     const authenticated = user !== null;
@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       ready,
       authenticated,
-      connecting: hasToken && loading,
+      connecting: !ready && loading,
       termsAccepted: Boolean(user?.accepted_terms_at),
       walletEnabled: Boolean(user?.wallet_access_enabled),
       walletReason: user?.wallet_access_reason ?? "",

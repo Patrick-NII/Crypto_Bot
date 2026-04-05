@@ -13,14 +13,15 @@ const SIDEBAR_KEY = "okamoey-sidebar-collapsed";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => typeof window !== "undefined" && localStorage.getItem(SIDEBAR_KEY) === "true",
-  );
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 768,
-  );
+  // Start with server-safe defaults to avoid hydration mismatch
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
+    // Sync from client state after mount
+    setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true");
+    setIsMobile(window.innerWidth < 768);
+
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", checkMobile);
 
