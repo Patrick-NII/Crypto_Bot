@@ -76,9 +76,9 @@ const ACTION_CONFIG: Record<
 };
 
 const SIZE_STYLES = {
-  sm: "px-2 py-0.5 text-[10px] gap-1",
-  md: "px-3 py-1 text-[12px] gap-1.5",
-  lg: "px-4 py-2 text-[14px] gap-2",
+  sm: "px-2 py-0.5 text-[12px] gap-1",
+  md: "px-3 py-1 text-[14px] gap-1.5",
+  lg: "px-4 py-2 text-[16px] gap-2",
 };
 
 const ICON_SIZES = { sm: "h-3 w-3", md: "h-3.5 w-3.5", lg: "h-4.5 w-4.5" };
@@ -123,8 +123,8 @@ export function IndicatorBar({ name, signal, description }: IndicatorBarProps) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-medium text-[var(--foreground)]">{name}</span>
-        <span className="text-[10px]" style={{ color }}>{signal > 0 ? "+" : ""}{(signal * 100).toFixed(0)}%</span>
+        <span className="text-[13px] font-medium text-[var(--foreground)]">{name}</span>
+        <span className="text-[12px]" style={{ color }}>{signal > 0 ? "+" : ""}{(signal * 100).toFixed(0)}%</span>
       </div>
       <div className="h-1.5 w-full rounded-full" style={{ background: "var(--glass-border)" }}>
         <div
@@ -132,7 +132,7 @@ export function IndicatorBar({ name, signal, description }: IndicatorBarProps) {
           style={{ width: `${pct}%`, background: color }}
         />
       </div>
-      <p className="text-[9px] text-[var(--text-muted)]">{description}</p>
+      <p className="text-[11px] text-[var(--text-muted)]">{description}</p>
     </div>
   );
 }

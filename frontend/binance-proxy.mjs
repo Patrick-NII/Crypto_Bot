@@ -14,22 +14,30 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Load .env from parent directory
-let API_KEY = "";
-let SECRET_KEY = "";
-try {
-  const envContent = readFileSync(join(__dirname, "..", ".env"), "utf-8");
-  for (const line of envContent.split("\n")) {
-    const [key, ...rest] = line.split("=");
-    const val = rest.join("=").trim().replace(/^["']|["']$/g, "");
-    if (key.trim() === "BINANCE_API_KEY") API_KEY = val;
-    if (key.trim() === "BINANCE_SECRET_KEY") SECRET_KEY = val;
-  }
-} catch { console.error("Failed to read .env"); }
+// Load keys from environment variables first, then fallback to ../.env file
+let API_KEY = process.env.BINANCE_API_KEY || "";
+let SECRET_KEY =
+  process.env.BINANCE_API_SECRET || process.env.BINANCE_SECRET_KEY || "";
 
 if (!API_KEY || !SECRET_KEY) {
-  console.error("BINANCE_API_KEY or BINANCE_SECRET_KEY missing from .env");
-  process.exit(1);
+  try {
+    const envContent = readFileSync(join(__dirname, "..", ".env"), "utf-8");
+    for (const line of envContent.split("\n")) {
+      const [key, ...rest] = line.split("=");
+      const val = rest.join("=").trim().replace(/^["']|["']$/g, "");
+      if (key.trim() === "BINANCE_API_KEY" && !API_KEY) API_KEY = val;
+      if (
+        (key.trim() === "BINANCE_API_SECRET" || key.trim() === "BINANCE_SECRET_KEY") &&
+        !SECRET_KEY
+      ) {
+        SECRET_KEY = val;
+      }
+    }
+  } catch { console.error("No .env file found, using environment variables only"); }
+}
+
+if (!API_KEY || !SECRET_KEY) {
+  console.warn("Binance private credentials missing. Public endpoints remain available, private endpoints will return 503.");
 }
 
 const BINANCE_BASE = "https://api.binance.com";
@@ -39,6 +47,14 @@ function sign(queryString) {
 }
 
 async function binanceRequest(path, params = {}) {
+  if (!API_KEY || !SECRET_KEY) {
+    return {
+      status: 503,
+      data: {
+        error: "Binance API credentials are missing. Configure BINANCE_API_KEY and BINANCE_API_SECRET to use private endpoints.",
+      },
+    };
+  }
   params.timestamp = Date.now().toString();
   params.recvWindow = "10000";
   const qs = new URLSearchParams(params).toString();
@@ -80,7 +96,12 @@ createServer(async (req, res) => {
 
     // GET /balances — filtered non-zero balances
     else if (path === "/balances") {
-      const { data } = await binanceRequest("/api/v3/account");
+      const { status, data } = await binanceRequest("/api/v3/account");
+      if (status !== 200) {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
       const balances = (data.balances || [])
         .map((b) => ({ asset: b.asset, free: parseFloat(b.free), locked: parseFloat(b.locked) }))
         .filter((b) => b.free > 0 || b.locked > 0);
@@ -174,5 +195,9 @@ createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   console.log(`Binance proxy running on http://localhost:${PORT}`);
-  console.log(`API Key: ${API_KEY.slice(0, 8)}...${API_KEY.slice(-4)}`);
+  if (API_KEY) {
+    console.log(`API Key: ${API_KEY.slice(0, 8)}...${API_KEY.slice(-4)}`);
+  } else {
+    console.log("API Key: not configured (public mode only)");
+  }
 });

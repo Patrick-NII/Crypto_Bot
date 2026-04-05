@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     RISK_SERVICE_URL: str = "http://localhost:8005"
     ML_SERVICE_URL: str = "http://localhost:8006"
     NOTIFICATION_SERVICE_URL: str = "http://localhost:8007"
+    NEWS_SERVICE_URL: str = "http://localhost:8011"
 
     # Redis
     REDIS_HOST: str = "localhost"
@@ -19,13 +20,13 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
 
-    # Rate limiting
-    RATE_LIMIT_PER_MINUTE: int = 60
+    # Rate limiting (300/min to handle sparklines burst on page load)
+    RATE_LIMIT_PER_MINUTE: int = 300
 
     # Proxy
-    PROXY_TIMEOUT: float = 10.0
+    PROXY_TIMEOUT: float = 15.0
 
-    model_config = {"env_prefix": "GATEWAY_", "case_sensitive": True}
+    model_config = {"case_sensitive": True}
 
 
 settings = Settings()

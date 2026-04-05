@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/providers/theme-provider";
+import { useAuth } from "@/components/providers/auth-provider";
 import { openChatGlobal } from "@/components/ai/chat-wrapper";
 import { cn } from "@/lib/utils";
 import {
@@ -45,6 +46,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme, tradingMode, setTradingMode } = useTheme();
+  const { user, clearAuth } = useAuth();
 
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -68,9 +70,7 @@ export function Sidebar() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("demo_user");
+    clearAuth();
     router.push("/login");
   };
 
@@ -96,7 +96,7 @@ export function Sidebar() {
               href={item.href}
               title={!isMobile && collapsed ? item.label : undefined}
               className={cn(
-                "group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150",
+                "group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-[15px] font-medium transition-all duration-150",
                 !isMobile && collapsed && "justify-center px-0",
                 isActive
                   ? "accent-bg accent-text"
@@ -123,7 +123,7 @@ export function Sidebar() {
       <div className="px-2 pb-2 pt-1.5 space-y-0.5 border-t border-[var(--glass-border)]">
         <button
           onClick={() => setTradingMode(tradingMode === "manual" ? "auto" : "manual")}
-          className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium transition-all", centerClass, tradingMode === "auto" ? "bg-[#22c55e]/12 text-[#22c55e]" : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)]")}
+          className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[14px] font-medium transition-all", centerClass, tradingMode === "auto" ? "bg-[#22c55e]/12 text-[#22c55e]" : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)]")}
         >
           {tradingMode === "auto" ? <Bot className="h-4 w-4 shrink-0" /> : <Hand className="h-4 w-4 shrink-0" />}
           {showLabel && (
@@ -138,23 +138,23 @@ export function Sidebar() {
 
         {/* AI Chat — visible in mobile drawer, hidden on desktop sidebar */}
         {isMobile && (
-          <button onClick={() => { openChatGlobal(); }} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[#06d6a0] hover:bg-[#06d6a0]/8 transition-all">
+          <button onClick={() => { openChatGlobal(); }} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[14px] font-medium text-[#06d6a0] hover:bg-[#06d6a0]/8 transition-all">
             <Sparkles className="h-4 w-4 shrink-0" />
             <span>AI Assistant</span>
           </button>
         )}
 
-        <Link href="/settings" className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all", centerClass)}>
+        <Link href="/settings" className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[14px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all", centerClass)}>
           <Settings className="h-4 w-4 shrink-0" />
           {showLabel && <span>Settings</span>}
         </Link>
 
-        <button onClick={toggleTheme} className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all", centerClass)}>
+        <button onClick={toggleTheme} className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[14px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all", centerClass)}>
           {theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
           {showLabel && <span>{theme === "dark" ? "Light" : "Dark"}</span>}
         </button>
 
-        <button onClick={handleLogout} className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[12px] font-medium text-[#ef4444]/70 hover:text-[#ef4444] hover:bg-[#ef4444]/8 transition-all", centerClass)}>
+        <button onClick={handleLogout} className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-1.5 text-[14px] font-medium text-[#ef4444]/70 hover:text-[#ef4444] hover:bg-[#ef4444]/8 transition-all", centerClass)}>
           <LogOut className="h-4 w-4 shrink-0" />
           {showLabel && <span>Log out</span>}
         </button>
@@ -170,7 +170,14 @@ export function Sidebar() {
         style={glassStyle}
       >
         <div className="flex h-12 items-center justify-between px-3 border-b border-[var(--glass-border)]">
-          {!collapsed && <span className="glow-text text-base font-bold tracking-wide">OKAMOEY</span>}
+          {!collapsed ? (
+            <div className="min-w-0">
+              <span className="glow-text text-base font-bold tracking-wide">OKAMOEY</span>
+              {user && (
+                <p className="text-[10px] text-[var(--text-muted)] truncate">{user.username}</p>
+              )}
+            </div>
+          ) : null}
           <button onClick={toggleCollapsed} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all">
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>

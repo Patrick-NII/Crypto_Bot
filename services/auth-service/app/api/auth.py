@@ -5,6 +5,8 @@ profile management, email verification, password reset, and logout.
 """
 
 import secrets
+from datetime import datetime, timezone
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.credentials import decrypt_secret, encrypt_secret, mask_api_key
 from app.core.database import get_db
 from app.core.redis_client import get_redis
 from app.core.security import (
@@ -22,12 +25,16 @@ from app.core.security import (
     verify_password,
     verify_token,
 )
-from app.models.user import User
+from app.models.user import ExchangeConnection, User
 from app.schemas.auth import (
+    ExchangeConnectionCreate,
+    ExchangeConnectionResponse,
+    ExchangeProviderResponse,
     LogoutRequest,
     MessageResponse,
     PasswordReset,
     PasswordResetRequest,
+    TermsAcceptance,
     TokenRefresh,
     TokenResponse,
     UserCreate,
@@ -38,6 +45,70 @@ from app.schemas.auth import (
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+EXCHANGE_PROVIDER_GUIDES = {
+    "binance": ExchangeProviderResponse(
+        provider="binance",
+        label="Binance",
+        supports_testnet=True,
+        requires_passphrase=False,
+        recommended_permissions=["Read balances", "Read trade history", "Spot trading (optional)"],
+        setup_steps=[
+            "Create an API key from Binance API Management.",
+            "Whitelist this app IP if your security policy requires it.",
+            "Enable read access first. Only enable trading when you trust the setup.",
+            "Paste API key and secret below, then save the connection.",
+        ],
+    ),
+    "coinbase": ExchangeProviderResponse(
+        provider="coinbase",
+        label="Coinbase Advanced",
+        supports_testnet=False,
+        requires_passphrase=False,
+        recommended_permissions=["View", "Trade (optional)"],
+        setup_steps=[
+            "Open Coinbase Advanced API settings and create a dedicated key.",
+            "Use a separate key per environment to keep production isolated.",
+            "Start in read-only mode if you only want portfolio visibility.",
+        ],
+    ),
+    "kraken": ExchangeProviderResponse(
+        provider="kraken",
+        label="Kraken",
+        supports_testnet=False,
+        requires_passphrase=False,
+        recommended_permissions=["Query funds", "Query open orders", "Create orders (optional)"],
+        setup_steps=[
+            "Generate a new Kraken API key with funding query rights.",
+            "Add trade rights only if you want live execution from the app.",
+            "Store the secret once. Kraken will not show it again.",
+        ],
+    ),
+    "bybit": ExchangeProviderResponse(
+        provider="bybit",
+        label="Bybit",
+        supports_testnet=True,
+        requires_passphrase=False,
+        recommended_permissions=["Read-only", "Unified trading (optional)"],
+        setup_steps=[
+            "Create a dedicated API key in the Bybit API console.",
+            "Pick read-only for portfolio sync, then upgrade to trading later if needed.",
+            "Enable testnet when validating your setup without live funds.",
+        ],
+    ),
+    "okx": ExchangeProviderResponse(
+        provider="okx",
+        label="OKX",
+        supports_testnet=True,
+        requires_passphrase=True,
+        recommended_permissions=["Read", "Trade (optional)"],
+        setup_steps=[
+            "Create an API key in the OKX API section.",
+            "Copy the API key, secret and passphrase immediately.",
+            "Use passphrase exactly as created; it is required to reconnect later.",
+        ],
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +128,99 @@ async def _check_rate_limit(key: str, limit: int, window: int) -> None:
         )
 
 
+def _normalise_provider(value: str) -> str:
+    return value.strip().lower().replace(" ", "_")
+
+
+async def _list_connections_for_user(
+    db: AsyncSession,
+    user_id: UUID,
+) -> list[ExchangeConnection]:
+    result = await db.execute(
+        select(ExchangeConnection)
+        .where(ExchangeConnection.user_id == user_id)
+        .order_by(ExchangeConnection.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+def _has_active_subscription(user: User) -> bool:
+    return user.subscription_status in {"trial", "active"}
+
+
+def _wallet_access_reason(user: User, connections: list[ExchangeConnection]) -> str:
+    active_connections = [conn for conn in connections if conn.is_active]
+    if user.accepted_terms_at is None:
+        return "Accept the platform terms to unlock wallet features."
+    if not _has_active_subscription(user):
+        return "An active trial or subscription is required to unlock wallet features."
+    if not active_connections:
+        return "Add at least one exchange or wallet API connection in Settings."
+    return "Wallet features unlocked."
+
+
+async def _sync_user_access_state(
+    user: User,
+    db: AsyncSession,
+    *,
+    connections: list[ExchangeConnection] | None = None,
+) -> tuple[list[ExchangeConnection], bool, str]:
+    if connections is None:
+        connections = await _list_connections_for_user(db, user.id)
+    live_trading_enabled = any(
+        connection.is_active and connection.can_trade for connection in connections
+    )
+    wallet_access_enabled = (
+        user.accepted_terms_at is not None
+        and _has_active_subscription(user)
+        and any(connection.is_active for connection in connections)
+    )
+    user.wallet_access_enabled = wallet_access_enabled
+    reason = _wallet_access_reason(user, connections)
+    return connections, live_trading_enabled, reason
+
+
+def _connection_response(connection: ExchangeConnection) -> ExchangeConnectionResponse:
+    return ExchangeConnectionResponse(
+        id=connection.id,
+        provider=connection.provider,
+        label=connection.label,
+        api_key_hint=mask_api_key(decrypt_secret(connection.encrypted_api_key)),
+        has_passphrase=bool(connection.encrypted_passphrase),
+        sandbox_mode=connection.sandbox_mode,
+        can_trade=connection.can_trade,
+        is_active=connection.is_active,
+        status=connection.status,
+        last_error=connection.last_error,
+        created_at=connection.created_at,
+        updated_at=connection.updated_at,
+    )
+
+
+async def _user_response(user: User, db: AsyncSession) -> UserResponse:
+    connections, live_trading_enabled, reason = await _sync_user_access_state(user, db)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        is_active=user.is_active,
+        is_verified=user.is_verified,
+        risk_profile=user.risk_profile,
+        subscription_plan=user.subscription_plan,
+        subscription_status=user.subscription_status,
+        billing_cycle=user.billing_cycle,
+        accepted_terms_at=user.accepted_terms_at,
+        terms_version=user.terms_version,
+        ai_behavior_style=user.ai_behavior_style,
+        ai_assistant_tone=user.ai_assistant_tone,
+        wallet_access_enabled=user.wallet_access_enabled,
+        wallet_access_reason=reason,
+        connected_exchanges_count=sum(1 for connection in connections if connection.is_active),
+        live_trading_enabled=live_trading_enabled,
+        created_at=user.created_at,
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST /register
 # ---------------------------------------------------------------------------
@@ -72,6 +236,12 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 
     Returns an access / refresh token pair on success.
     """
+    if not payload.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must accept the terms to create an account",
+        )
+
     # Check for existing email
     result = await db.execute(select(User).where(User.email == payload.email))
     if result.scalar_one_or_none() is not None:
@@ -92,6 +262,14 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         email=payload.email,
         username=payload.username,
         hashed_password=hash_password(payload.password),
+        subscription_plan=payload.subscription_plan,
+        subscription_status="trial",
+        billing_cycle=payload.billing_cycle,
+        accepted_terms_at=datetime.now(timezone.utc),
+        terms_version=payload.terms_version or settings.TERMS_VERSION,
+        ai_behavior_style="balanced",
+        ai_assistant_tone="analytical",
+        wallet_access_enabled=False,
     )
     db.add(user)
     await db.flush()
@@ -215,9 +393,12 @@ async def refresh(payload: TokenRefresh, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Return the authenticated user's profile."""
-    return current_user
+    return await _user_response(current_user, db)
 
 
 # ---------------------------------------------------------------------------
@@ -256,11 +437,153 @@ async def update_me(
     if payload.risk_profile is not None:
         current_user.risk_profile = payload.risk_profile
 
+    if payload.subscription_plan is not None:
+        current_user.subscription_plan = payload.subscription_plan
+
+    if payload.billing_cycle is not None:
+        current_user.billing_cycle = payload.billing_cycle
+
+    if payload.ai_behavior_style is not None:
+        current_user.ai_behavior_style = payload.ai_behavior_style
+
+    if payload.ai_assistant_tone is not None:
+        current_user.ai_assistant_tone = payload.ai_assistant_tone
+
     db.add(current_user)
     await db.flush()
     await db.refresh(current_user)
 
-    return current_user
+    return await _user_response(current_user, db)
+
+
+# ---------------------------------------------------------------------------
+# POST /me/accept-terms
+# ---------------------------------------------------------------------------
+
+
+@router.post("/me/accept-terms", response_model=UserResponse)
+async def accept_terms(
+    payload: TermsAcceptance,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept or renew the current platform terms."""
+    current_user.accepted_terms_at = datetime.now(timezone.utc)
+    current_user.terms_version = payload.terms_version or settings.TERMS_VERSION
+    db.add(current_user)
+    await db.flush()
+    await db.refresh(current_user)
+    return await _user_response(current_user, db)
+
+
+# ---------------------------------------------------------------------------
+# GET /exchange-providers
+# ---------------------------------------------------------------------------
+
+
+@router.get("/exchange-providers", response_model=list[ExchangeProviderResponse])
+async def list_exchange_providers() -> list[ExchangeProviderResponse]:
+    """Return supported provider metadata and setup guidance."""
+    return list(EXCHANGE_PROVIDER_GUIDES.values())
+
+
+# ---------------------------------------------------------------------------
+# GET /me/exchange-connections
+# ---------------------------------------------------------------------------
+
+
+@router.get("/me/exchange-connections", response_model=list[ExchangeConnectionResponse])
+async def list_exchange_connections(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ExchangeConnectionResponse]:
+    """Return the current user's configured exchange connections."""
+    connections = await _list_connections_for_user(db, current_user.id)
+    return [_connection_response(connection) for connection in connections]
+
+
+# ---------------------------------------------------------------------------
+# POST /me/exchange-connections
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/me/exchange-connections",
+    response_model=ExchangeConnectionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_exchange_connection(
+    payload: ExchangeConnectionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExchangeConnectionResponse:
+    """Store encrypted API credentials for a user exchange connection."""
+    provider = _normalise_provider(payload.provider)
+    label = payload.label.strip() if payload.label else provider.upper()
+
+    result = await db.execute(
+        select(ExchangeConnection).where(
+            ExchangeConnection.user_id == current_user.id,
+            ExchangeConnection.provider == provider,
+            ExchangeConnection.label == label,
+        )
+    )
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A connection with this provider and label already exists",
+        )
+
+    connection = ExchangeConnection(
+        user_id=current_user.id,
+        provider=provider,
+        label=label,
+        encrypted_api_key=encrypt_secret(payload.api_key),
+        encrypted_api_secret=encrypt_secret(payload.api_secret),
+        encrypted_passphrase=encrypt_secret(payload.passphrase) if payload.passphrase else None,
+        sandbox_mode=payload.sandbox_mode,
+        can_trade=payload.can_trade,
+        is_active=True,
+        status="configured",
+    )
+    db.add(connection)
+    await db.flush()
+    await _sync_user_access_state(current_user, db)
+    db.add(current_user)
+    await db.flush()
+    await db.refresh(connection)
+    return _connection_response(connection)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /me/exchange-connections/{connection_id}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/me/exchange-connections/{connection_id}", response_model=MessageResponse)
+async def delete_exchange_connection(
+    connection_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """Delete one stored exchange connection for the current user."""
+    result = await db.execute(
+        select(ExchangeConnection).where(
+            ExchangeConnection.id == connection_id,
+            ExchangeConnection.user_id == current_user.id,
+        )
+    )
+    connection = result.scalar_one_or_none()
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Exchange connection not found")
+
+    await db.delete(connection)
+    await db.flush()
+    await _sync_user_access_state(current_user, db)
+    db.add(current_user)
+    await db.flush()
+
+    return MessageResponse(message="Exchange connection deleted")
 
 
 # ---------------------------------------------------------------------------

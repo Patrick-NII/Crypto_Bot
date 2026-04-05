@@ -14,7 +14,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"}/auth/password-reset-request`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? "/api/v1"}/auth/password-reset-request`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -17,7 +17,7 @@ function VerifyEmailContent() {
       return;
     }
     fetch(
-      `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1"}/auth/verify-email`,
+      `${process.env.NEXT_PUBLIC_API_URL ?? "/api/v1"}/auth/verify-email`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

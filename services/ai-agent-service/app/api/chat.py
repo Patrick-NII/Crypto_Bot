@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.agents.registry import get_agent
+from app.core.auth import resolve_user_id_from_auth_header
 from app.core.llm_router import chat_completion, classify_complexity, Complexity
 from app.memory.conversation import get_history, append_message, clear_history
 from app.services.context_builder import build_context
@@ -33,24 +34,35 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
+async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     """Send a message to an AI agent and get a response."""
+    auth_header = request.headers.get("Authorization")
+    effective_user_id = (
+        resolve_user_id_from_auth_header(auth_header)
+        if auth_header
+        else req.user_id
+    )
+
     try:
         agent = get_agent(req.agent_type)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown agent type: {req.agent_type}")
 
     # Build context from live services
-    context = await build_context(req.agent_type, req.user_id)
+    context = await build_context(
+        req.agent_type,
+        effective_user_id,
+        auth_header,
+    )
 
     # Build system prompt with context
     system_prompt = agent.build_system_prompt(context)
 
     # Get conversation history
-    history = await get_history(req.user_id, req.agent_type)
+    history = await get_history(effective_user_id, req.agent_type)
 
     # Add user message to history
-    await append_message(req.user_id, req.agent_type, "user", req.message)
+    await append_message(effective_user_id, req.agent_type, "user", req.message)
 
     # Prepare messages for LLM
     messages = history + [{"role": "user", "content": req.message}]
@@ -65,7 +77,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=503, detail=str(e))
 
     # Save assistant response
-    await append_message(req.user_id, req.agent_type, "assistant", reply)
+    await append_message(effective_user_id, req.agent_type, "assistant", reply)
 
     return ChatResponse(
         reply=reply,
@@ -83,9 +95,15 @@ class ClearRequest(BaseModel):
 
 
 @router.post("/chat/clear")
-async def clear_chat(req: ClearRequest) -> dict:
+async def clear_chat(req: ClearRequest, request: Request) -> dict:
     """Clear conversation history for a user+agent pair."""
-    await clear_history(req.user_id, req.agent_type)
+    auth_header = request.headers.get("Authorization")
+    effective_user_id = (
+        resolve_user_id_from_auth_header(auth_header)
+        if auth_header
+        else req.user_id
+    )
+    await clear_history(effective_user_id, req.agent_type)
     return {"status": "cleared", "agent_type": req.agent_type}
 
 
@@ -93,26 +111,24 @@ class PerformanceAnalysisRequest(BaseModel):
     metrics: dict = Field(..., description="User performance metrics")
 
 
-PERF_SYSTEM_PROMPT = """You are an expert crypto trading performance analyst for the Okamoey platform.
-Analyze the user's trading metrics and provide actionable advice.
+PERF_SYSTEM_PROMPT = """Tu es un analyste expert crypto pour la plateforme Okamoey.
+Analyse les métriques du portfolio et donne un briefing concis EN FRANÇAIS.
 
-Structure your response in markdown with these sections:
-## Performance Summary
-Brief overview of the user's performance.
+RÈGLES STRICTES :
+- Réponse de 1200 caractères MAXIMUM, pas plus.
+- Pas de markdown headers (##), pas de listes à puces.
+- Utilise des paragraphes courts et directs.
+- Structure en 4 blocs séparés par un saut de ligne :
 
-## Strengths
-What the user is doing well (2-3 points with data).
+SITUATION : État actuel du portfolio en 1-2 phrases avec les chiffres clés.
 
-## Weaknesses
-Areas that need improvement (2-3 points with data).
+DYNAMIQUE : Tendance 24h, momentum, sentiment marché (fear/greed).
 
-## Recommendations
-Specific, actionable suggestions to improve (3-5 points).
+OPPORTUNITÉS & RISQUES : Ce qu'il faut surveiller, actions à envisager.
 
-## Risk Assessment
-Current risk level and suggestions for adjustment.
+CONSEIL : Une recommandation concrète et actionnable.
 
-Be specific. Reference actual numbers. Be encouraging but honest."""
+Sois direct, précis, utilise les vrais chiffres fournis. Pas de blabla."""
 
 
 @router.post("/analyze-performance")

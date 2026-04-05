@@ -7,13 +7,11 @@ import httpx
 
 from app.core.config import settings
 
+STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD", "USD", "EUR"}
 
-async def fetch_live_prices(symbols: List[str]) -> Dict[str, Decimal]:
-    """Call the market-data-service to get current prices for *symbols*.
 
-    Returns a mapping of symbol -> price.  Symbols that could not be resolved
-    are silently omitted from the result.
-    """
+async def fetch_live_market_data(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Return full market payload for the requested symbols."""
     if not symbols:
         return {}
 
@@ -25,16 +23,61 @@ async def fetch_live_prices(symbols: List[str]) -> Dict[str, Decimal]:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data: Dict[str, Any] = resp.json()
-            # Expected shape: {"prices": {"BTC": 60000.0, ...}}
-            raw_prices = data.get("prices", data)
+            raw_prices = data.get("data", data.get("prices", data))
             return {
-                sym: Decimal(str(price))
-                for sym, price in raw_prices.items()
+                sym.upper(): payload
+                for sym, payload in raw_prices.items()
+                if isinstance(payload, dict)
             }
     except (httpx.HTTPError, ValueError, KeyError):
-        # If market-data-service is unreachable, return empty; callers will
-        # fall back to the last stored current_price on each position.
         return {}
+
+
+async def fetch_live_prices(symbols: List[str]) -> Dict[str, Decimal]:
+    """Call the market-data-service to get current prices for *symbols*.
+
+    Returns a mapping of symbol -> price.  Symbols that could not be resolved
+    are silently omitted from the result.
+    """
+    if not symbols:
+        return {}
+
+    market = await fetch_live_market_data(symbols)
+    return {
+        sym: Decimal(str(payload.get("price", payload.get("current_price", 0))))
+        for sym, payload in market.items()
+        if payload.get("price", payload.get("current_price")) is not None
+    }
+
+
+async def fetch_trading_balances(
+    auth_header: str | None = None,
+) -> List[Dict[str, Decimal | str]]:
+    """Return trading-engine balances as normalized rows."""
+    url = f"{settings.TRADING_ENGINE_URL}/api/v1/orders/balance"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            headers = {"Authorization": auth_header} if auth_header else {}
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            raw: Dict[str, Any] = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+
+    balances: List[Dict[str, Decimal | str]] = []
+    for currency, total in raw.items():
+        total_amount = Decimal(str(total))
+        if total_amount <= 0:
+            continue
+        balances.append(
+            {
+                "currency": currency.upper(),
+                "available": total_amount,
+                "reserved": Decimal("0"),
+                "total": total_amount,
+            }
+        )
+    return balances
 
 
 def calculate_position_pnl(

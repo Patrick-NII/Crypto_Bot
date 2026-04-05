@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePageAccent, PAGE_ACCENTS } from "@/components/providers/theme-provider";
+import { useCurrency } from "@/components/providers/currency-provider";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Star, TrendingUp, TrendingDown, BarChart3, DollarSign, Activity } from "lucide-react";
@@ -11,6 +12,8 @@ import { PriceChart } from "@/components/charts/price-chart";
 import { QuickTradeModal } from "@/components/trading/quick-trade-modal";
 import { SignalBadge, IndicatorBar, type SignalAction } from "@/components/trading/signal-badge";
 import { cn } from "@/lib/utils";
+
+// ---- Types ----
 
 interface CoinData {
   symbol: string;
@@ -29,8 +32,9 @@ interface CoinData {
   ath_change_percentage: number;
 }
 
+// ---- Helpers ----
+
 function getWatchlist(): string[] {
-  if (typeof window === "undefined") return [];
   try { return JSON.parse(localStorage.getItem("watchlist") || "[]"); } catch { return []; }
 }
 
@@ -38,7 +42,7 @@ function toggleWL(symbol: string): string[] {
   const list = getWatchlist();
   const upper = symbol.toUpperCase();
   const next = list.includes(upper) ? list.filter((s) => s !== upper) : [...list, upper];
-  localStorage.setItem("watchlist", JSON.stringify(next));
+  try { localStorage.setItem("watchlist", JSON.stringify(next)); } catch { /* full */ }
   return next;
 }
 
@@ -52,33 +56,36 @@ function fmt(n: number | undefined | null, dec = 2): string {
   return `$${n.toFixed(8)}`;
 }
 
+// ============================================================
+// Crypto Detail Page
+// ============================================================
+
 export default function CryptoDetailClient() {
   usePageAccent(PAGE_ACCENTS.crypto.accent, PAGE_ACCENTS.crypto.glow);
+  const { format } = useCurrency();
   const params = useParams();
   const symbol = (params.symbol as string || "BTC").toUpperCase();
 
   const [coin, setCoin] = useState<CoinData | null>(null);
   const [livePrice, setLivePrice] = useState<number>(0);
   const [loading, setLoading] = useState(true);
-  const [tradeModal, setTradeModal] = useState(false);
+  const [tradeModal, setTradeModal] = useState<"buy" | "sell" | null>(null);
   const [isWatched, setIsWatched] = useState(false);
-  const [signal, setSignal] = useState<{ action: string; confidence: number; score: number; reasoning: string; indicators: Array<{ name: string; value: number; signal: number; description: string }> } | null>(null);
+  const [signal, setSignal] = useState<{
+    action: string; confidence: number; score: number; reasoning: string;
+    indicators: Array<{ name: string; value: number; signal: number; description: string }>;
+  } | null>(null);
 
   useEffect(() => {
     setIsWatched(getWatchlist().includes(symbol));
     pricesApi.getAllCryptos(250).then((res) => {
-      // res.data contains extra CoinGecko fields via fallback
       const data = res.data as unknown as CoinData[];
       const found = data.find((c) => (c.symbol ?? "").toUpperCase() === symbol);
       if (found) {
         setCoin(found);
-        // current_price from CoinGecko fallback, or price from gateway
-        const price = found.current_price || (found as unknown as Record<string, number>).price || 0;
-        setLivePrice(price);
+        setLivePrice(found.current_price || (found as unknown as Record<string, number>).price || 0);
       }
     }).catch(() => {}).finally(() => setLoading(false));
-
-    // Fetch trading signal
     signalsApi.getSignal(symbol).then(setSignal).catch(() => {});
   }, [symbol]);
 
@@ -91,79 +98,126 @@ export default function CryptoDetailClient() {
   const changePct = coin?.price_change_percentage_24h ?? 0;
   const positive = changePct >= 0;
 
+  const STATS = [
+    { label: "Market Cap", value: fmt(coin?.market_cap), icon: BarChart3 },
+    { label: "24h Volume", value: fmt(coin?.total_volume), icon: Activity },
+    { label: "24h High", value: fmt(coin?.high_24h), icon: TrendingUp },
+    { label: "24h Low", value: fmt(coin?.low_24h), icon: TrendingDown },
+    { label: "Circ. Supply", value: coin?.circulating_supply ? `${(coin.circulating_supply / 1e6).toFixed(1)}M` : "\u2014", icon: DollarSign },
+    { label: "Total Supply", value: coin?.total_supply ? `${(coin.total_supply / 1e6).toFixed(1)}M` : "\u2014", icon: DollarSign },
+    { label: "ATH", value: fmt(coin?.ath), icon: TrendingUp },
+    { label: "ATH Change", value: coin?.ath_change_percentage ? `${coin.ath_change_percentage.toFixed(1)}%` : "\u2014", icon: TrendingDown },
+  ];
+
   if (loading) {
-    return <div className="mx-auto max-w-4xl animate-pulse"><div className="mb-6 h-8 w-32 rounded bg-[#1a1a24]" /><div className="mb-4 h-[400px] rounded-2xl bg-[#14141b]" /></div>;
+    return (
+      <div className="p-4 md:p-8">
+        <div className="mb-6 h-8 w-32 animate-pulse rounded-lg bg-white/5" />
+        <div className="mb-4 h-12 w-48 animate-pulse rounded-lg bg-white/5" />
+        <div className="h-[500px] animate-pulse rounded-xl bg-white/5" />
+      </div>
+    );
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="p-4 md:p-8">
+      {/* Header — full width */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/crypto" className="rounded-lg p-2 text-[#55556a] hover:bg-[rgba(255,255,255,0.05)] hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
+          <Link href="/crypto" className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--glass-bg)] hover:text-[var(--foreground)] transition-colors">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
           {coin?.image && <img src={coin.image} alt={symbol} className="h-10 w-10 rounded-full" />}
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-white">{symbol}</h1>
-              {coin?.market_cap_rank && <span className="rounded-md bg-[#1a1a24] px-2 py-0.5 text-[10px] font-medium text-[#55556a]">#{coin.market_cap_rank}</span>}
+              <h1 className="text-2xl font-bold text-[var(--foreground)]">{symbol}</h1>
+              {coin?.market_cap_rank && (
+                <span className="rounded-md px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]" style={{ background: "var(--glass-bg)" }}>
+                  #{coin.market_cap_rank}
+                </span>
+              )}
             </div>
-            <p className="text-sm text-[#55556a]">{coin?.name}</p>
+            <p className="text-sm text-[var(--text-muted)]">{coin?.name}</p>
           </div>
         </div>
-        <button onClick={() => { setIsWatched((prev) => { toggleWL(symbol); return !prev; }); }} className={cn("rounded-lg p-2 transition-colors", isWatched ? "text-[#c6f135]" : "text-[#55556a] hover:text-[#8888a0]")}>
+        <button
+          onClick={() => { setIsWatched((prev) => { toggleWL(symbol); return !prev; }); }}
+          className={cn("rounded-lg p-2 transition-colors", isWatched ? "text-[#c6f135]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}
+        >
           <Star className="h-5 w-5" fill={isWatched ? "currentColor" : "none"} />
         </button>
       </div>
 
-      <div className="mb-4">
+      {/* Price + Signal */}
+      <div className="mb-5">
         <p className="text-4xl font-bold text-[var(--foreground)]">{fmt(price)}</p>
         <div className="flex items-center gap-3 mt-1.5">
-          <p className={cn("text-sm font-medium", positive ? "text-[#22c55e]" : "text-[#ef4444]")}>{positive ? "+" : ""}{changePct.toFixed(2)}% today</p>
+          <p className={cn("text-sm font-medium", positive ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+            {positive ? "+" : ""}{changePct.toFixed(2)}% today
+          </p>
           {signal && <SignalBadge action={signal.action as SignalAction} confidence={signal.confidence} size="md" />}
         </div>
       </div>
 
-      {/* Indicators */}
-      {signal && signal.indicators.length > 0 && (
-        <div className="liquid-glass-card p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {signal.indicators.map((ind) => (
-            <IndicatorBar key={ind.name} name={ind.name} value={ind.value} signal={ind.signal} description={ind.description} />
-          ))}
-          <div className="sm:col-span-3 text-[10px] text-[var(--text-muted)] mt-1">{signal.reasoning}</div>
+      {/* Main layout: Chart hero (left) + Sidebar (right) */}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-4 mb-8">
+
+        {/* Chart — 3/4 width, dominant */}
+        <div className="lg:col-span-3">
+          <PriceChart symbol={symbol} height={500} type="candlestick" showIntervals defaultInterval="1M" />
         </div>
-      )}
 
-      <div className="mb-6 liquid-glass-card p-4">
-        <PriceChart symbol={symbol} height={400} type="candlestick" showIntervals defaultInterval="1M" />
-      </div>
+        {/* Sidebar — 1/4 */}
+        <div className="space-y-6">
 
-      <div className="mb-8 flex gap-3">
-        <button onClick={() => setTradeModal(true)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] py-4 text-base font-bold text-[#0d0d12] transition-transform hover:scale-[1.01]">
-          <TrendingUp className="h-5 w-5" /> Buy {symbol}
-        </button>
-        <button onClick={() => setTradeModal(true)} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-4 text-base font-bold text-red-400 transition-all hover:bg-red-500/20">
-          <TrendingDown className="h-5 w-5" /> Sell {symbol}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[
-          { label: "Market Cap", value: fmt(coin?.market_cap), icon: BarChart3 },
-          { label: "24h Volume", value: fmt(coin?.total_volume), icon: Activity },
-          { label: "24h High", value: fmt(coin?.high_24h), icon: TrendingUp },
-          { label: "24h Low", value: fmt(coin?.low_24h), icon: TrendingDown },
-          { label: "Circ. Supply", value: coin?.circulating_supply ? `${(coin.circulating_supply / 1e6).toFixed(1)}M` : "\u2014", icon: DollarSign },
-          { label: "Total Supply", value: coin?.total_supply ? `${(coin.total_supply / 1e6).toFixed(1)}M` : "\u2014", icon: DollarSign },
-          { label: "ATH", value: fmt(coin?.ath), icon: TrendingUp },
-          { label: "ATH Change", value: coin?.ath_change_percentage ? `${coin.ath_change_percentage.toFixed(1)}%` : "\u2014", icon: TrendingDown },
-        ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#14141b] p-4">
-            <div className="mb-2 flex items-center gap-1.5"><s.icon className="h-3.5 w-3.5 text-[#55556a]" /><span className="text-[10px] uppercase tracking-wider text-[#55556a]">{s.label}</span></div>
-            <p className="text-sm font-semibold text-white">{s.value}</p>
+          {/* Buy / Sell buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setTradeModal("buy")}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-[15px] font-bold transition-all bg-[var(--success)]/15 text-[var(--success)] hover:bg-[var(--success)]/25"
+            >
+              <TrendingUp className="h-4 w-4" /> Buy
+            </button>
+            <button
+              onClick={() => setTradeModal("sell")}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-[15px] font-bold transition-all bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25"
+            >
+              <TrendingDown className="h-4 w-4" /> Sell
+            </button>
           </div>
-        ))}
+
+          {/* Signal indicators */}
+          {signal && signal.indicators.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-[var(--foreground)] mb-3">Indicators</h3>
+              <div className="space-y-2">
+                {signal.indicators.map((ind) => (
+                  <IndicatorBar key={ind.name} name={ind.name} value={ind.value} signal={ind.signal} description={ind.description} />
+                ))}
+              </div>
+              <p className="text-[12px] text-[var(--text-muted)] mt-3 leading-relaxed">{signal.reasoning}</p>
+            </div>
+          )}
+
+          {/* Quick stats — vertical in sidebar */}
+          <div>
+            <h3 className="text-xs font-semibold text-[var(--foreground)] mb-3">Stats</h3>
+            <div className="space-y-2">
+              {STATS.map((s) => (
+                <div key={s.label} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <s.icon className="h-3 w-3 text-[var(--text-muted)]" />
+                    <span className="text-[12px] text-[var(--text-muted)]">{s.label}</span>
+                  </div>
+                  <span className="text-[13px] font-semibold font-mono text-[var(--foreground)]">{s.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {tradeModal && <QuickTradeModal symbol={symbol} price={price} onClose={() => setTradeModal(false)} />}
+      {tradeModal && <QuickTradeModal symbol={symbol} price={price} onClose={() => setTradeModal(null)} />}
     </div>
   );
 }

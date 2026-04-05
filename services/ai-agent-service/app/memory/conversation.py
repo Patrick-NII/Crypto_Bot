@@ -3,27 +3,10 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
-import redis.asyncio as aioredis
-
 from app.core.config import settings
-
-logger = logging.getLogger(__name__)
-
-_redis: aioredis.Redis | None = None
-
-
-async def _get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            decode_responses=True,
-        )
-    return _redis
+from app.memory.redis_client import get_redis
 
 
 def _key(user_id: str, agent_type: str) -> str:
@@ -32,7 +15,7 @@ def _key(user_id: str, agent_type: str) -> str:
 
 async def get_history(user_id: str, agent_type: str) -> list[dict[str, Any]]:
     """Retrieve conversation history for a user+agent pair."""
-    r = await _get_redis()
+    r = await get_redis()
     raw = await r.get(_key(user_id, agent_type))
     if not raw:
         return []
@@ -45,7 +28,7 @@ async def get_history(user_id: str, agent_type: str) -> list[dict[str, Any]]:
 
 async def append_message(user_id: str, agent_type: str, role: str, content: str) -> None:
     """Append a message to the conversation history."""
-    r = await _get_redis()
+    r = await get_redis()
     key = _key(user_id, agent_type)
     history = await get_history(user_id, agent_type)
     history.append({"role": role, "content": content})
@@ -57,5 +40,5 @@ async def append_message(user_id: str, agent_type: str, role: str, content: str)
 
 async def clear_history(user_id: str, agent_type: str) -> None:
     """Clear conversation history."""
-    r = await _get_redis()
+    r = await get_redis()
     await r.delete(_key(user_id, agent_type))

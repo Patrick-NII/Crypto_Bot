@@ -28,6 +28,7 @@ from app.services.exchange_client import ExchangeClient
 from app.services.paper_trader import PaperTrader
 
 logger = logging.getLogger(__name__)
+_STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "USD", "DAI", "TUSD"}
 
 
 class OrderManager:
@@ -68,7 +69,12 @@ class OrderManager:
     # Public API
     # ------------------------------------------------------------------
 
-    async def create_order(self, order_create: OrderCreate, user_id: str = "default") -> Order:
+    async def create_order(
+        self,
+        order_create: OrderCreate,
+        user_id: str = "default",
+        auth_header: Optional[str] = None,
+    ) -> Order:
         """Create, validate, execute, and publish an order.
 
         Raises ``ValueError`` for validation failures and ``RuntimeError``
@@ -82,7 +88,12 @@ class OrderManager:
         current_price = await self._fetch_current_price(symbol)
 
         # 3. Risk evaluation (best-effort -- if risk service is down we still allow paper)
-        risk_approved = await self._evaluate_risk(order_create, current_price, user_id)
+        risk_approved = await self._evaluate_risk(
+            order_create,
+            current_price,
+            user_id,
+            auth_header=auth_header,
+        )
         if not risk_approved:
             order = Order(
                 symbol=symbol,
@@ -99,12 +110,12 @@ class OrderManager:
                 strategy=order_create.strategy,
                 error_message="Order rejected by risk service",
             )
-            await self._publish_event("ORDER_FAILED", order)
+            await self._publish_event("ORDER_FAILED", order, user_id=user_id)
             return order
 
         # 4. Execute
         if settings.TRADING_MODE == "paper":
-            order = await self._execute_paper(order_create, current_price)
+            order = await self._execute_paper(order_create, current_price, user_id)
         else:
             order = await self._execute_live(order_create)
 
@@ -112,26 +123,30 @@ class OrderManager:
         event_type = (
             "ORDER_FILLED" if order.status == OrderStatus.FILLED else "ORDER_CREATED"
         )
-        await self._publish_event(event_type, order)
+        await self._publish_event(event_type, order, user_id=user_id)
 
         return order
 
-    async def cancel_order(self, order_id: str) -> Order:
+    async def cancel_order(self, order_id: str, user_id: str = "default") -> Order:
         """Cancel an order by ID."""
         if settings.TRADING_MODE == "paper":
-            order = await self._paper_trader.cancel_order(order_id)
+            order = await self._paper_trader.cancel_order(user_id, order_id)
             if order is None:
                 raise ValueError(f"Order {order_id} not found")
-            await self._publish_event("ORDER_CANCELLED", order)
+            await self._publish_event("ORDER_CANCELLED", order, user_id=user_id)
             return order
 
         # Live mode -- we need the exchange_order_id
         raise NotImplementedError("Live order cancellation not yet supported")
 
-    async def get_order(self, order_id: str) -> Optional[Order]:
+    async def get_order(
+        self,
+        order_id: str,
+        user_id: str = "default",
+    ) -> Optional[Order]:
         """Retrieve a single order."""
         if settings.TRADING_MODE == "paper":
-            return await self._paper_trader.get_order(order_id)
+            return await self._paper_trader.get_order(user_id, order_id)
         raise NotImplementedError("Live order lookup not yet supported")
 
     async def list_orders(
@@ -145,24 +160,33 @@ class OrderManager:
         """Return orders matching filters."""
         if settings.TRADING_MODE == "paper":
             return await self._paper_trader.get_all_orders(
-                status=status, symbol=symbol, limit=limit, offset=offset
+                user_id=user_id,
+                status=status,
+                symbol=symbol,
+                limit=limit,
+                offset=offset,
             )
         raise NotImplementedError("Live order listing not yet supported")
 
     async def count_orders(
         self,
+        user_id: str = "default",
         status: Optional[str] = None,
         symbol: Optional[str] = None,
     ) -> int:
         """Count orders matching filters."""
         if settings.TRADING_MODE == "paper":
-            return await self._paper_trader.count_orders(status=status, symbol=symbol)
+            return await self._paper_trader.count_orders(
+                user_id=user_id,
+                status=status,
+                symbol=symbol,
+            )
         return 0
 
-    async def get_balance(self) -> Dict[str, Decimal]:
+    async def get_balance(self, user_id: str = "default") -> Dict[str, Decimal]:
         """Return current trading balances."""
         if settings.TRADING_MODE == "paper":
-            return await self._paper_trader.get_balance()
+            return await self._paper_trader.get_balance(user_id)
         if self._exchange_client:
             raw = await self._exchange_client.get_balance()
             # CCXT returns nested dicts; extract ``total``
@@ -170,12 +194,12 @@ class OrderManager:
             return {k: Decimal(str(v)) for k, v in total.items() if v and float(v) > 0}
         return {}
 
-    async def check_pending_orders(self) -> List[Order]:
+    async def check_pending_orders(self, user_id: Optional[str] = None) -> List[Order]:
         """Fetch current prices and check all pending paper orders."""
         if settings.TRADING_MODE != "paper":
             return []
 
-        open_orders = await self._paper_trader.get_open_orders()
+        open_orders = await self._paper_trader.get_open_orders(user_id=user_id)
         if not open_orders:
             return []
 
@@ -189,10 +213,14 @@ class OrderManager:
             except Exception as exc:
                 logger.warning("Could not fetch price for %s: %s", sym, exc)
 
-        changed = await self._paper_trader.check_pending_orders(prices)
+        changed = await self._paper_trader.check_pending_orders(prices, user_id=user_id)
 
         for order in changed:
-            await self._publish_event("ORDER_FILLED", order)
+            await self._publish_event(
+                "ORDER_FILLED",
+                order,
+                user_id=self._paper_trader.get_order_owner(order.id),
+            )
 
         return changed
 
@@ -246,7 +274,11 @@ class OrderManager:
         raise RuntimeError(f"Unable to fetch current price for {symbol}")
 
     async def _evaluate_risk(
-        self, order: OrderCreate, current_price: Decimal, user_id: str
+        self,
+        order: OrderCreate,
+        current_price: Decimal,
+        user_id: str,
+        auth_header: Optional[str] = None,
     ) -> bool:
         """Call the risk service to evaluate the order.
 
@@ -255,6 +287,7 @@ class OrderManager:
         mode but rejected in live mode.
         """
         url = f"{settings.RISK_SERVICE_URL}/api/v1/risk/evaluate"
+        portfolio_value, current_positions = await self._build_risk_snapshot(user_id)
         payload = {
             "user_id": user_id,
             "symbol": order.symbol,
@@ -262,10 +295,13 @@ class OrderManager:
             "order_type": order.order_type.value,
             "quantity": str(order.quantity),
             "price": str(current_price),
+            "portfolio_value": str(portfolio_value),
+            "current_positions": current_positions,
             "portfolio_id": order.portfolio_id,
         }
         try:
-            resp = await self._http.post(url, json=payload)
+            headers = {"Authorization": auth_header} if auth_header else None
+            resp = await self._http.post(url, json=payload, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
                 approved = data.get("approved", False)
@@ -284,10 +320,51 @@ class OrderManager:
         logger.error("Risk service unavailable; rejecting live order")
         return False
 
-    async def _execute_paper(self, order_create: OrderCreate, current_price: Decimal) -> Order:
+    async def _build_risk_snapshot(
+        self,
+        user_id: str,
+    ) -> tuple[Decimal, List[Dict[str, str]]]:
+        """Build current portfolio value and position snapshot for the risk service."""
+        balances = await self.get_balance(user_id)
+        portfolio_value = Decimal("0")
+        current_positions: List[Dict[str, str]] = []
+
+        for asset, amount in balances.items():
+            quantity = Decimal(str(amount))
+            if quantity <= 0:
+                continue
+
+            symbol = asset.upper()
+            if symbol in _STABLES:
+                portfolio_value += quantity
+                continue
+
+            try:
+                current_price = await self._fetch_current_price(symbol)
+            except Exception as exc:
+                logger.warning("Risk snapshot price lookup failed for %s: %s", symbol, exc)
+                continue
+
+            portfolio_value += quantity * current_price
+            current_positions.append(
+                {
+                    "symbol": symbol,
+                    "quantity": str(quantity),
+                    "current_price": str(current_price),
+                }
+            )
+
+        return portfolio_value, current_positions
+
+    async def _execute_paper(
+        self,
+        order_create: OrderCreate,
+        current_price: Decimal,
+        user_id: str,
+    ) -> Order:
         """Execute an order via the paper trader."""
         try:
-            return await self._paper_trader.place_order(order_create, current_price)
+            return await self._paper_trader.place_order(user_id, order_create, current_price)
         except ValueError as exc:
             logger.error("Paper trade execution failed: %s", exc)
             order = Order(
@@ -379,7 +456,12 @@ class OrderManager:
         }
         return mapping.get(ccxt_status, OrderStatus.PENDING)
 
-    async def _publish_event(self, event_type: str, order: Order) -> None:
+    async def _publish_event(
+        self,
+        event_type: str,
+        order: Order,
+        user_id: Optional[str] = None,
+    ) -> None:
         """Publish an order event to Redis pub/sub."""
         if self._redis is None:
             return
@@ -395,6 +477,7 @@ class OrderManager:
                 "filled_price": str(order.filled_price) if order.filled_price else None,
                 "fee": str(order.fee),
                 "exchange": order.exchange,
+                "user_id": user_id,
             }
             await self._redis.publish("trading:orders", json.dumps(payload))
             logger.debug("Published event %s for order %s", event_type, order.id[:8])

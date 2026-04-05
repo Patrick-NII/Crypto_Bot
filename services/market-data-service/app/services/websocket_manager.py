@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import WebSocket
-from typing import List
+from typing import Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         self._active_connections: List[WebSocket] = []
+        self._subscriptions: Dict[int, Set[str]] = {}
 
     @property
     def active_count(self) -> int:
@@ -25,6 +26,7 @@ class ConnectionManager:
         """Accept and register a new WebSocket connection."""
         await websocket.accept()
         self._active_connections.append(websocket)
+        self._subscriptions[id(websocket)] = set()
         logger.info(
             "WebSocket client connected (total: %d)", self.active_count
         )
@@ -33,6 +35,7 @@ class ConnectionManager:
         """Remove a WebSocket connection from the active list."""
         if websocket in self._active_connections:
             self._active_connections.remove(websocket)
+        self._subscriptions.pop(id(websocket), None)
         logger.info(
             "WebSocket client disconnected (total: %d)", self.active_count
         )
@@ -75,12 +78,40 @@ class ConnectionManager:
         Args:
             price_data: Dict of symbol -> price info to broadcast.
         """
-        message = {
-            "type": "price_update",
-            "data": price_data,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        await self.broadcast(message)
+        if not self._active_connections:
+            return
+
+        disconnected: List[WebSocket] = []
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        for connection in self._active_connections:
+            subscriptions = self._subscriptions.get(id(connection), set())
+            filtered_data = (
+                price_data
+                if not subscriptions
+                else {
+                    symbol: data
+                    for symbol, data in price_data.items()
+                    if symbol.upper() in subscriptions
+                }
+            )
+
+            if not filtered_data:
+                continue
+
+            try:
+                await connection.send_json(
+                    {
+                        "type": "price_update",
+                        "data": filtered_data,
+                        "timestamp": timestamp,
+                    }
+                )
+            except Exception:
+                disconnected.append(connection)
+
+        for ws in disconnected:
+            self.disconnect(ws)
 
     async def broadcast_error(self, error: str) -> None:
         """Broadcast an error message to all connected clients."""
@@ -121,13 +152,37 @@ class ConnectionManager:
                 },
             )
         elif msg_type == "subscribe":
-            # Acknowledge subscription (actual filtering is a future enhancement)
-            symbols = msg.get("data", {}).get("symbols", [])
+            symbols = self._extract_symbols(msg)
+            if symbols:
+                current = self._subscriptions.setdefault(id(websocket), set())
+                current.update(symbols)
             await self.send_personal(
                 websocket,
                 {
                     "type": "subscribed",
                     "data": {"symbols": symbols},
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        elif msg_type == "unsubscribe":
+            symbols = self._extract_symbols(msg)
+            if symbols:
+                current = self._subscriptions.setdefault(id(websocket), set())
+                current.difference_update(symbols)
+            await self.send_personal(
+                websocket,
+                {
+                    "type": "unsubscribed",
+                    "data": {"symbols": symbols},
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        elif msg_type == "pong":
+            await self.send_personal(
+                websocket,
+                {
+                    "type": "heartbeat",
+                    "data": {},
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
             )
@@ -139,6 +194,33 @@ class ConnectionManager:
                     "data": {"message": f"Unknown message type: {msg_type}"},
                 },
             )
+
+    def _extract_symbols(self, msg: dict) -> List[str]:
+        """Extract and normalize subscription symbols from client payload."""
+        candidates = []
+
+        if isinstance(msg.get("symbol"), str):
+            candidates.append(msg["symbol"])
+
+        if isinstance(msg.get("symbols"), list):
+            candidates.extend(msg["symbols"])
+
+        data = msg.get("data", {})
+        if isinstance(data, dict):
+            if isinstance(data.get("symbol"), str):
+                candidates.append(data["symbol"])
+            if isinstance(data.get("symbols"), list):
+                candidates.extend(data["symbols"])
+
+        normalized = []
+        for symbol in candidates:
+            if not isinstance(symbol, str):
+                continue
+            cleaned = symbol.strip().upper()
+            if cleaned:
+                normalized.append(cleaned)
+
+        return sorted(set(normalized))
 
 
 # Singleton manager instance

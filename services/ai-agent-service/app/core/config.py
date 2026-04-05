@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,12 +23,23 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
+    # JWT (must match auth-service)
+    JWT_SECRET_KEY: str = Field(
+        default="CHANGE-ME-IN-PRODUCTION",
+        validation_alias=AliasChoices("JWT_SECRET_KEY", "AI_JWT_SECRET_KEY"),
+    )
+    JWT_ALGORITHM: str = Field(
+        default="HS256",
+        validation_alias=AliasChoices("JWT_ALGORITHM", "AI_JWT_ALGORITHM"),
+    )
+
     # Internal service URLs
     MARKET_DATA_URL: str = "http://localhost:8003"
     PORTFOLIO_URL: str = "http://localhost:8002"
     TRADING_URL: str = "http://localhost:8004"
     RISK_URL: str = "http://localhost:8005"
     STRATEGY_URL: str = "http://localhost:8006"
+    AUTH_URL: str = "http://localhost:8001"
 
     # Conversation
     MAX_CONVERSATION_HISTORY: int = 50

@@ -56,6 +56,7 @@ services:
       - NOTIFICATION_SERVICE_URL=http://notification-service:8007
       - AI_AGENT_SERVICE_URL=http://ai-agent-service:8008
       - MAILING_SERVICE_URL=http://mailing-service:8009
+      - NEWS_SERVICE_URL=http://news-service:8011
       - REDIS_HOST=redis
       - SECRET_KEY=${SECRET_KEY:-dev-secret}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
@@ -79,6 +80,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - CREDENTIAL_ENCRYPTION_KEY=${CREDENTIAL_ENCRYPTION_KEY:-}
       - MAILING_SERVICE_URL=http://mailing-service:8009
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     ports:
@@ -100,6 +102,9 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - AUTH_SERVICE_URL=http://auth-service:8001
       - MARKET_DATA_SERVICE_URL=http://market-data-service:8003
     ports:
       - "${PORTFOLIO_SERVICE_PORT:-8002}:8002"
@@ -142,6 +147,7 @@ services:
       - MARKET_DATA_SERVICE_URL=http://market-data-service:8003
       - RISK_SERVICE_URL=http://risk-service:8005
       - PORTFOLIO_SERVICE_URL=http://portfolio-service:8002
+      - AUTH_SERVICE_URL=http://auth-service:8001
       - TRADING_MODE=${TRADING_MODE:-paper}
       - BINANCE_API_KEY=${BINANCE_API_KEY:-}
       - BINANCE_API_SECRET=${BINANCE_API_SECRET:-}
@@ -251,6 +257,7 @@ services:
       - TRADING_URL=http://trading-engine:8004
       - RISK_URL=http://risk-service:8005
       - STRATEGY_URL=http://ml-service:8006
+      - AUTH_URL=http://auth-service:8001
     ports:
       - "${AI_AGENT_SERVICE_PORT:-8008}:8008"
     depends_on:
@@ -280,6 +287,36 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - okamoey-net
+
+  # ─── Binance Proxy ──────────────────────────────────────────
+  binance-proxy:
+    build:
+      context: ./frontend
+      dockerfile: binance-proxy.Dockerfile
+    container_name: okamoey-binance-proxy
+    environment:
+      - BINANCE_API_KEY=${BINANCE_API_KEY:-}
+      - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY:-}
+    ports:
+      - "3001:3001"
+    networks:
+      - okamoey-net
+
+  # ─── Frontend ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: okamoey-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      gateway:
+        condition: service_started
+      binance-proxy:
+        condition: service_started
     networks:
       - okamoey-net
 

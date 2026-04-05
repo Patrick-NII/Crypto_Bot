@@ -120,7 +120,7 @@ export function ChatPanel({ agentType, agentName, externalOpen, onExternalClose 
                 {agentName || "AI Assistant"}
               </h3>
               {lastModel && (
-                <span className="text-[10px] text-[#55556a]">{lastModel}</span>
+                <span className="text-[12px] text-[#55556a]">{lastModel}</span>
               )}
             </div>
           </div>
@@ -178,7 +178,7 @@ export function ChatPanel({ agentType, agentName, externalOpen, onExternalClose 
               >
                 <div className="whitespace-pre-wrap">{msg.content}</div>
                 {msg.provider && (
-                  <div className="mt-1 text-[10px] text-[#55556a]">
+                  <div className="mt-1 text-[12px] text-[#55556a]">
                     via {msg.provider}/{msg.model}
                   </div>
                 )}

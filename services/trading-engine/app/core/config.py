@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings
 from typing import Optional
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -24,6 +26,17 @@ class Settings(BaseSettings):
     MARKET_DATA_SERVICE_URL: str = "http://localhost:8003"
     RISK_SERVICE_URL: str = "http://localhost:8005"
     PORTFOLIO_SERVICE_URL: str = "http://localhost:8002"
+    AUTH_SERVICE_URL: str = "http://localhost:8001"
+
+    # JWT (must match auth-service / portfolio-service)
+    JWT_SECRET_KEY: str = Field(
+        default="CHANGE-ME-IN-PRODUCTION",
+        validation_alias=AliasChoices("TRADING_JWT_SECRET_KEY", "JWT_SECRET_KEY"),
+    )
+    JWT_ALGORITHM: str = Field(
+        default="HS256",
+        validation_alias=AliasChoices("TRADING_JWT_ALGORITHM", "JWT_ALGORITHM"),
+    )
 
     # Trading
     TRADING_MODE: str = "paper"  # "paper" or "live"

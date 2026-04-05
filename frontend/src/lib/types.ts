@@ -81,11 +81,77 @@ export interface Transaction {
   timestamp: string;
 }
 
+export interface PortfolioBalanceSnapshot {
+  currency: string;
+  available: number;
+  reserved: number;
+  total: number;
+}
+
+export interface PortfolioHoldingSnapshot {
+  symbol: string;
+  available: number;
+  reserved: number;
+  total: number;
+  price: number;
+  value: number;
+  change_pct_24h: number;
+  stable: boolean;
+}
+
+export interface PortfolioSnapshotSummary {
+  equity: number;
+  cash: number;
+  market_exposure: number;
+  open_pnl: number;
+  open_pnl_pct: number;
+  day_change_value: number;
+  day_change_pct: number;
+  holdings_count: number;
+  positions_count: number;
+  open_orders_count: number;
+}
+
+export interface ExecutionFeedItem {
+  id: string;
+  source: "order" | "transaction" | "execution";
+  order_id?: string | null;
+  transaction_id?: string | null;
+  portfolio_id?: string | null;
+  symbol: string;
+  side: "buy" | "sell";
+  status: string;
+  quantity: number;
+  filled_quantity: number;
+  requested_price?: number | null;
+  execution_price?: number | null;
+  notional: number;
+  fee: number;
+  exchange?: string | null;
+  strategy?: string | null;
+  notes?: string | null;
+  timestamp: string;
+  updated_at?: string | null;
+}
+
+export interface PortfolioSnapshot {
+  updated_at: string;
+  portfolio?: Portfolio | null;
+  portfolios: Portfolio[];
+  balances: PortfolioBalanceSnapshot[];
+  holdings: PortfolioHoldingSnapshot[];
+  positions: Position[];
+  recent_transactions: Transaction[];
+  execution_feed: ExecutionFeedItem[];
+  summary: PortfolioSnapshotSummary;
+  risk?: RiskMetrics | null;
+}
+
 // --- Trading ---
 
 export type OrderSide = "buy" | "sell";
-export type OrderType = "market" | "limit" | "stop_loss";
-export type OrderStatus = "open" | "filled" | "cancelled" | "failed" | "partial";
+export type OrderType = "market" | "limit" | "stop_loss" | "take_profit" | "trailing_stop" | "oco";
+export type OrderStatus = "pending" | "open" | "filled" | "partially_filled" | "cancelled" | "failed" | "expired";
 
 export interface Order {
   id: string;
@@ -207,19 +273,93 @@ export interface TradingActivity {
 
 // --- Risk ---
 
+export type RiskProfileId = "conservative" | "moderate" | "aggressive" | "custom";
+export type SubscriptionPlan = "discover" | "starter" | "pro" | "elite";
+export type SubscriptionStatus = "trial" | "active" | "inactive" | "past_due" | "cancelled";
+export type BillingCycle = "monthly" | "yearly";
+export type AIBehaviorStyle = "gentle" | "balanced" | "assertive" | "aggressive";
+export type AIAssistantTone = "concise" | "coach" | "analytical";
+
+export interface RiskProfile {
+  profile_id: RiskProfileId;
+  max_position_size_pct: number;
+  max_portfolio_drawdown_pct: number;
+  default_stop_loss_pct: number;
+  default_take_profit_pct: number;
+  max_daily_trades: number;
+  max_leverage: number;
+  risk_per_trade_pct: number;
+}
+
 export interface RiskMetrics {
-  portfolio_var: number;
-  portfolio_volatility: number;
-  beta: number;
-  correlation_matrix: Record<string, Record<string, number>>;
+  total_value: number;
+  risk_score: number;
+  daily_var: number;
+  var_pct: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  sharpe_ratio?: number | null;
+  volatility: number;
+  correlation_risk: "low" | "medium" | "high";
+  risk_level: "conservative" | "moderate" | "aggressive";
+  concentration_pct: number;
+  cash_ratio: number;
+  warnings: string[];
   position_risk: PositionRisk[];
 }
 
 export interface PositionRisk {
   symbol: string;
+  value: number;
   weight: number;
   var_contribution: number;
   volatility: number;
+  risk_score: number;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  username: string;
+  is_active: boolean;
+  is_verified: boolean;
+  risk_profile: RiskProfileId;
+  subscription_plan: SubscriptionPlan;
+  subscription_status: SubscriptionStatus;
+  billing_cycle: BillingCycle;
+  accepted_terms_at?: string | null;
+  terms_version: string;
+  ai_behavior_style: AIBehaviorStyle;
+  ai_assistant_tone: AIAssistantTone;
+  wallet_access_enabled: boolean;
+  wallet_access_reason: string;
+  connected_exchanges_count: number;
+  live_trading_enabled: boolean;
+  created_at: string;
+}
+
+export interface ExchangeConnection {
+  id: string;
+  provider: string;
+  label: string;
+  api_key_hint: string;
+  has_passphrase: boolean;
+  sandbox_mode: boolean;
+  can_trade: boolean;
+  is_active: boolean;
+  status: string;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExchangeProviderGuide {
+  provider: string;
+  label: string;
+  supports_testnet: boolean;
+  requires_passphrase: boolean;
+  recommended_permissions: string[];
+  setup_steps: string[];
 }
 
 // --- Search & Market Discovery ---
@@ -278,6 +418,37 @@ export interface OHLCVPoint {
   low: number;
   close: number;
   volume: number;
+}
+
+// --- News & Market Intelligence ---
+
+export interface NewsArticle {
+  id: string;
+  title: string;
+  body: string;
+  source: string;
+  url: string;
+  image: string;
+  published_at: string;
+  categories: string[];
+  sentiment: number;
+  impact: "high" | "medium" | "low";
+}
+
+export interface TrendingCoin {
+  symbol: string;
+  name: string;
+  rank: number | null;
+  thumb: string;
+  score: number;
+  price_btc: number;
+}
+
+export interface MarketSentiment {
+  fear_greed: { value: number; label: string };
+  news_sentiment: number;
+  news_count: number;
+  overall: "bullish" | "bearish" | "neutral";
 }
 
 // --- AI Agents ---

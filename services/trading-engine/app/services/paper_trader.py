@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from app.models.order import (
     Order,
@@ -31,6 +32,18 @@ _DEFAULT_FEE_RATE = Decimal("0.001")
 _STARTING_USDT = Decimal("10000")
 
 
+@dataclass
+class PaperAccountState:
+    """Isolated paper account state for a single user."""
+
+    orders: Dict[str, Order] = field(default_factory=dict)
+    balances: Dict[str, Decimal] = field(
+        default_factory=lambda: {"USDT": _STARTING_USDT}
+    )
+    positions: Dict[str, Decimal] = field(default_factory=dict)
+    trailing_prices: Dict[str, Decimal] = field(default_factory=dict)
+
+
 class PaperTrader:
     """Simulates trades without a real exchange connection.
 
@@ -38,21 +51,22 @@ class PaperTrader:
     """
 
     def __init__(self) -> None:
-        self._orders: Dict[str, Order] = {}
-        self._balances: Dict[str, Decimal] = {"USDT": _STARTING_USDT}
-        self._positions: Dict[str, Decimal] = {}
+        self._accounts: Dict[str, PaperAccountState] = {}
+        self._order_owners: Dict[str, str] = {}
         self._fee_rate: Decimal = _DEFAULT_FEE_RATE
-        # Track highest/lowest price seen for trailing stop orders
-        self._trailing_prices: Dict[str, Decimal] = {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     async def place_order(
-        self, order_create: OrderCreate, current_price: Decimal
+        self,
+        user_id: str,
+        order_create: OrderCreate,
+        current_price: Decimal,
     ) -> Order:
         """Accept a new order and, for market orders, fill immediately."""
+        state = self._get_account_state(user_id)
         order = Order(
             id=str(uuid.uuid4()),
             symbol=order_create.symbol,
@@ -70,15 +84,15 @@ class PaperTrader:
         )
 
         # Validate balance before accepting
-        self._validate_balance(order, current_price)
+        self._validate_balance(state, order, current_price)
 
         if order.order_type == OrderType.MARKET:
-            order = self._fill_order(order, current_price)
+            order = self._fill_order(state, order, current_price)
         elif order.order_type == OrderType.LIMIT:
             # Check if limit can fill immediately
             if self._limit_can_fill(order, current_price):
                 fill_price = order.price if order.price is not None else current_price
-                order = self._fill_order(order, fill_price)
+                order = self._fill_order(state, order, fill_price)
             else:
                 order.status = OrderStatus.OPEN
         elif order.order_type in (OrderType.STOP_LOSS, OrderType.TAKE_PROFIT):
@@ -86,17 +100,19 @@ class PaperTrader:
         elif order.order_type == OrderType.TRAILING_STOP:
             order.status = OrderStatus.OPEN
             # Initialise trailing anchor price
-            self._trailing_prices[order.id] = current_price
+            state.trailing_prices[order.id] = current_price
         elif order.order_type == OrderType.OCO:
             # OCO has both stop_price and take_profit_price
             order.status = OrderStatus.OPEN
         else:
             order.status = OrderStatus.OPEN
 
-        self._orders[order.id] = order
+        state.orders[order.id] = order
+        self._order_owners[order.id] = user_id
         logger.info(
-            "Paper order %s %s %s %s @ %s -> %s",
+            "Paper order %s user=%s %s %s %s @ %s -> %s",
             order.id[:8],
+            user_id,
             order.side.value,
             order.quantity,
             order.symbol,
@@ -105,79 +121,98 @@ class PaperTrader:
         )
         return order
 
-    async def check_pending_orders(self, prices: Dict[str, Decimal]) -> List[Order]:
+    async def check_pending_orders(
+        self,
+        prices: Dict[str, Decimal],
+        user_id: Optional[str] = None,
+    ) -> List[Order]:
         """Check all open orders against *prices* and fill where triggered.
 
         Returns the list of orders whose status changed.
         """
         changed: List[Order] = []
 
-        for order in list(self._orders.values()):
-            if order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
+        for account_user_id in self._iter_user_ids(user_id):
+            state = self._accounts.get(account_user_id)
+            if state is None:
                 continue
 
-            symbol = order.symbol
-            current_price = prices.get(symbol)
-            if current_price is None:
-                continue
+            for order in list(state.orders.values()):
+                if order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
+                    continue
 
-            filled = False
+                symbol = order.symbol
+                current_price = prices.get(symbol)
+                if current_price is None:
+                    continue
 
-            if order.order_type == OrderType.LIMIT:
-                if self._limit_can_fill(order, current_price):
-                    fill_price = order.price if order.price is not None else current_price
-                    self._fill_order(order, fill_price)
-                    filled = True
+                filled = False
 
-            elif order.order_type == OrderType.STOP_LOSS:
-                if self._stop_loss_triggered(order, current_price):
-                    self._fill_order(order, current_price)
-                    filled = True
+                if order.order_type == OrderType.LIMIT:
+                    if self._limit_can_fill(order, current_price):
+                        fill_price = order.price if order.price is not None else current_price
+                        self._fill_order(state, order, fill_price)
+                        filled = True
 
-            elif order.order_type == OrderType.TAKE_PROFIT:
-                if self._take_profit_triggered(order, current_price):
-                    self._fill_order(order, current_price)
-                    filled = True
+                elif order.order_type == OrderType.STOP_LOSS:
+                    if self._stop_loss_triggered(order, current_price):
+                        self._fill_order(state, order, current_price)
+                        filled = True
 
-            elif order.order_type == OrderType.TRAILING_STOP:
-                if self._trailing_stop_triggered(order, current_price):
-                    self._fill_order(order, current_price)
-                    filled = True
-                else:
-                    # Update anchor price
-                    self._update_trailing_anchor(order, current_price)
+                elif order.order_type == OrderType.TAKE_PROFIT:
+                    if self._take_profit_triggered(order, current_price):
+                        self._fill_order(state, order, current_price)
+                        filled = True
 
-            elif order.order_type == OrderType.OCO:
-                if self._stop_loss_triggered(order, current_price):
-                    self._fill_order(order, current_price)
-                    filled = True
-                elif self._take_profit_triggered(order, current_price):
-                    self._fill_order(order, current_price)
-                    filled = True
+                elif order.order_type == OrderType.TRAILING_STOP:
+                    if self._trailing_stop_triggered(state, order, current_price):
+                        self._fill_order(state, order, current_price)
+                        filled = True
+                    else:
+                        # Update anchor price
+                        self._update_trailing_anchor(state, order, current_price)
 
-            if filled:
-                changed.append(order)
-                logger.info(
-                    "Pending order %s filled @ %s", order.id[:8], order.filled_price
-                )
+                elif order.order_type == OrderType.OCO:
+                    if self._stop_loss_triggered(order, current_price):
+                        self._fill_order(state, order, current_price)
+                        filled = True
+                    elif self._take_profit_triggered(order, current_price):
+                        self._fill_order(state, order, current_price)
+                        filled = True
+
+                if filled:
+                    changed.append(order)
+                    logger.info(
+                        "Pending order %s user=%s filled @ %s",
+                        order.id[:8],
+                        account_user_id,
+                        order.filled_price,
+                    )
 
         return changed
 
-    async def get_balance(self) -> Dict[str, Decimal]:
+    async def get_balance(self, user_id: str) -> Dict[str, Decimal]:
         """Return current balances including base-asset positions."""
-        combined: Dict[str, Decimal] = dict(self._balances)
-        for asset, qty in self._positions.items():
+        state = self._get_account_state(user_id)
+        combined: Dict[str, Decimal] = dict(state.balances)
+        for asset, qty in state.positions.items():
             current = combined.get(asset, Decimal("0"))
             combined[asset] = current + qty
         return combined
 
-    async def get_order(self, order_id: str) -> Optional[Order]:
+    async def get_order(self, user_id: str, order_id: str) -> Optional[Order]:
         """Look up an order by ID."""
-        return self._orders.get(order_id)
+        state = self._accounts.get(user_id)
+        if state is None:
+            return None
+        return state.orders.get(order_id)
 
-    async def cancel_order(self, order_id: str) -> Optional[Order]:
+    async def cancel_order(self, user_id: str, order_id: str) -> Optional[Order]:
         """Cancel an open order and return it (or ``None``)."""
-        order = self._orders.get(order_id)
+        state = self._accounts.get(user_id)
+        if state is None:
+            return None
+        order = state.orders.get(order_id)
         if order is None:
             return None
         if order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
@@ -185,31 +220,43 @@ class PaperTrader:
         order.status = OrderStatus.CANCELLED
         order.updated_at = datetime.now(timezone.utc)
         # Release any reserved trailing data
-        self._trailing_prices.pop(order.id, None)
-        logger.info("Paper order %s cancelled", order.id[:8])
+        state.trailing_prices.pop(order.id, None)
+        logger.info("Paper order %s user=%s cancelled", order.id[:8], user_id)
         return order
 
-    async def get_open_orders(self, symbol: Optional[str] = None) -> List[Order]:
+    async def get_open_orders(
+        self,
+        user_id: Optional[str] = None,
+        symbol: Optional[str] = None,
+    ) -> List[Order]:
         """Return all open orders, optionally filtered by symbol."""
         result: List[Order] = []
-        for order in self._orders.values():
-            if order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
+        for account_user_id in self._iter_user_ids(user_id):
+            state = self._accounts.get(account_user_id)
+            if state is None:
                 continue
-            if symbol and order.symbol != symbol:
-                continue
-            result.append(order)
+            for order in state.orders.values():
+                if order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
+                    continue
+                if symbol and order.symbol != symbol:
+                    continue
+                result.append(order)
         return result
 
     async def get_all_orders(
         self,
+        user_id: str,
         status: Optional[str] = None,
         symbol: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> List[Order]:
         """Return orders with optional filtering and pagination."""
+        state = self._accounts.get(user_id)
+        if state is None:
+            return []
         result: List[Order] = []
-        for order in self._orders.values():
+        for order in state.orders.values():
             if status and order.status.value != status:
                 continue
             if symbol and order.symbol != symbol:
@@ -221,12 +268,16 @@ class PaperTrader:
 
     async def count_orders(
         self,
+        user_id: str,
         status: Optional[str] = None,
         symbol: Optional[str] = None,
     ) -> int:
         """Return total order count matching the filters."""
+        state = self._accounts.get(user_id)
+        if state is None:
+            return 0
         count = 0
-        for order in self._orders.values():
+        for order in state.orders.values():
             if status and order.status.value != status:
                 continue
             if symbol and order.symbol != symbol:
@@ -238,11 +289,32 @@ class PaperTrader:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _validate_balance(self, order: Order, price: Decimal) -> None:
+    def get_order_owner(self, order_id: str) -> Optional[str]:
+        """Return the owning user for an order ID."""
+        return self._order_owners.get(order_id)
+
+    def _get_account_state(self, user_id: str) -> PaperAccountState:
+        state = self._accounts.get(user_id)
+        if state is None:
+            state = PaperAccountState()
+            self._accounts[user_id] = state
+        return state
+
+    def _iter_user_ids(self, user_id: Optional[str]) -> Iterable[str]:
+        if user_id is not None:
+            return (user_id,)
+        return tuple(self._accounts.keys())
+
+    def _validate_balance(
+        self,
+        state: PaperAccountState,
+        order: Order,
+        price: Decimal,
+    ) -> None:
         """Raise ``ValueError`` if the account cannot cover the order."""
         if order.side == OrderSide.BUY:
             cost = order.quantity * price * (Decimal("1") + self._fee_rate)
-            available = self._balances.get("USDT", Decimal("0"))
+            available = state.balances.get("USDT", Decimal("0"))
             if cost > available:
                 raise ValueError(
                     f"Insufficient USDT balance: need {cost}, have {available}"
@@ -250,13 +322,18 @@ class PaperTrader:
         else:
             # Selling -- need the base asset
             base = order.symbol.split("/")[0] if "/" in order.symbol else order.symbol
-            available = self._positions.get(base, Decimal("0"))
+            available = state.positions.get(base, Decimal("0"))
             if order.quantity > available:
                 raise ValueError(
                     f"Insufficient {base} balance: need {order.quantity}, have {available}"
                 )
 
-    def _fill_order(self, order: Order, fill_price: Decimal) -> Order:
+    def _fill_order(
+        self,
+        state: PaperAccountState,
+        order: Order,
+        fill_price: Decimal,
+    ) -> Order:
         """Execute the fill: update balances, positions, and order fields."""
         fee = (order.quantity * fill_price * self._fee_rate).quantize(
             Decimal("0.00000001"), rounding=ROUND_DOWN
@@ -265,15 +342,15 @@ class PaperTrader:
 
         if order.side == OrderSide.BUY:
             total_cost = order.quantity * fill_price + fee
-            self._balances["USDT"] = self._balances.get("USDT", Decimal("0")) - total_cost
-            self._positions[base] = self._positions.get(base, Decimal("0")) + order.quantity
+            state.balances["USDT"] = state.balances.get("USDT", Decimal("0")) - total_cost
+            state.positions[base] = state.positions.get(base, Decimal("0")) + order.quantity
         else:
             total_proceeds = order.quantity * fill_price - fee
-            self._positions[base] = self._positions.get(base, Decimal("0")) - order.quantity
-            self._balances["USDT"] = self._balances.get("USDT", Decimal("0")) + total_proceeds
+            state.positions[base] = state.positions.get(base, Decimal("0")) - order.quantity
+            state.balances["USDT"] = state.balances.get("USDT", Decimal("0")) + total_proceeds
             # Clean up zero/negative dust positions
-            if self._positions[base] <= Decimal("0"):
-                del self._positions[base]
+            if state.positions[base] <= Decimal("0"):
+                del state.positions[base]
 
         order.status = OrderStatus.FILLED
         order.filled_quantity = order.quantity
@@ -282,7 +359,7 @@ class PaperTrader:
         order.updated_at = datetime.now(timezone.utc)
 
         # Clean up trailing data if present
-        self._trailing_prices.pop(order.id, None)
+        state.trailing_prices.pop(order.id, None)
 
         return order
 
@@ -318,12 +395,17 @@ class PaperTrader:
             return current_price >= tp
         return current_price <= tp
 
-    def _trailing_stop_triggered(self, order: Order, current_price: Decimal) -> bool:
+    def _trailing_stop_triggered(
+        self,
+        state: PaperAccountState,
+        order: Order,
+        current_price: Decimal,
+    ) -> bool:
         """Trailing stop triggers when price retraces by *trailing_pct* from
         the best price seen since the order was placed."""
         if order.trailing_pct is None:
             return False
-        anchor = self._trailing_prices.get(order.id)
+        anchor = state.trailing_prices.get(order.id)
         if anchor is None:
             return False
 
@@ -338,18 +420,23 @@ class PaperTrader:
             trigger_price = anchor * (Decimal("1") + pct)
             return current_price >= trigger_price
 
-    def _update_trailing_anchor(self, order: Order, current_price: Decimal) -> None:
+    def _update_trailing_anchor(
+        self,
+        state: PaperAccountState,
+        order: Order,
+        current_price: Decimal,
+    ) -> None:
         """Update the anchor price for a trailing stop order."""
-        anchor = self._trailing_prices.get(order.id)
+        anchor = state.trailing_prices.get(order.id)
         if anchor is None:
-            self._trailing_prices[order.id] = current_price
+            state.trailing_prices[order.id] = current_price
             return
 
         if order.side == OrderSide.SELL:
             # Track highest price
             if current_price > anchor:
-                self._trailing_prices[order.id] = current_price
+                state.trailing_prices[order.id] = current_price
         else:
             # Track lowest price
             if current_price < anchor:
-                self._trailing_prices[order.id] = current_price
+                state.trailing_prices[order.id] = current_price

@@ -157,18 +157,18 @@ export default function AnalyticsPage() {
               } finally { setAiLoading(false); }
             }}
             disabled={aiLoading}
-            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-medium accent-bg accent-text hover:scale-[1.02] transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[14px] font-medium accent-bg accent-text hover:scale-[1.02] transition-all disabled:opacity-50"
           >
             {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {aiLoading ? "Analyzing..." : "Get AI Analysis"}
           </button>
         </div>
         {aiAnalysis ? (
-          <div className="prose prose-sm max-w-none text-[13px] text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+          <div className="prose prose-sm max-w-none text-[15px] text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
             {aiAnalysis}
           </div>
         ) : (
-          <p className="text-[12px] text-[var(--text-muted)]">
+          <p className="text-[14px] text-[var(--text-muted)]">
             Click &quot;Get AI Analysis&quot; for personalized insights on your trading performance, strengths, weaknesses, and actionable recommendations.
           </p>
         )}
@@ -258,12 +258,12 @@ export default function AnalyticsPage() {
               />
               <XAxis
                 dataKey="date"
-                tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
+                tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 13 }}
                 tickLine={false}
                 axisLine={{ stroke: "rgba(255,255,255,0.05)" }}
               />
               <YAxis
-                tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
+                tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 13 }}
                 tickLine={false}
                 axisLine={{ stroke: "rgba(255,255,255,0.05)" }}
                 tickFormatter={(v: number) =>
@@ -276,7 +276,7 @@ export default function AnalyticsPage() {
                   border: "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "0.5rem",
                   color: "#fff",
-                  fontSize: "12px",
+                  fontSize: "14px",
                 }}
                 formatter={(value) => [formatCurrency(Number(value)), "Equity"]}
               />
@@ -383,7 +383,7 @@ export default function AnalyticsPage() {
                     {metrics?.var_95 !== undefined
                       ? formatPercent(-metrics.var_95)
                       : riskMetrics
-                        ? formatPercent(-riskMetrics.portfolio_var)
+                        ? formatPercent(-(riskMetrics.var_pct * 100))
                         : "-"}
                   </span>
                 </div>
@@ -395,27 +395,42 @@ export default function AnalyticsPage() {
                     {metrics?.volatility !== undefined
                       ? formatPercent(metrics.volatility)
                       : riskMetrics
-                        ? formatPercent(riskMetrics.portfolio_volatility)
+                        ? formatPercent(riskMetrics.volatility * 100)
                         : "-"}
                   </span>
                 </div>
                 <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
                   <span className="block text-xs text-white/40">
-                    Sortino Ratio
+                    Risk Score
                   </span>
                   <span className="text-lg font-bold text-white">
-                    {metrics?.sortino_ratio?.toFixed(2) ?? "-"}
+                    {riskMetrics ? `${Math.round(riskMetrics.risk_score)}/100` : "-"}
                   </span>
                 </div>
                 <div className="rounded-lg border border-white/5 bg-white/[0.02] p-3">
                   <span className="block text-xs text-white/40">
-                    Calmar Ratio
+                    Concentration
                   </span>
                   <span className="text-lg font-bold text-white">
-                    {metrics?.calmar_ratio?.toFixed(2) ?? "-"}
+                    {riskMetrics ? formatPercent(riskMetrics.concentration_pct) : "-"}
                   </span>
                 </div>
               </div>
+
+              {riskMetrics?.warnings && riskMetrics.warnings.length > 0 && (
+                <div className="rounded-lg border border-danger/20 bg-danger/5 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-danger/80">
+                    Active Risk Warnings
+                  </p>
+                  <div className="space-y-1.5">
+                    {riskMetrics.warnings.slice(0, 3).map((warning) => (
+                      <p key={warning} className="text-xs text-white/70">
+                        {warning}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Position risk breakdown */}
               {riskMetrics?.position_risk &&
@@ -442,13 +457,19 @@ export default function AnalyticsPage() {
                             <span className="text-white/40">
                               VaR:{" "}
                               <span className="text-danger">
-                                {formatPercent(-pr.var_contribution)}
+                                {formatPercent(-(pr.var_contribution * 100))}
                               </span>
                             </span>
                             <span className="text-white/40">
                               Vol:{" "}
                               <span className="text-warning">
-                                {formatPercent(pr.volatility)}
+                                {formatPercent(pr.volatility * 100)}
+                              </span>
+                            </span>
+                            <span className="text-white/40">
+                              Risk:{" "}
+                              <span className="text-white">
+                                {Math.round(pr.risk_score)}/100
                               </span>
                             </span>
                           </div>

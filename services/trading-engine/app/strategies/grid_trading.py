@@ -30,6 +30,8 @@ class GridTrading(BaseStrategy):
         self._grid_upper: Decimal = Decimal("110")
         self._grid_levels: int = 10
         self._quantity_per_grid: Decimal = Decimal("1")
+        self._auto_bounds: bool = True
+        self._range_padding_pct: Decimal = Decimal("2.0")
         # Track which grid levels have active positions (bought but not sold)
         self._active_levels: Set[int] = set()
         # Cache of computed grid prices
@@ -74,6 +76,32 @@ class GridTrading(BaseStrategy):
         """Clear the cached grid prices (call after parameter changes)."""
         self._grid_prices = None
 
+    def _derive_dynamic_bounds(
+        self,
+        closes: List[Decimal],
+        current_price: Decimal,
+    ) -> Optional[tuple[Decimal, Decimal]]:
+        """Infer grid bounds from recent closes when auto-bounds is enabled."""
+        if len(closes) < 5:
+            return None
+
+        recent = closes[-min(len(closes), max(self._grid_levels * 2, 20)) :]
+        low = min(recent)
+        high = max(recent)
+        if high <= 0 or low <= 0 or high <= low:
+            return None
+
+        padding = self._range_padding_pct / Decimal("100")
+        lower = min(low, current_price) * (Decimal("1") - padding)
+        upper = max(high, current_price) * (Decimal("1") + padding)
+        if upper <= lower:
+            return None
+
+        return (
+            lower.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            upper.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        )
+
     # ------------------------------------------------------------------
     # BaseStrategy interface
     # ------------------------------------------------------------------
@@ -109,6 +137,24 @@ class GridTrading(BaseStrategy):
                 "grid_level": -1,
                 "grid_price": Decimal("0"),
             }
+
+        raw_closes = market_data.get("closes", [])
+        closes: List[Decimal] = []
+        for value in raw_closes:
+            try:
+                closes.append(value if isinstance(value, Decimal) else Decimal(str(value)))
+            except (InvalidOperation, TypeError, ValueError):
+                closes = []
+                break
+
+        if self._auto_bounds:
+            dynamic_bounds = self._derive_dynamic_bounds(closes, current_price)
+            if dynamic_bounds is not None:
+                lower, upper = dynamic_bounds
+                if lower != self._grid_lower or upper != self._grid_upper:
+                    self._grid_lower = lower
+                    self._grid_upper = upper
+                    self._invalidate_grid_cache()
 
         grid_prices = self._compute_grid_prices()
 
@@ -211,6 +257,8 @@ class GridTrading(BaseStrategy):
             "grid_upper": self._grid_upper,
             "grid_levels": self._grid_levels,
             "quantity_per_grid": self._quantity_per_grid,
+            "auto_bounds": self._auto_bounds,
+            "range_padding_pct": self._range_padding_pct,
             "active_levels": sorted(self._active_levels),
         }
 
@@ -227,6 +275,12 @@ class GridTrading(BaseStrategy):
             changed_grid = True
         if "quantity_per_grid" in params:
             self._quantity_per_grid = Decimal(str(params["quantity_per_grid"]))
+        if "auto_bounds" in params:
+            self._auto_bounds = bool(params["auto_bounds"])
+            changed_grid = True
+        if "range_padding_pct" in params:
+            self._range_padding_pct = Decimal(str(params["range_padding_pct"]))
+            changed_grid = True
         if "active_levels" in params:
             self._active_levels = set(int(lv) for lv in params["active_levels"])
         if changed_grid:

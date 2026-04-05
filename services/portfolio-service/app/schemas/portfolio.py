@@ -142,3 +142,99 @@ class PortfolioSummary(BaseModel):
     total_pnl_pct: Decimal
     positions_count: int
     allocation: List[AllocationEntry]
+
+
+# ---------------------------------------------------------------------------
+# Portfolio snapshot (cross-page source of truth)
+# ---------------------------------------------------------------------------
+
+class SnapshotBalance(BaseModel):
+    currency: str
+    available: Decimal
+    reserved: Decimal
+    total: Decimal
+
+
+class SnapshotHolding(BaseModel):
+    symbol: str
+    available: Decimal
+    reserved: Decimal
+    total: Decimal
+    price: Decimal
+    value: Decimal
+    change_pct_24h: Decimal
+    stable: bool
+
+
+class SnapshotRiskPosition(BaseModel):
+    symbol: str
+    value: Decimal
+    weight: Decimal
+    var_contribution: Decimal
+    volatility: Decimal
+    risk_score: Decimal
+
+
+class SnapshotRiskMetrics(BaseModel):
+    total_value: Decimal
+    risk_score: Decimal
+    daily_var: Decimal
+    var_pct: Decimal
+    max_drawdown: Decimal
+    max_drawdown_pct: Decimal
+    sharpe_ratio: Optional[Decimal] = None
+    volatility: Decimal
+    correlation_risk: str
+    risk_level: str
+    concentration_pct: Decimal
+    cash_ratio: Decimal
+    warnings: List[str] = []
+    position_risk: List[SnapshotRiskPosition] = []
+
+
+class SnapshotSummary(BaseModel):
+    equity: Decimal
+    cash: Decimal
+    market_exposure: Decimal
+    open_pnl: Decimal
+    open_pnl_pct: Decimal
+    day_change_value: Decimal
+    day_change_pct: Decimal
+    holdings_count: int
+    positions_count: int
+    open_orders_count: int
+
+
+class ExecutionFeedItem(BaseModel):
+    id: str
+    source: str
+    order_id: Optional[str] = None
+    transaction_id: Optional[uuid.UUID] = None
+    portfolio_id: Optional[uuid.UUID] = None
+    symbol: str
+    side: str
+    status: str
+    quantity: Decimal
+    filled_quantity: Decimal
+    requested_price: Optional[Decimal] = None
+    execution_price: Optional[Decimal] = None
+    notional: Decimal
+    fee: Decimal
+    exchange: Optional[str] = None
+    strategy: Optional[str] = None
+    notes: Optional[str] = None
+    timestamp: datetime
+    updated_at: Optional[datetime] = None
+
+
+class PortfolioSnapshot(BaseModel):
+    updated_at: datetime
+    portfolio: Optional[PortfolioResponse] = None
+    portfolios: List[PortfolioResponse] = []
+    balances: List[SnapshotBalance] = []
+    holdings: List[SnapshotHolding] = []
+    positions: List[PositionResponse] = []
+    recent_transactions: List[TransactionResponse] = []
+    execution_feed: List[ExecutionFeedItem] = []
+    summary: SnapshotSummary
+    risk: Optional[SnapshotRiskMetrics] = None

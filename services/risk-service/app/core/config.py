@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     # Inter-service communication
     MARKET_DATA_SERVICE_URL: str = "http://localhost:8003"
+    TRADING_ENGINE_URL: str = "http://localhost:8004"
+    AUTH_SERVICE_URL: str = "http://localhost:8001"
 
     # Risk thresholds
     MAX_PORTFOLIO_DRAWDOWN: float = 0.15

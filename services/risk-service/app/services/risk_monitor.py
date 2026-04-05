@@ -4,10 +4,13 @@ import logging
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 
-from app.models.risk import PortfolioRiskMetrics, RiskProfile
+from app.models.risk import PortfolioRiskMetrics, PositionRiskMetrics, RiskProfile
 from app.services.risk_calculator import RiskCalculator
 
 logger = logging.getLogger(__name__)
+_Q2 = Decimal("0.01")
+_Q4 = Decimal("0.0001")
+STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD", "USD", "EUR"}
 
 
 def _d(value: Any) -> Decimal:
@@ -27,6 +30,7 @@ class RiskMonitor:
         profile: RiskProfile,
         historical_returns: Optional[List[Decimal]] = None,
         equity_curve: Optional[List[Decimal]] = None,
+        asset_returns: Optional[Dict[str, List[Decimal]]] = None,
     ) -> PortfolioRiskMetrics:
         """Calculate comprehensive portfolio risk metrics.
 
@@ -60,6 +64,7 @@ class RiskMonitor:
         if total_value <= 0:
             return PortfolioRiskMetrics(
                 total_value=Decimal("0"),
+                risk_score=Decimal("0"),
                 daily_var=Decimal("0"),
                 var_pct=Decimal("0"),
                 max_drawdown=Decimal("0"),
@@ -68,6 +73,9 @@ class RiskMonitor:
                 volatility=Decimal("0"),
                 correlation_risk="low",
                 risk_level="conservative",
+                concentration_pct=Decimal("0"),
+                cash_ratio=Decimal("0"),
+                position_risk=[],
                 warnings=["Portfolio value is zero or negative"],
             )
 
@@ -101,12 +109,20 @@ class RiskMonitor:
         volatility = RiskCalculator.calculate_volatility(returns)
 
         # --- Correlation / concentration risk ---
-        if len(position_values) == 0:
+        risk_position_values = {
+            symbol: value
+            for symbol, value in position_values.items()
+            if symbol.upper() not in STABLES
+        }
+
+        if len(risk_position_values) == 0:
             correlation_risk = "low"
-        elif len(position_values) == 1:
+            max_weight = Decimal("0")
+        elif len(risk_position_values) == 1:
             correlation_risk = "high"
+            max_weight = max(risk_position_values.values()) / total_value
         else:
-            max_weight = max(position_values.values()) / total_value
+            max_weight = max(risk_position_values.values()) / total_value
             if max_weight > Decimal("0.5"):
                 correlation_risk = "high"
             elif max_weight > Decimal("0.25"):
@@ -114,10 +130,66 @@ class RiskMonitor:
             else:
                 correlation_risk = "low"
 
-        # --- Overall risk level ---
-        if var_pct > Decimal("0.05") or max_dd_pct > Decimal("0.20"):
+        concentration_pct = (max_weight * Decimal("100")).quantize(
+            _Q2, rounding=ROUND_HALF_UP
+        )
+
+        stable_value = sum(
+            value
+            for symbol, value in position_values.items()
+            if symbol.upper() in STABLES
+        )
+        cash_ratio = (
+            (stable_value / total_value).quantize(_Q4, rounding=ROUND_HALF_UP)
+            if total_value > 0
+            else Decimal("0")
+        )
+
+        position_risk: List[PositionRiskMetrics] = []
+        asset_returns = asset_returns or {}
+        for symbol, value in sorted(
+            position_values.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        ):
+            weight = value / total_value
+            symbol_returns = asset_returns.get(symbol.upper(), [])
+            asset_vol = (
+                RiskCalculator.calculate_volatility(symbol_returns)
+                if len(symbol_returns) >= 2
+                else Decimal("0")
+            )
+            risk_score = (
+                min(weight / Decimal("0.35"), Decimal("1")) * Decimal("55")
+                + min(asset_vol / Decimal("1.2"), Decimal("1")) * Decimal("45")
+            ).quantize(_Q2, rounding=ROUND_HALF_UP)
+            position_risk.append(
+                PositionRiskMetrics(
+                    symbol=symbol,
+                    value=value.quantize(_Q2, rounding=ROUND_HALF_UP),
+                    weight=weight.quantize(_Q4, rounding=ROUND_HALF_UP),
+                    var_contribution=(var_pct * weight).quantize(
+                        _Q4, rounding=ROUND_HALF_UP
+                    ),
+                    volatility=asset_vol.quantize(_Q4, rounding=ROUND_HALF_UP),
+                    risk_score=max(
+                        Decimal("0"),
+                        min(risk_score, Decimal("100")),
+                    ),
+                )
+            )
+
+        risk_score = (
+            min(var_pct / Decimal("0.08"), Decimal("1")) * Decimal("30")
+            + min(max_dd_pct / Decimal("0.25"), Decimal("1")) * Decimal("25")
+            + min(volatility / Decimal("1.20"), Decimal("1")) * Decimal("25")
+            + min(max_weight / Decimal("0.45"), Decimal("1")) * Decimal("20")
+        ).quantize(_Q2, rounding=ROUND_HALF_UP)
+        risk_score = max(Decimal("0"), min(risk_score, Decimal("100")))
+
+        if risk_score >= Decimal("67"):
             risk_level = "aggressive"
-        elif var_pct > Decimal("0.02") or max_dd_pct > Decimal("0.10"):
+        elif risk_score >= Decimal("34"):
             risk_level = "moderate"
         else:
             risk_level = "conservative"
@@ -136,6 +208,12 @@ class RiskMonitor:
                 "High concentration risk: portfolio dominated by a single asset"
             )
 
+        if concentration_pct > profile.max_position_size_pct:
+            warnings.append(
+                f"Largest line is {concentration_pct}% of portfolio, above profile cap "
+                f"{profile.max_position_size_pct}%"
+            )
+
         if volatility > Decimal("0.50"):
             warnings.append(
                 f"High annualized volatility: {volatility:.2%}"
@@ -143,6 +221,7 @@ class RiskMonitor:
 
         return PortfolioRiskMetrics(
             total_value=total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            risk_score=risk_score,
             daily_var=daily_var,
             var_pct=var_pct,
             max_drawdown=max_dd,
@@ -151,6 +230,9 @@ class RiskMonitor:
             volatility=volatility,
             correlation_risk=correlation_risk,
             risk_level=risk_level,
+            concentration_pct=concentration_pct,
+            cash_ratio=cash_ratio,
+            position_risk=position_risk,
             warnings=warnings,
         )
 

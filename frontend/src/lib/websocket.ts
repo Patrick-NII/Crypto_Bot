@@ -1,18 +1,23 @@
 import type { CryptoPrice } from "./types";
 
 const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8003/ws/prices";
+  process.env.NEXT_PUBLIC_WS_URL ||
+  (typeof window !== "undefined"
+    ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/v1/ws/prices`
+    : "ws://localhost:8003/ws/prices");
 
 const MAX_RECONNECT_ATTEMPTS = 10;
 const BASE_RECONNECT_DELAY_MS = 1000;
 
 type PriceListener = (data: CryptoPrice) => void;
+type PriceUpdateMap = Record<string, CryptoPrice | Record<string, unknown>>;
 
 class PriceWebSocket {
   private ws: WebSocket | null = null;
   private listeners: Map<string, Set<PriceListener>> = new Map();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private intentionalClose = false;
 
   /** Open the WebSocket connection. Safe to call multiple times. */
@@ -31,11 +36,8 @@ class PriceWebSocket {
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
-
-      // Re-subscribe to all active symbols
-      for (const symbol of this.listeners.keys()) {
-        this.sendSubscribe(symbol);
-      }
+      this.startHeartbeat();
+      this.syncSubscriptions();
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
@@ -46,11 +48,7 @@ class PriceWebSocket {
         };
 
         if (message.type === "price_update" && message.data) {
-          const priceData = message.data as unknown as CryptoPrice;
-          const symbol = priceData.symbol;
-          if (symbol) {
-            this.dispatch(symbol, priceData);
-          }
+          this.handlePriceUpdate(message.data as PriceUpdateMap);
         }
 
         if (message.type === "ping") {
@@ -62,6 +60,7 @@ class PriceWebSocket {
     };
 
     this.ws.onclose = () => {
+      this.stopHeartbeat();
       this.ws = null;
       if (!this.intentionalClose) {
         this.scheduleReconnect();
@@ -76,6 +75,7 @@ class PriceWebSocket {
   /** Gracefully close the connection. */
   disconnect(): void {
     this.intentionalClose = true;
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -134,15 +134,58 @@ class PriceWebSocket {
     }
   }
 
+  private handlePriceUpdate(payload: PriceUpdateMap): void {
+    if ("symbol" in payload && typeof payload.symbol === "string") {
+      const singlePrice = payload as unknown as CryptoPrice;
+      this.dispatch(singlePrice.symbol, singlePrice);
+      return;
+    }
+
+    for (const [symbol, rawValue] of Object.entries(payload)) {
+      if (!rawValue || typeof rawValue !== "object") continue;
+      const priceData = rawValue as CryptoPrice;
+      this.dispatch(priceData.symbol || symbol, {
+        ...priceData,
+        symbol: (priceData.symbol || symbol).toUpperCase(),
+      });
+    }
+  }
+
   private sendSubscribe(symbol: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "subscribe", symbol }));
+      this.ws.send(JSON.stringify({ type: "subscribe", data: { symbols: [symbol] } }));
     }
   }
 
   private sendUnsubscribe(symbol: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "unsubscribe", symbol }));
+      this.ws.send(JSON.stringify({ type: "unsubscribe", data: { symbols: [symbol] } }));
+    }
+  }
+
+  private syncSubscriptions(): void {
+    if (this.ws?.readyState !== WebSocket.OPEN || this.listeners.size === 0) return;
+    this.ws.send(
+      JSON.stringify({
+        type: "subscribe",
+        data: { symbols: [...this.listeners.keys()] },
+      }),
+    );
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 20_000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
   }
 

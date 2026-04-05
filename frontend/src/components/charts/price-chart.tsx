@@ -25,6 +25,25 @@ interface PriceChartProps {
   defaultInterval?: string;
 }
 
+interface CandlePoint {
+  time: Time;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+function intervalToSeconds(interval: string): number {
+  const unit = interval.slice(-1);
+  const value = Number(interval.slice(0, -1));
+  if (!Number.isFinite(value) || value <= 0) return 60;
+  if (unit === "m") return value * 60;
+  if (unit === "h") return value * 3600;
+  if (unit === "d") return value * 86400;
+  if (unit === "w") return value * 604800;
+  return 60;
+}
+
 export function PriceChart({
   symbol,
   height = 300,
@@ -39,6 +58,7 @@ export function PriceChart({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeInterval, setActiveInterval] = useState(defaultInterval);
+  const lastCandleRef = useRef<CandlePoint | null>(null);
 
   const interval = INTERVALS.find((i) => i.label === activeInterval) ?? INTERVALS[3];
 
@@ -51,7 +71,7 @@ export function PriceChart({
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#8888a0",
-        fontSize: 11,
+        fontSize: 13,
       },
       grid: {
         vertLines: { color: "rgba(255,255,255,0.03)" },
@@ -132,12 +152,14 @@ export function PriceChart({
           close: d.close,
         }));
         (seriesRef.current as ISeriesApi<"Candlestick">).setData(candleData);
+        lastCandleRef.current = candleData[candleData.length - 1] ?? null;
       } else {
         const lineData = data.map((d) => ({
           time: d.time as Time,
           value: d.close,
         }));
         (seriesRef.current as ISeriesApi<"Line">).setData(lineData);
+        lastCandleRef.current = null;
       }
 
       chartRef.current.timeScale().fitContent();
@@ -149,7 +171,10 @@ export function PriceChart({
   }, [symbol, interval.value, interval.limit, type]);
 
   useEffect(() => {
-    fetchData();
+    const timer = setTimeout(() => {
+      void fetchData();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchData]);
 
   // WebSocket live updates
@@ -165,11 +190,40 @@ export function PriceChart({
           time: now,
           value: priceData.price,
         });
+        return;
       }
+
+      const series = seriesRef.current as ISeriesApi<"Candlestick">;
+      const bucketSize = intervalToSeconds(interval.value);
+      const bucketTime = (Math.floor(Number(now) / bucketSize) * bucketSize) as Time;
+      const previous = lastCandleRef.current;
+
+      if (!previous || Number(previous.time) !== Number(bucketTime)) {
+        const open = previous?.close ?? priceData.price;
+        const nextCandle: CandlePoint = {
+          time: bucketTime,
+          open,
+          high: Math.max(open, priceData.price),
+          low: Math.min(open, priceData.price),
+          close: priceData.price,
+        };
+        lastCandleRef.current = nextCandle;
+        series.update(nextCandle);
+        return;
+      }
+
+      const nextCandle: CandlePoint = {
+        ...previous,
+        high: Math.max(previous.high, priceData.price),
+        low: Math.min(previous.low, priceData.price),
+        close: priceData.price,
+      };
+      lastCandleRef.current = nextCandle;
+      series.update(nextCandle);
     });
 
     return unsub;
-  }, [symbol, type]);
+  }, [symbol, type, interval.value]);
 
   return (
     <div className={cn("relative w-full", className)}>

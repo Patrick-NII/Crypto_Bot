@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
 
     # Inter-service communication
-    MARKET_DATA_SERVICE_URL: str = "http://localhost:8001"
+    AUTH_SERVICE_URL: str = "http://localhost:8001"
+    MARKET_DATA_SERVICE_URL: str = "http://localhost:8003"
+    TRADING_ENGINE_URL: str = "http://localhost:8004"
+    RISK_SERVICE_URL: str = "http://localhost:8005"
 
 
 settings = Settings()

@@ -9,8 +9,22 @@ PUBLIC_ROUTES = [
     "/docs",
     "/openapi.json",
     "/redoc",
-    "/api/v1/auth/login",
-    "/api/v1/auth/register",
+    # Auth service handles its own JWT validation internally —
+    # the gateway must let ALL auth requests through so that endpoints
+    # like /auth/refresh, /auth/me, /auth/exchange-connections work.
+    "/api/v1/auth",
+    "/api/v1/news",
+    "/api/v1/prices",
+    "/api/v1/markets",
+    "/api/v1/risk",
+    "/api/v1/orders",
+    "/api/v1/trades",
+    "/api/v1/portfolios",
+    "/api/v1/positions",
+    "/api/v1/strategies",
+    "/api/v1/alerts",
+    "/api/v1/notifications",
+    "/api/v1/ml",
 ]
 
 

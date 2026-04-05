@@ -1,6 +1,6 @@
 """Pydantic models for the Okamoey Market Data Service."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -18,7 +18,8 @@ class PriceData(BaseModel):
     low_24h: float = Field(0.0, description="24h low price")
     market_cap: float = Field(0.0, description="Market capitalization in USD")
     last_updated: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Last update timestamp",
     )
 
 
@@ -136,7 +137,7 @@ class WebSocketMessage(BaseModel):
 
     type: str = Field(..., description="Message type: price_update, error, ping, pong")
     data: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class AssetSearchResult(BaseModel):

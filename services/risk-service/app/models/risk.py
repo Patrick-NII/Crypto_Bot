@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 class RiskProfile(BaseModel):
     """Defines risk tolerance parameters for portfolio management."""
 
+    profile_id: str = Field(
+        default="moderate",
+        pattern="^(conservative|moderate|aggressive|custom)$",
+    )
     max_position_size_pct: Decimal = Decimal("10.0")
     max_portfolio_drawdown_pct: Decimal = Decimal("15.0")
     default_stop_loss_pct: Decimal = Decimal("5.0")
@@ -24,6 +28,7 @@ class RiskProfile(BaseModel):
     def conservative(cls) -> RiskProfile:
         """Conservative risk profile: tight stops, small positions."""
         return cls(
+            profile_id="conservative",
             max_position_size_pct=Decimal("5.0"),
             max_portfolio_drawdown_pct=Decimal("8.0"),
             default_stop_loss_pct=Decimal("3.0"),
@@ -37,6 +42,7 @@ class RiskProfile(BaseModel):
     def moderate(cls) -> RiskProfile:
         """Moderate risk profile: balanced risk/reward."""
         return cls(
+            profile_id="moderate",
             max_position_size_pct=Decimal("10.0"),
             max_portfolio_drawdown_pct=Decimal("15.0"),
             default_stop_loss_pct=Decimal("5.0"),
@@ -50,6 +56,7 @@ class RiskProfile(BaseModel):
     def aggressive(cls) -> RiskProfile:
         """Aggressive risk profile: wider stops, larger positions."""
         return cls(
+            profile_id="aggressive",
             max_position_size_pct=Decimal("20.0"),
             max_portfolio_drawdown_pct=Decimal("25.0"),
             default_stop_loss_pct=Decimal("8.0"),
@@ -92,10 +99,25 @@ class RiskEvaluationResult(BaseModel):
         json_encoders = {Decimal: str}
 
 
+class PositionRiskMetrics(BaseModel):
+    """Risk contribution for a single portfolio line."""
+
+    symbol: str
+    value: Decimal
+    weight: Decimal
+    var_contribution: Decimal
+    volatility: Decimal
+    risk_score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
+
+    class Config:
+        json_encoders = {Decimal: str}
+
+
 class PortfolioRiskMetrics(BaseModel):
     """Comprehensive portfolio risk assessment."""
 
     total_value: Decimal
+    risk_score: Decimal = Field(ge=Decimal("0"), le=Decimal("100"))
     daily_var: Decimal
     var_pct: Decimal
     max_drawdown: Decimal
@@ -106,6 +128,9 @@ class PortfolioRiskMetrics(BaseModel):
     risk_level: str = Field(
         ..., pattern="^(conservative|moderate|aggressive)$"
     )
+    concentration_pct: Decimal = Decimal("0")
+    cash_ratio: Decimal = Decimal("0")
+    position_risk: List[PositionRiskMetrics] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
     class Config:

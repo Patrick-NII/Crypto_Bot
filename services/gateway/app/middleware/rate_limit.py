@@ -34,7 +34,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
+    # Routes exempt from rate limiting — auth must never be blocked
+    EXEMPT_PREFIXES = ("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh", "/health")
+
     async def dispatch(self, request: Request, call_next):
+        # Never rate-limit critical auth endpoints
+        path = request.url.path
+        if any(path.startswith(p) for p in self.EXEMPT_PREFIXES):
+            return await call_next(request)
+
         redis = await self._get_redis()
 
         # If Redis is unavailable, let the request through rather than blocking

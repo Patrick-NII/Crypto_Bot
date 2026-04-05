@@ -46,7 +46,7 @@ export function Header() {
         {/* Status */}
         <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
           <Wifi className="h-3 w-3 accent-text" />
-          <span className="hidden sm:inline text-[11px] font-medium accent-text">Live</span>
+          <span className="hidden sm:inline text-[13px] font-medium accent-text">Live</span>
           <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--page-accent)" }} />
         </div>
       </div>

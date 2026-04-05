@@ -45,12 +45,12 @@ def classify_complexity(message: str) -> Complexity:
     return Complexity.FAST
 
 
-# Model tiers — all OpenAI
-MODELS = {
-    Complexity.FAST: "gpt-4o-mini",
-    Complexity.MEDIUM: "gpt-4o",
-    Complexity.COMPLEX: "gpt-4o",
-}
+def _model_for(complexity: Complexity) -> str:
+    if complexity == Complexity.FAST:
+        return settings.MODEL_FAST
+    if complexity == Complexity.MEDIUM:
+        return settings.MODEL_MEDIUM
+    return settings.MODEL_COMPLEX
 
 _openai_client: openai.AsyncOpenAI | None = None
 
@@ -60,6 +60,10 @@ def _get_openai() -> openai.AsyncOpenAI:
     if _openai_client is None:
         _openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     return _openai_client
+
+
+def _is_anthropic_model(model: str) -> bool:
+    return model.startswith("claude")
 
 
 async def _call_openai(messages: list[dict], system_prompt: str, model: str) -> str:
@@ -72,6 +76,31 @@ async def _call_openai(messages: list[dict], system_prompt: str, model: str) -> 
         max_tokens=2048,
     )
     return resp.choices[0].message.content or ""
+
+
+async def _call_anthropic(messages: list[dict], system_prompt: str, model: str) -> str:
+    import anthropic
+
+    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    resp = await client.messages.create(
+        model=model,
+        system=system_prompt,
+        messages=messages,
+        temperature=0.7,
+        max_tokens=2048,
+    )
+    return resp.content[0].text
+
+
+async def _call_model(messages: list[dict], system_prompt: str, model: str) -> tuple[str, str, str]:
+    if _is_anthropic_model(model):
+        if not settings.ANTHROPIC_API_KEY:
+            raise RuntimeError(f"Anthropic model requested but ANTHROPIC_API_KEY is missing: {model}")
+        text = await _call_anthropic(messages, system_prompt, model)
+        return text, "anthropic", model
+
+    text = await _call_openai(messages, system_prompt, model)
+    return text, "openai", model
 
 
 async def chat_completion(
@@ -88,35 +117,27 @@ async def chat_completion(
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         complexity = classify_complexity(last_user)
 
-    model = MODELS[complexity]
+    model = _model_for(complexity)
 
     # Try primary model
     try:
-        text = await _call_openai(messages, system_prompt, model)
-        return text, "openai", model
+        return await _call_model(messages, system_prompt, model)
     except Exception as e:
-        logger.warning("OpenAI %s failed: %s — trying fallback", model, e)
+        logger.warning("Primary model %s failed: %s — trying fallback", model, e)
 
-    # Fallback: try gpt-4o-mini
+    # Fallback: try fast tier
     try:
-        text = await _call_openai(messages, system_prompt, "gpt-4o-mini")
-        return text, "openai", "gpt-4o-mini"
+        fallback_model = settings.MODEL_FAST
+        return await _call_model(messages, system_prompt, fallback_model)
     except Exception as e:
-        logger.warning("OpenAI fallback failed: %s", e)
+        logger.warning("Fast-tier fallback failed: %s", e)
 
     # Last resort: Anthropic if key is set
     if settings.ANTHROPIC_API_KEY:
         try:
-            import anthropic
-            client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-            resp = await client.messages.create(
-                model="claude-sonnet-4-20250514",
-                system=system_prompt,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2048,
-            )
-            return resp.content[0].text, "anthropic", "claude-sonnet-4-20250514"
+            final_model = settings.MODEL_COMPLEX if _is_anthropic_model(settings.MODEL_COMPLEX) else "claude-sonnet-4-20250514"
+            text = await _call_anthropic(messages, system_prompt, final_model)
+            return text, "anthropic", final_model
         except Exception as e2:
             logger.error("Anthropic fallback also failed: %s", e2)
 

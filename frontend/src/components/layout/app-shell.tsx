@@ -2,28 +2,27 @@
 
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { AuthGuard } from "@/components/auth/auth-guard";
+import { OnboardingModal } from "@/components/auth/onboarding-modal";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ChatWrapper } from "@/components/ai/chat-wrapper";
 
-const PUBLIC_ROUTES = ["/", "/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/pricing"];
+const PUBLIC_ROUTES = ["/", "/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/pricing", "/terms"];
 
 const SIDEBAR_KEY = "okamoey-sidebar-collapsed";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [mounted, setMounted] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => typeof window !== "undefined" && localStorage.getItem(SIDEBAR_KEY) === "true",
+  );
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768,
+  );
 
   useEffect(() => {
-    const saved = localStorage.getItem(SIDEBAR_KEY);
-    if (saved === "true") setSidebarCollapsed(true);
-
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
     window.addEventListener("resize", checkMobile);
-
-    setMounted(true);
 
     const interval = setInterval(() => {
       setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true");
@@ -34,8 +33,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
     };
   }, []);
-
-  if (!mounted) return <>{children}</>;
 
   const isPublic = PUBLIC_ROUTES.includes(pathname);
   if (isPublic) return <>{children}</>;
@@ -50,10 +47,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ paddingLeft: `${offset}px` }}
       >
         <main className="flex-1 p-3 md:p-5 pt-14 md:pt-5 pb-6 md:pb-5">
-          {children}
+          <AuthGuard>{children}</AuthGuard>
         </main>
       </div>
       <ChatWrapper />
+      <OnboardingModal />
     </>
   );
 }

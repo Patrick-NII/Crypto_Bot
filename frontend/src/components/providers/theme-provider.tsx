@@ -46,6 +46,8 @@ export const PAGE_ACCENTS = {
   strategies: { accent: "#f59e0b", glow: "245,158,11" },
   alerts: { accent: "#ef4444", glow: "239,68,68" },
   analytics: { accent: "#ec4899", glow: "236,72,153" },
+  news: { accent: "#3b82f6", glow: "59,130,246" },
+  settings: { accent: "#8888a0", glow: "136,136,160" },
 } as const;
 
 /**
