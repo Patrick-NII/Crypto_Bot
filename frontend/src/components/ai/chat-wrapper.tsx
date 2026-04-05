@@ -5,19 +5,13 @@ import { usePathname } from "next/navigation";
 import { ChatPanel } from "./chat-panel";
 
 const ROUTE_TO_AGENT: Record<string, { type: string; name: string }> = {
-  "/dashboard": { type: "dashboard", name: "Dashboard Assistant" },
   "/crypto": { type: "trading", name: "Trade Executor" },
-  "/portfolio": { type: "portfolio", name: "Portfolio Analyst" },
-  "/strategies": { type: "strategy", name: "Strategy Architect" },
-  "/alerts": { type: "risk", name: "Risk Manager" },
-  "/analytics": { type: "analytics", name: "Analytics Interpreter" },
-  "/news": { type: "dashboard", name: "Market Analyst" },
-  "/settings": { type: "dashboard", name: "AI Assistant" },
+  "/settings": { type: "trading", name: "Desk Assistant" },
 };
 
 export function ChatWrapper() {
   const pathname = usePathname();
-  const agent = ROUTE_TO_AGENT[pathname] ?? { type: "dashboard", name: "AI Assistant" };
+  const agent = ROUTE_TO_AGENT[pathname] ?? { type: "trading", name: "Trade Executor" };
   const [externalOpen, setExternalOpen] = useState(false);
 
   // Listen for custom event from hamburger menu

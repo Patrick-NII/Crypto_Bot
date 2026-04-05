@@ -10,12 +10,11 @@ function VerifyEmailContent() {
   const params = useSearchParams();
   const token = params.get("token");
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const effectiveStatus = token ? status : "error";
 
   useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      return;
-    }
+    if (!token) return;
+
     fetch(
       `${process.env.NEXT_PUBLIC_API_URL ?? "/api/v1"}/auth/verify-email`,
       {
@@ -32,23 +31,23 @@ function VerifyEmailContent() {
 
   return (
     <div className="rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#14141b] p-8 text-center">
-      {status === "loading" && (
+      {effectiveStatus === "loading" && (
         <>
           <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-[#06d6a0]" />
           <p className="text-sm text-[#8888a0]">Verifying your email...</p>
         </>
       )}
-      {status === "success" && (
+      {effectiveStatus === "success" && (
         <>
           <CheckCircle className="mx-auto mb-4 h-12 w-12 text-[#06d6a0]" />
           <h2 className="mb-2 text-lg font-semibold text-white">Email verified!</h2>
           <p className="mb-6 text-sm text-[#8888a0]">Your account is now fully activated.</p>
-          <Link href="/dashboard" className="rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] px-6 py-2.5 text-sm font-semibold text-[#0d0d12]">
-            Go to Dashboard
+          <Link href="/crypto" className="rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] px-6 py-2.5 text-sm font-semibold text-[#0d0d12]">
+            Open Trading Desk
           </Link>
         </>
       )}
-      {status === "error" && (
+      {effectiveStatus === "error" && (
         <>
           <XCircle className="mx-auto mb-4 h-12 w-12 text-red-400" />
           <h2 className="mb-2 text-lg font-semibold text-white">Verification failed</h2>

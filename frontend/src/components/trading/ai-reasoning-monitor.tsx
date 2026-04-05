@@ -312,8 +312,6 @@ export function AIReasoningMonitor({
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 40);
   }
 
-  const isActive = tradingMode === "auto" && armed;
-
   /* ---- STATE A: Manual mode — compact bar ---- */
   if (tradingMode === "manual") {
     return (

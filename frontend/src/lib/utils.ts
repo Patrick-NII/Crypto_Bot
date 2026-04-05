@@ -61,6 +61,16 @@ export function formatTime(dateStr: string): string {
 }
 
 /**
+ * Format a timestamp into a compact local clock string.
+ */
+export function formatLocalClock(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
  * Format a date string into a relative time (e.g., "2 hours ago").
  */
 export function formatRelative(dateStr: string): string {
@@ -77,4 +87,18 @@ export function formatRelative(dateStr: string): string {
   if (hours < 24) return `${hours}h ago`;
   if (days < 7) return `${days}d ago`;
   return formatDate(dateStr);
+}
+
+/**
+ * Shift UTC timestamps into local wall-clock time for lightweight-charts.
+ *
+ * The chart library renders timestamps as UTC. Applying the per-point timezone
+ * offset keeps labels aligned with the user's local time and handles DST
+ * transitions correctly.
+ */
+export function toChartTime(timestampSeconds: number): number {
+  if (!Number.isFinite(timestampSeconds)) return 0;
+  const timestampMs = timestampSeconds * 1000;
+  const offsetSeconds = new Date(timestampMs).getTimezoneOffset() * 60;
+  return timestampSeconds - offsetSeconds;
 }

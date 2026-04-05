@@ -42,7 +42,7 @@ export default function LoginPage() {
     );
     // Use loginWithTokens so AuthProvider picks up the demo state
     await loginWithTokens("demo-token", "demo-refresh");
-    router.push("/dashboard");
+    router.push("/crypto");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,7 +62,7 @@ export default function LoginPage() {
       const data = await res.json();
       // Store tokens and fetch profile via AuthProvider
       await loginWithTokens(data.access_token, data.refresh_token);
-      router.push("/dashboard");
+      router.push("/crypto");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
