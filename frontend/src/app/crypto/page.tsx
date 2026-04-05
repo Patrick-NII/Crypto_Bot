@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownRight,
@@ -16,37 +16,51 @@ import {
   TrendingUp,
   Wallet,
   Zap,
+  Search,
+  Star,
 } from "lucide-react";
 import { WalletAccessPanel } from "@/components/account/wallet-access-panel";
 import { usePageAccent, PAGE_ACCENTS, useTheme } from "@/components/providers/theme-provider";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { PriceChart } from "@/components/charts/price-chart";
+import { LiveSparkline } from "@/components/charts/live-sparkline";
 import { QuickTradeModal } from "@/components/trading/quick-trade-modal";
+import { ScoreGauge, SignalReadout } from "@/components/trading/signal-score";
 import {
   type AutoTradingHistorySnapshot,
   type AutoTradingStatusSnapshot,
 } from "@/components/trading/auto-trading-monitor";
-import { IndicatorBar, SignalBadge, type SignalAction } from "@/components/trading/signal-badge";
-import { AIReasoningMonitor, transformHistoryToMonitorEntries } from "@/components/trading/ai-reasoning-monitor";
+import { SignalBadge, type SignalAction } from "@/components/trading/signal-badge";
 import { ApiError, aiApi, analyticsApi, authApi, binanceApi, portfolioApi, pricesApi, signalsApi, strategiesApi, tradingApi } from "@/lib/api";
+import {
+  buildWalletHoldings,
+  computeWalletCashValue,
+  computeWalletMarketExposure,
+  computeWalletValue,
+  estimateWalletRiskScore,
+  formatWalletRiskLevel,
+  hasUsableRiskMetrics,
+  type WalletHoldingView,
+  WALLET_STABLES,
+} from "@/lib/portfolio-view";
 import { priceWs } from "@/lib/websocket";
 import { cn, formatRelative } from "@/lib/utils";
 import type {
   AnalyticsMetrics,
   CryptoMarketData,
-  ExecutionFeedItem,
   Order,
-  PaperBalance,
-  Portfolio,
-  Position,
-  RiskMetrics,
+  PortfolioSnapshot,
   Strategy,
   UserProfile,
 } from "@/lib/types";
 
-const MARKET_CACHE_KEY = "okamoey-trading-market-cache";
-const STABLES = new Set(["USDT", "USDC", "BUSD", "FDUSD", "USD", "DAI", "TUSD", "EUR"]);
+const REFRESH_INTERVAL = 30_000;
+const SIGNAL_REFRESH_INTERVAL = 45_000;
 const SIGNAL_SCAN_LIMIT = 14;
+const WATCHLIST_KEY = "watchlist";
+const DEFAULT_WATCHLIST = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"];
+const TRADING_VIEW_CACHE_KEY = "okamoey-trading-view";
+const TRADING_VIEW_CACHE_TTL = 300_000;
 
 interface SignalDetail {
   symbol: string;
@@ -54,24 +68,34 @@ interface SignalDetail {
   confidence: number;
   score: number;
   reasoning: string;
-  indicators: Array<{
-    name: string;
-    value: number;
-    signal: number;
-    description: string;
-  }>;
+  indicators: Array<{ name: string; value: number; signal: number; description: string }>;
   timestamp: string;
+  // V2 compat
+  score_100: number;
+  action_label: string;
+  confidence_level: string;
+  status: string;
+  sub_scores: Array<{ category: string; score: number; label: string }>;
+  key_reasons: string[];
+  // V3 multi-dimensional
+  direction: number;
+  direction_label: string;
+  confidence_score: number;
+  risk: number;
+  setup_quality: number;
+  actionability: string;
+  market_regime: string;
+  signal_context: string;
+  contradictions: Array<{ description: string; severity: string }>;
+  signal_trade_plan: { side: string; entry_zone: string; invalidation_zone: string; target_zone: string; risk_reward: string; validity: string; execution_style: string } | null;
 }
 
-interface HoldingSnapshot {
-  symbol: string;
-  total: number;
-  available: number;
-  reserved: number;
+type HoldingSnapshot = WalletHoldingView;
+
+interface LiveTickerSnapshot {
   price: number;
-  value: number;
-  changePct: number;
-  stable: boolean;
+  changePct24h?: number;
+  volume24h?: number;
 }
 
 interface TradeOpportunity {
@@ -99,8 +123,45 @@ interface TradeIntent {
   advisory?: string;
 }
 
+interface TradingViewCache {
+  selectedSymbol: string | null;
+  chartType: "candlestick" | "line";
+  orders: Order[];
+  analytics: AnalyticsMetrics | null;
+  strategies: Strategy[];
+  autoStatus: AutoTradingStatusSnapshot | null;
+  autoHistory: AutoTradingHistorySnapshot[];
+  health: { status: string; connected: boolean } | null;
+  signalMap: Record<string, SignalDetail>;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function readObjectCache<T>(key: string, ttl: number): T | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data?: T; ts?: number };
+    if (parsed.ts == null || parsed.data == null) return null;
+    if (Date.now() - parsed.ts > ttl) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeObjectCache<T>(key: string, data: T) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+  } catch {
+    // Ignore storage issues.
+  }
 }
 
 function unique<T>(items: T[]) {
@@ -129,17 +190,34 @@ function actionToSide(action: SignalAction): "buy" | "sell" | "hold" {
   return "hold";
 }
 
-function estimateRiskScore(holdings: HoldingSnapshot[], riskMetrics: RiskMetrics | null): number {
-  if (riskMetrics?.risk_score != null) {
-    return Math.round(clamp(riskMetrics.risk_score, 0, 100));
-  }
 
-  const totalValue = holdings.reduce((sum, item) => sum + item.value, 0);
-  if (totalValue <= 0) return 0;
-  const weights = holdings.filter((item) => item.value > 0).map((item) => item.value / totalValue);
-  const hhi = weights.reduce((sum, weight) => sum + weight * weight, 0);
-  const weightedChange = holdings.reduce((sum, item) => sum + Math.abs(item.changePct) * (item.value / totalValue), 0);
-  return Math.round(clamp(hhi * 65 + weightedChange * 1.5, 0, 100));
+/** Live clock that ticks every second, using the browser's local timezone. */
+function LocalClock() {
+  const [time, setTime] = useState("--:--:--");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const tick = () => {
+      setTime(
+        new Date().toLocaleTimeString(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }),
+      );
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <span className="text-[11px] font-mono text-[var(--text-muted)] tabular-nums" suppressHydrationWarning>
+      {mounted ? time : "--:--:--"}
+    </span>
+  );
 }
 
 function riskLabel(score: number) {
@@ -221,171 +299,255 @@ export default function CryptoTradingPage() {
   const [account, setAccount] = useState<UserProfile | null>(null);
 
   const [market, setMarket] = useState<CryptoMarketData[]>([]);
-  const [balances, setBalances] = useState<PaperBalance[]>([]);
+  const [snapshot, setSnapshot] = useState<PortfolioSnapshot | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [executionFeed, setExecutionFeed] = useState<ExecutionFeedItem[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsMetrics | null>(null);
-  const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [autoStatus, setAutoStatus] = useState<AutoTradingStatusSnapshot | null>(null);
   const [autoHistory, setAutoHistory] = useState<AutoTradingHistorySnapshot[]>([]);
   const [health, setHealth] = useState<{ status: string; connected: boolean } | null>(null);
   const [signalMap, setSignalMap] = useState<Record<string, SignalDetail>>({});
-  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [liveTickers, setLiveTickers] = useState<Record<string, LiveTickerSnapshot>>({});
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [tradeIntent, setTradeIntent] = useState<TradeIntent>({ side: "buy" });
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
 
+  // Watchlist + search
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Load watchlist from localStorage on mount
   useEffect(() => {
-    if (typeof window === "undefined") return;
     try {
-      const raw = localStorage.getItem(MARKET_CACHE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { data?: CryptoMarketData[] };
-      if (!Array.isArray(parsed.data) || parsed.data.length === 0) return;
-      setMarket(parsed.data);
-      setSelectedSymbol((current) => current ?? parsed.data?.[0]?.symbol ?? null);
-    } catch {
-      // Ignore cache parse failures
+      const stored = localStorage.getItem(WATCHLIST_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setWatchlist(parsed);
+          return;
+        }
+      }
+    } catch { /* empty */ }
+    // First time: seed with defaults
+    setWatchlist(DEFAULT_WATCHLIST);
+    try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(DEFAULT_WATCHLIST)); } catch { /* empty */ }
+  }, []);
+
+  const toggleWatch = useCallback((symbol: string) => {
+    setWatchlist((prev) => {
+      const upper = symbol.toUpperCase();
+      const next = prev.includes(upper) ? prev.filter((s) => s !== upper) : [...prev, upper];
+      try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next)); } catch { /* empty */ }
+      return next;
+    });
+  }, []);
+  const loadRequestRef = useRef(0);
+
+  const hydrateFromCache = useCallback(() => {
+    let hydrated = false;
+    const cachedAccount = authApi.peekCachedMe();
+    const cachedMarket = pricesApi.peekAllCryptos(80);
+    const cachedSnapshot = portfolioApi.peekSnapshot();
+    const cachedView = readObjectCache<TradingViewCache>(TRADING_VIEW_CACHE_KEY, TRADING_VIEW_CACHE_TTL);
+
+    if (cachedAccount) {
+      setAccount(cachedAccount);
+      hydrated = true;
     }
+
+    if (cachedMarket?.data.length) {
+      setMarket(cachedMarket.data);
+      setSelectedSymbol((current) => current ?? cachedView?.selectedSymbol ?? cachedMarket.data[0]?.symbol ?? null);
+      hydrated = true;
+    }
+
+    if (cachedView) {
+      setOrders(cachedView.orders);
+      setAnalytics(cachedView.analytics);
+      setStrategies(cachedView.strategies);
+      setAutoStatus(cachedView.autoStatus);
+      setAutoHistory(cachedView.autoHistory);
+      setHealth(cachedView.health);
+      setSignalMap(cachedView.signalMap);
+      setChartType(cachedView.chartType);
+      if (cachedView.selectedSymbol) {
+        setSelectedSymbol(cachedView.selectedSymbol);
+      }
+      hydrated = true;
+    }
+
+    if (cachedAccount?.wallet_access_enabled && cachedSnapshot) {
+      setSnapshot(cachedSnapshot);
+      hydrated = true;
+    }
+
+    if (cachedAccount && !cachedAccount.wallet_access_enabled) {
+      setSnapshot(null);
+      hydrated = true;
+    }
+
+    if (hydrated) setLoading(false);
+  }, []);
+
+  const loadSecondaryData = useCallback(async (requestId: number, walletUnlocked: boolean) => {
+    const [strategiesResult, autoStatusResult, autoHistoryResult, healthResult] = await Promise.allSettled([
+      strategiesApi.list(),
+      aiApi.getAutoTradingStatus(),
+      aiApi.getAutoTradingHistory(),
+      binanceApi.health(),
+    ]);
+
+    if (loadRequestRef.current !== requestId) return;
+
+    if (strategiesResult.status === "fulfilled") setStrategies(strategiesResult.value);
+    if (autoStatusResult.status === "fulfilled") setAutoStatus(autoStatusResult.value);
+    if (autoHistoryResult.status === "fulfilled") setAutoHistory(autoHistoryResult.value);
+    if (healthResult.status === "fulfilled") setHealth(healthResult.value);
+
+    if (!walletUnlocked) {
+      setOrders([]);
+      setAnalytics(null);
+      return;
+    }
+
+    const [ordersResult, analyticsResult] = await Promise.allSettled([
+      tradingApi.getOrders(),
+      analyticsApi.getMetrics(),
+    ]);
+
+    if (loadRequestRef.current !== requestId) return;
+
+    if (ordersResult.status === "fulfilled") setOrders(ordersResult.value);
+    if (analyticsResult.status === "fulfilled") setAnalytics(analyticsResult.value);
   }, []);
 
   const refreshDesk = useCallback(async () => {
     setRefreshing(true);
+    const requestId = Date.now();
+    loadRequestRef.current = requestId;
+    const snapshotPromise = portfolioApi
+      .getSnapshot()
+      .then((value) => ({ status: "fulfilled" as const, value }))
+      .catch((reason: unknown) => ({ status: "rejected" as const, reason }));
 
     try {
-      const [
-        meResult,
-        marketResult,
-        strategiesResult,
-        autoStatusResult,
-        autoHistoryResult,
-        healthResult,
-      ] = await Promise.allSettled([
+      const [meResult, marketResult] = await Promise.allSettled([
         authApi.getMe(),
-        pricesApi.getAllCryptos(80),
-        strategiesApi.list(),
-        aiApi.getAutoTradingStatus(),
-        aiApi.getAutoTradingHistory(),
-        binanceApi.health(),
+        pricesApi.getAllCryptos(250),
       ]);
+
+      if (loadRequestRef.current !== requestId) return;
 
       if (marketResult.status === "fulfilled" && marketResult.value.data.length > 0) {
         setMarket(marketResult.value.data);
         setSelectedSymbol((current) => current ?? marketResult.value.data[0]?.symbol ?? null);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify({ data: marketResult.value.data, ts: Date.now() }));
-        }
       }
 
-      setAccount(meResult.status === "fulfilled" ? meResult.value : null);
+      const nextAccount = meResult.status === "fulfilled" ? meResult.value : null;
+      setAccount(nextAccount);
 
-      const walletUnlocked = meResult.status === "fulfilled" ? meResult.value.wallet_access_enabled : false;
+      const walletUnlocked = nextAccount?.wallet_access_enabled ?? false;
       if (walletUnlocked) {
-        const [snapshotResult, ordersResult, analyticsResult] = await Promise.allSettled([
-          portfolioApi.getSnapshot(),
-          tradingApi.getOrders(),
-          analyticsApi.getMetrics(),
-        ]);
+        const snapshotResult = await snapshotPromise;
+        if (loadRequestRef.current !== requestId) return;
 
         if (snapshotResult.status === "fulfilled") {
-          setBalances(
-            snapshotResult.value.balances.map((balance) => ({
-              currency: balance.currency,
-              available: balance.available,
-              reserved: balance.reserved,
-              total: balance.total,
-            })),
-          );
-          setPortfolios(snapshotResult.value.portfolios);
-          setPositions(snapshotResult.value.positions);
-          setExecutionFeed(snapshotResult.value.execution_feed);
-          setRiskMetrics(snapshotResult.value.risk ?? null);
+          setSnapshot(snapshotResult.value);
         }
-        if (ordersResult.status === "fulfilled") setOrders(ordersResult.value);
-        if (analyticsResult.status === "fulfilled") setAnalytics(analyticsResult.value);
       } else {
-        setBalances([]);
+        setSnapshot(null);
         setOrders([]);
-        setPortfolios([]);
-        setPositions([]);
-        setExecutionFeed([]);
         setAnalytics(null);
-        setRiskMetrics(null);
       }
-      if (strategiesResult.status === "fulfilled") setStrategies(strategiesResult.value);
-      if (autoStatusResult.status === "fulfilled") setAutoStatus(autoStatusResult.value);
-      if (autoHistoryResult.status === "fulfilled") setAutoHistory(autoHistoryResult.value);
-      if (healthResult.status === "fulfilled") setHealth(healthResult.value);
+
+      setLoading(false);
+      void loadSecondaryData(requestId, walletUnlocked);
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 403)) {
         // Ignore wallet lock, surface everything else through the desk state.
       }
     } finally {
-      setRefreshing(false);
-      setLoading(false);
+      if (loadRequestRef.current === requestId) {
+        setRefreshing(false);
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [loadSecondaryData]);
 
   useEffect(() => {
+    hydrateFromCache();
     void refreshDesk();
     const interval = window.setInterval(() => {
       void refreshDesk();
-    }, 30_000);
+    }, REFRESH_INTERVAL);
     return () => window.clearInterval(interval);
-  }, [refreshDesk]);
+  }, [hydrateFromCache, refreshDesk]);
+
+  useEffect(() => {
+    writeObjectCache<TradingViewCache>(TRADING_VIEW_CACHE_KEY, {
+      selectedSymbol,
+      chartType,
+      orders,
+      analytics,
+      strategies,
+      autoStatus,
+      autoHistory: autoHistory.slice(0, 24),
+      health,
+      signalMap,
+    });
+  }, [analytics, autoHistory, autoStatus, chartType, health, orders, selectedSymbol, signalMap, strategies]);
 
   const marketBySymbol = useMemo(
     () => new Map(market.map((asset) => [asset.symbol.toUpperCase(), asset])),
     [market],
   );
 
-  const holdings = useMemo<HoldingSnapshot[]>(() => {
-    return balances
-      .map((balance) => {
-        const symbol = balance.currency.toUpperCase();
-        const stable = STABLES.has(symbol);
-        const marketAsset = marketBySymbol.get(symbol);
-        const livePrice = livePrices[symbol];
-        const price = stable ? 1 : livePrice ?? Number(marketAsset?.current_price ?? marketAsset?.price ?? 0);
-        const total = Number(balance.total ?? balance.available + balance.reserved);
-        const value = stable ? total : total * price;
-        const changePct = stable
-          ? 0
-          : Number(marketAsset?.price_change_percentage_24h ?? marketAsset?.change_pct_24h ?? 0);
-
-        return {
-          symbol,
-          total,
-          available: Number(balance.available ?? total),
-          reserved: Number(balance.reserved ?? 0),
-          price,
-          value,
-          changePct,
-          stable,
-        };
-      })
-      .filter((holding) => holding.total > 0)
-      .sort((left, right) => right.value - left.value);
-  }, [balances, livePrices, marketBySymbol]);
-
-  const portfolioValue = useMemo(() => {
-    const fromHoldings = holdings.reduce((sum, holding) => sum + holding.value, 0);
-    if (fromHoldings > 0) return fromHoldings;
-    return portfolios[0]?.total_value ?? 0;
-  }, [holdings, portfolios]);
-
-  const cashValue = useMemo(
-    () => holdings.filter((holding) => holding.stable).reduce((sum, holding) => sum + holding.value, 0),
-    [holdings],
+  const livePrices = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(liveTickers).map(([symbol, snapshot]) => [symbol, snapshot.price]),
+      ),
+    [liveTickers],
   );
 
-  const marketExposure = Math.max(portfolioValue - cashValue, 0);
+  const holdings = useMemo<HoldingSnapshot[]>(() => {
+    if (!snapshot) return [];
+    return buildWalletHoldings(snapshot, marketBySymbol, livePrices);
+  }, [livePrices, marketBySymbol, snapshot]);
+
+  const positions = useMemo(() => snapshot?.positions ?? [], [snapshot]);
+  const executionFeed = useMemo(() => snapshot?.execution_feed ?? [], [snapshot]);
+  const portfolioHeadline = useMemo(
+    () => snapshot?.portfolio?.name ?? snapshot?.portfolios[0]?.name ?? "Primary portfolio",
+    [snapshot],
+  );
+
+  const portfolioValue = useMemo(
+    () => computeWalletValue(holdings, snapshot?.summary.equity ?? 0),
+    [holdings, snapshot],
+  );
+
+  const cashValue = useMemo(
+    () => computeWalletCashValue(holdings, snapshot?.summary.cash ?? 0),
+    [holdings, snapshot],
+  );
+
+  const marketExposure = useMemo(
+    () => computeWalletMarketExposure(portfolioValue, cashValue, snapshot?.summary.market_exposure ?? 0),
+    [cashValue, portfolioValue, snapshot],
+  );
+
+  const riskMetrics = useMemo(
+    () => (hasUsableRiskMetrics(snapshot?.risk ?? null, portfolioValue) ? snapshot?.risk ?? null : null),
+    [portfolioValue, snapshot],
+  );
 
   const openPnl = useMemo(() => {
+    if (snapshot) {
+      return snapshot.summary.open_pnl;
+    }
+
     if (positions.length > 0) {
       return positions.reduce((sum, position) => sum + Number(position.pnl ?? 0), 0);
     }
@@ -396,14 +558,44 @@ export default function CryptoTradingPage() {
         if (holding.changePct === 0) return sum;
         return sum + (holding.value - holding.value / (1 + holding.changePct / 100));
       }, 0);
-  }, [holdings, positions]);
+  }, [holdings, positions, snapshot]);
 
-  const openPnlPct = portfolioValue > 0 ? (openPnl / Math.max(portfolioValue - openPnl, 1)) * 100 : 0;
-  const estimatedRisk = useMemo(() => estimateRiskScore(holdings, riskMetrics), [holdings, riskMetrics]);
-  const riskSummary = riskMetrics?.risk_level
-    ? `${riskMetrics.risk_level.charAt(0).toUpperCase()}${riskMetrics.risk_level.slice(1)}`
-    : riskLabel(estimatedRisk);
+  const openPnlPct = useMemo(() => {
+    if (snapshot) {
+      return snapshot.summary.open_pnl_pct;
+    }
+    return portfolioValue > 0 ? (openPnl / Math.max(portfolioValue - openPnl, 1)) * 100 : 0;
+  }, [openPnl, portfolioValue, snapshot]);
+
+  const estimatedRisk = useMemo(
+    () => estimateWalletRiskScore(holdings, portfolioValue, riskMetrics),
+    [holdings, portfolioValue, riskMetrics],
+  );
+  const riskSummary = (riskMetrics ? formatWalletRiskLevel(riskMetrics.risk_level) : null) ?? riskLabel(estimatedRisk);
   const regime = useMemo(() => marketRegime(market), [market]);
+
+  const resolveAssetPrice = useCallback(
+    (symbol: string, asset?: CryptoMarketData | null) =>
+      Number(liveTickers[symbol]?.price ?? asset?.current_price ?? asset?.price ?? 0),
+    [liveTickers],
+  );
+
+  const resolveAssetChangePct = useCallback(
+    (symbol: string, asset?: CryptoMarketData | null) =>
+      Number(
+        liveTickers[symbol]?.changePct24h ??
+          asset?.price_change_percentage_24h ??
+          asset?.change_pct_24h ??
+          0,
+      ),
+    [liveTickers],
+  );
+
+  const resolveAssetVolume = useCallback(
+    (symbol: string, asset?: CryptoMarketData | null) =>
+      Number(liveTickers[symbol]?.volume24h ?? asset?.total_volume ?? asset?.volume_24h ?? 0),
+    [liveTickers],
+  );
 
   const signalUniverse = useMemo(() => {
     const candidateSymbols = unique([
@@ -419,16 +611,53 @@ export default function CryptoTradingPage() {
 
     return candidateSymbols.filter(Boolean).slice(0, SIGNAL_SCAN_LIMIT);
   }, [holdings, market, orders, positions, selectedSymbol]);
+  const signalUniverseKey = useMemo(() => signalUniverse.join("|"), [signalUniverse]);
 
   useEffect(() => {
-    if (signalUniverse.length === 0) return;
+    const symbols = signalUniverseKey.split("|").filter(Boolean);
+    if (symbols.length === 0) return;
 
     let cancelled = false;
+    const cachedSignals: Record<string, SignalDetail> = {};
+    for (const symbol of symbols) {
+      const cached = signalsApi.peekSignal(symbol);
+      if (!cached) continue;
+      cachedSignals[symbol.toUpperCase()] = {
+        symbol: cached.symbol.toUpperCase(),
+        action: normalizeAction(cached.action),
+        confidence: Number(cached.confidence ?? 0),
+        score: Number(cached.score ?? 0),
+        reasoning: cached.reasoning,
+        indicators: cached.indicators ?? [],
+        timestamp: cached.timestamp,
+        score_100: cached.score_100 ?? 50,
+        action_label: cached.action_label ?? "Neutre",
+        confidence_level: cached.confidence_level ?? "moyen",
+        status: cached.status ?? "ignore",
+        sub_scores: cached.sub_scores ?? [],
+        key_reasons: cached.key_reasons ?? [],
+        direction: cached.direction ?? cached.score_100 ?? 50,
+        direction_label: cached.direction_label ?? cached.action_label ?? "Neutre",
+        confidence_score: cached.confidence_score ?? Math.round((cached.confidence ?? 0) * 100),
+        risk: cached.risk ?? 50,
+        setup_quality: cached.setup_quality ?? 50,
+        actionability: cached.actionability ?? cached.status?.toUpperCase() ?? "IGNORE",
+        market_regime: cached.market_regime ?? "UNKNOWN",
+        signal_context: cached.signal_context ?? "mixed",
+        contradictions: cached.contradictions ?? [],
+        signal_trade_plan: cached.signal_trade_plan ?? null,
+      };
+    }
+
+    if (Object.keys(cachedSignals).length > 0) {
+      setSignalMap((current) => ({ ...current, ...cachedSignals }));
+    }
+
     const fetchSignals = async () => {
       setSignalsLoading(true);
 
       try {
-        const results = await Promise.allSettled(signalUniverse.map((symbol) => signalsApi.getSignal(symbol)));
+        const results = await Promise.allSettled(symbols.map((symbol) => signalsApi.getSignal(symbol)));
         if (cancelled) return;
 
         const nextSignalMap: Record<string, SignalDetail> = {};
@@ -443,6 +672,22 @@ export default function CryptoTradingPage() {
             reasoning: signal.reasoning,
             indicators: signal.indicators ?? [],
             timestamp: signal.timestamp,
+            score_100: signal.score_100 ?? 50,
+            action_label: signal.action_label ?? "Neutre",
+            confidence_level: signal.confidence_level ?? "moyen",
+            status: signal.status ?? "ignore",
+            sub_scores: signal.sub_scores ?? [],
+            key_reasons: signal.key_reasons ?? [],
+            direction: signal.direction ?? signal.score_100 ?? 50,
+            direction_label: signal.direction_label ?? signal.action_label ?? "Neutre",
+            confidence_score: signal.confidence_score ?? Math.round((signal.confidence ?? 0) * 100),
+            risk: signal.risk ?? 50,
+            setup_quality: signal.setup_quality ?? 50,
+            actionability: signal.actionability ?? signal.status?.toUpperCase() ?? "IGNORE",
+            market_regime: signal.market_regime ?? "UNKNOWN",
+            signal_context: signal.signal_context ?? "mixed",
+            contradictions: signal.contradictions ?? [],
+            signal_trade_plan: signal.signal_trade_plan ?? null,
           };
         }
 
@@ -455,53 +700,63 @@ export default function CryptoTradingPage() {
     void fetchSignals();
     const interval = window.setInterval(() => {
       void fetchSignals();
-    }, 45_000);
+    }, SIGNAL_REFRESH_INTERVAL);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [signalUniverse]);
+  }, [signalUniverseKey]);
 
   const liveSymbols = useMemo(() => {
     return unique([
       ...(selectedSymbol ? [selectedSymbol] : []),
       ...market.slice(0, 16).map((asset) => asset.symbol.toUpperCase()),
       ...holdings.slice(0, 8).map((holding) => holding.symbol.toUpperCase()),
-    ]).filter((symbol) => !STABLES.has(symbol));
+    ]).filter((symbol) => !WALLET_STABLES.has(symbol));
   }, [holdings, market, selectedSymbol]);
+  const liveSymbolsKey = useMemo(() => liveSymbols.join("|"), [liveSymbols]);
 
   useEffect(() => {
-    if (liveSymbols.length === 0) return;
+    const symbols = liveSymbolsKey.split("|").filter(Boolean);
+    if (symbols.length === 0) return;
 
-    const unsubs = liveSymbols.map((symbol) =>
+    const unsubs = symbols.map((symbol) =>
       priceWs.subscribe(symbol, (update) => {
         const upper = update.symbol.toUpperCase();
-        setLivePrices((current) => ({ ...current, [upper]: Number(update.price) }));
-        setMarket((current) =>
-          current.map((asset) =>
-            asset.symbol.toUpperCase() === upper
-              ? {
-                  ...asset,
-                  price: Number(update.price),
-                  current_price: Number(update.price),
-                  change_pct_24h: Number(update.change_pct_24h ?? asset.change_pct_24h ?? 0),
-                  price_change_percentage_24h: Number(
-                    update.change_pct_24h ?? asset.price_change_percentage_24h ?? asset.change_pct_24h ?? 0,
-                  ),
-                  volume_24h: Number(update.volume_24h ?? asset.volume_24h ?? 0),
-                  total_volume: Number(update.volume_24h ?? asset.total_volume ?? asset.volume_24h ?? 0),
-                }
-              : asset,
-          ),
-        );
+        const nextPrice = Number(update.price);
+        const nextChangePct = Number(update.change_pct_24h ?? 0);
+        const nextVolume = Number(update.volume_24h ?? 0);
+
+        startTransition(() => {
+          setLiveTickers((current) => {
+            const previous = current[upper];
+            if (
+              previous &&
+              previous.price === nextPrice &&
+              previous.changePct24h === nextChangePct &&
+              previous.volume24h === nextVolume
+            ) {
+              return current;
+            }
+
+            return {
+              ...current,
+              [upper]: {
+                price: nextPrice,
+                changePct24h: nextChangePct,
+                volume24h: nextVolume,
+              },
+            };
+          });
+        });
       }),
     );
 
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [liveSymbols]);
+  }, [liveSymbolsKey]);
 
   useEffect(() => {
     if (selectedSymbol) return;
@@ -513,9 +768,19 @@ export default function CryptoTradingPage() {
     if (firstHolding) setSelectedSymbol(firstHolding.symbol);
   }, [holdings, market, selectedSymbol]);
 
-  const scannerAssets = useMemo(() => market.slice(0, 18), [market]);
+  const scannerAssets = useMemo(() => {
+    if (watchlist.length === 0) return market.slice(0, 10);
+    return market.filter((a) => watchlist.includes(a.symbol.toUpperCase()));
+  }, [market, watchlist]);
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toUpperCase().trim();
+    return market.filter((a) => a.symbol.toUpperCase().includes(q)).slice(0, 12);
+  }, [market, searchQuery]);
   const selectedAsset = selectedSymbol ? marketBySymbol.get(selectedSymbol.toUpperCase()) ?? null : null;
   const selectedSignal = selectedSymbol ? signalMap[selectedSymbol.toUpperCase()] ?? null : null;
+
   const selectedHolding = selectedSymbol
     ? holdings.find((holding) => holding.symbol.toUpperCase() === selectedSymbol.toUpperCase()) ?? null
     : null;
@@ -534,7 +799,8 @@ export default function CryptoTradingPage() {
         const currentValue = currentHolding?.value ?? 0;
         const riskItem = riskMetrics?.position_risk.find((item) => item.symbol.toUpperCase() === signal.symbol);
         const weight = riskItem?.weight ?? (portfolioValue > 0 ? currentValue / portfolioValue : 0);
-        const volatility = riskItem?.volatility ?? Math.abs(Number(asset.change_pct_24h ?? 0)) * 1.4;
+        const changePct = resolveAssetChangePct(signal.symbol, asset);
+        const volatility = riskItem?.volatility ?? Math.abs(changePct) * 1.4;
         const confidence = clamp(Number(signal.confidence ?? 0), 0, 1);
         const buyBase = cashValue * (0.015 + confidence * 0.055);
         const sellBase = currentValue * (0.2 + confidence * 0.55);
@@ -566,9 +832,9 @@ export default function CryptoTradingPage() {
           action: signal.action,
           confidence,
           score: signal.score,
-          price: Number(livePrices[signal.symbol] ?? asset.current_price ?? asset.price ?? 0),
-          changePct: Number(asset.price_change_percentage_24h ?? asset.change_pct_24h ?? 0),
-          volume: Number(asset.total_volume ?? asset.volume_24h ?? 0),
+          price: resolveAssetPrice(signal.symbol, asset),
+          changePct,
+          volume: resolveAssetVolume(signal.symbol, asset),
           volatility,
           recommendedUsd,
           currentValue,
@@ -579,12 +845,12 @@ export default function CryptoTradingPage() {
           edgeScore:
             confidence * 70 +
             Math.abs(signal.score) * 20 +
-            Math.min(Math.abs(Number(asset.change_pct_24h ?? 0)), 10),
+            Math.min(Math.abs(changePct), 10),
         };
       })
       .filter((opportunity): opportunity is TradeOpportunity => Boolean(opportunity))
       .sort((left, right) => right.edgeScore - left.edgeScore);
-  }, [cashValue, holdings, livePrices, marketBySymbol, portfolioValue, riskMetrics, signalMap]);
+  }, [cashValue, holdings, marketBySymbol, portfolioValue, resolveAssetChangePct, resolveAssetPrice, resolveAssetVolume, riskMetrics, signalMap]);
 
   const featuredOpportunity = useMemo(() => {
     if (selectedSymbol) {
@@ -612,10 +878,6 @@ export default function CryptoTradingPage() {
   }, [autoHistory, strategies]);
   const walletUnlocked = account?.wallet_access_enabled ?? false;
 
-  const monitorEntries = useMemo(
-    () => transformHistoryToMonitorEntries(autoHistory),
-    [autoHistory],
-  );
 
   const primeOpportunity = useCallback((opportunity: TradeOpportunity) => {
     if (!walletUnlocked) return;
@@ -680,7 +942,6 @@ export default function CryptoTradingPage() {
     [strategies],
   );
 
-  const portfolioHeadline = portfolios[0]?.name ?? "Primary portfolio";
   const feedLabel = !walletUnlocked
     ? "Read-only market"
     : health?.connected
@@ -702,7 +963,7 @@ export default function CryptoTradingPage() {
 
   return (
     <>
-      <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-8">
+      <div className="mx-auto max-w-[1440px] space-y-3 p-3 md:p-5">
 
         {/* ============ 1. HEADER — compact, centered ============ */}
         <div className="flex items-center justify-between">
@@ -748,7 +1009,7 @@ export default function CryptoTradingPage() {
         )}
 
         {/* ============ 2. STATS ROW — flat, no frames ============ */}
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-3 xl:grid-cols-5">
           <DeskMetric label="Equity" value={walletUnlocked ? format(portfolioValue) : "Locked"} sublabel={walletUnlocked ? `${holdings.length} assets` : "Unlock in Settings"} icon={Wallet} />
           <DeskMetric label="Cash" value={walletUnlocked ? format(cashValue) : "Locked"} sublabel={walletUnlocked ? `${portfolioValue > 0 ? ((cashValue / portfolioValue) * 100).toFixed(0) : 0}% deployable` : "Private balances hidden"} icon={ShieldCheck} />
           <DeskMetric label="Open PnL" value={walletUnlocked ? format(openPnl) : "Locked"} sublabel={walletUnlocked ? `${openPnlPct >= 0 ? "+" : ""}${openPnlPct.toFixed(2)}%` : "Execution access required"} icon={openPnl >= 0 ? TrendingUp : TrendingDown} tone={walletUnlocked ? (openPnl >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]") : undefined} />
@@ -756,21 +1017,117 @@ export default function CryptoTradingPage() {
           <DeskMetric label="Risk" value={walletUnlocked ? `${estimatedRisk}/100` : "Locked"} sublabel={walletUnlocked ? riskSummary : "Needs wallet context"} icon={Activity} tone={walletUnlocked ? riskTone(estimatedRisk) : undefined} />
         </div>
 
-        {/* ============ 3. CHART + ASSET DETAIL + TOOLS ============ */}
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        {/* ============ MAIN LAYOUT: Scanner (left) + Chart (right) ============ */}
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+
+          {/* LEFT: Scanner with search + watchlist */}
+          <aside className="lg:order-first order-last">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">Scanner <span className="text-[10px] text-[var(--text-muted)] font-normal ml-1">{scannerAssets.length}</span></h2>
+              <LocalClock />
+            </div>
+
+            {/* Search bar */}
+            <div className="relative mb-2">
+              <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-[var(--glass-bg)] border border-[var(--glass-border)]">
+                <Search className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Rechercher..."
+                  className="flex-1 bg-transparent text-[12px] text-[var(--foreground)] placeholder-[var(--text-muted)] outline-none"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="text-[var(--text-muted)] hover:text-[var(--foreground)] text-[10px]">x</button>
+                )}
+              </div>
+
+              {/* Search results dropdown */}
+              {searchResults.length > 0 && (
+                <div className="absolute z-20 top-full mt-1 left-0 right-0 rounded-lg border border-[var(--glass-border)] bg-[var(--surface)] shadow-xl max-h-[240px] overflow-y-auto custom-scrollbar">
+                  {searchResults.map((asset) => {
+                    const isWatched = watchlist.includes(asset.symbol.toUpperCase());
+                    const lp = resolveAssetPrice(asset.symbol.toUpperCase(), asset);
+                    const cp = resolveAssetChangePct(asset.symbol.toUpperCase(), asset);
+                    return (
+                      <div key={asset.symbol} className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--glass-bg)] transition-colors">
+                        <button
+                          onClick={() => { setSelectedSymbol(asset.symbol); setSearchQuery(""); }}
+                          className="flex-1 text-left min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+                            <span className="text-[10px] font-mono text-[var(--text-muted)]">{format(lp, 2)}</span>
+                            <span className={cn("text-[9px] font-semibold", cp >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{cp >= 0 ? "+" : ""}{cp.toFixed(1)}%</span>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => toggleWatch(asset.symbol)}
+                          className={cn("p-1 rounded transition-colors", isWatched ? "text-[#c6f135]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                          <Star className="h-3.5 w-3.5" fill={isWatched ? "currentColor" : "none"} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Watchlist */}
+            <div className="space-y-0.5 max-h-[calc(100vh-260px)] overflow-y-auto custom-scrollbar pr-1">
+              {scannerAssets.length === 0 && (
+                <p className="text-[11px] text-[var(--text-muted)] text-center py-4">Recherchez et suivez des cryptos</p>
+              )}
+              {scannerAssets.map((asset) => {
+                const signal = signalMap[asset.symbol.toUpperCase()];
+                const livePrice = resolveAssetPrice(asset.symbol.toUpperCase(), asset);
+                const liveChangePct = resolveAssetChangePct(asset.symbol.toUpperCase(), asset);
+                return (
+                  <div key={asset.symbol} role="button" tabIndex={0}
+                    onClick={() => setSelectedSymbol(asset.symbol)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedSymbol(asset.symbol); }}
+                    className={cn("flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 group",
+                      selectedSymbol === asset.symbol
+                        ? "bg-[var(--glass-bg-strong)] shadow-sm"
+                        : "hover:bg-[var(--glass-bg)]")}>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+                        <span className={cn("text-[9px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, 2)}</span>
+                        {signal && <span className="text-[9px] font-medium truncate" style={{ color: signal.score_100 >= 60 ? "#4ade80" : signal.score_100 <= 40 ? "#ef4444" : "#8888a0" }}>{signal.action_label}</span>}
+                      </div>
+                    </div>
+                    <LiveSparkline symbol={asset.symbol} price={livePrice} width={50} height={20} maxPoints={60} positive={liveChangePct >= 0} />
+                    {signal ? <ScoreGauge score={signal.score_100} size="sm" /> : <span className="text-[8px] text-[var(--text-muted)]">...</span>}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleWatch(asset.symbol); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[#ef4444] p-0.5">
+                      <Star className="h-3 w-3" fill="currentColor" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+
+          {/* RIGHT: Chart + Readout */}
+          <section className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold text-[var(--foreground)]">{selectedAsset?.symbol ?? selectedSymbol ?? "Select an asset"}</h2>
               {selectedSignal && <SignalBadge action={selectedSignal.action} confidence={selectedSignal.confidence} size="md" blink={tradingMode === "auto" && Boolean(autoStatus?.enabled)} />}
               {selectedAsset && (
-                <span className={cn("text-sm font-semibold", Number(selectedAsset.change_pct_24h ?? 0) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                  {Number(selectedAsset.change_pct_24h ?? 0) >= 0 ? "+" : ""}{Number(selectedAsset.change_pct_24h ?? 0).toFixed(2)}%
+                <span className={cn("text-sm font-semibold", resolveAssetChangePct(selectedAsset.symbol, selectedAsset) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                  {resolveAssetChangePct(selectedAsset.symbol, selectedAsset) >= 0 ? "+" : ""}{resolveAssetChangePct(selectedAsset.symbol, selectedAsset).toFixed(2)}%
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-bold font-mono text-[var(--foreground)]">
-                {selectedAsset ? format(livePrices[selectedAsset.symbol] ?? Number(selectedAsset.current_price ?? selectedAsset.price ?? 0), 2) : "--"}
+                {selectedAsset ? format(resolveAssetPrice(selectedAsset.symbol, selectedAsset), 2) : "--"}
               </span>
               {/* Chart type toggle */}
               <div className="flex rounded-md p-0.5" style={{ background: "var(--glass-bg)" }}>
@@ -792,324 +1149,42 @@ export default function CryptoTradingPage() {
             </div>
           </div>
 
-          {selectedSignal?.reasoning && (
-            <p className="text-[13px] text-[var(--text-secondary)] mb-3 leading-relaxed">{selectedSignal.reasoning}</p>
-          )}
-
           {selectedSymbol ? (
-            <PriceChart symbol={selectedSymbol} type={chartType} height={420} showIntervals defaultInterval="1W" />
+            <PriceChart symbol={selectedSymbol} type={chartType} height={320} showIntervals defaultInterval="1W" />
           ) : (
             <div className="flex h-[420px] items-center justify-center text-sm text-[var(--text-muted)]">Select an asset from the scanner below</div>
           )}
 
-          {/* Indicators + AI context in a row */}
-          {(selectedSignal?.indicators?.length || (featuredOpportunity && featuredOpportunity.symbol === selectedSymbol)) && (
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              {/* Indicators */}
-              {selectedSignal?.indicators?.length ? (
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-2">Indicators</p>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {selectedSignal.indicators.map((indicator) => (
-                      <IndicatorBar key={indicator.name} name={indicator.name} value={indicator.value} signal={indicator.signal} description={indicator.description} />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {/* AI context */}
-              {featuredOpportunity && featuredOpportunity.symbol === selectedSymbol && (
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-2">AI Sizing</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Size</p><p className="text-sm font-semibold text-[var(--foreground)]">{format(featuredOpportunity.recommendedUsd)}</p></div>
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Confidence</p><p className="text-sm font-semibold text-[var(--foreground)]">{Math.round(featuredOpportunity.confidence * 100)}%</p></div>
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Risk</p><p className="text-sm font-semibold text-[var(--foreground)]">{featuredOpportunity.riskNote}</p></div>
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Edge</p><p className="text-sm font-semibold text-[var(--foreground)]">{featuredOpportunity.edgeScore.toFixed(0)}</p></div>
-                  </div>
-                </div>
-              )}
+          {/* Signal readout V2 — enriched sub-scores */}
+          {selectedSignal && selectedSignal.sub_scores?.length > 0 && (
+            <div className="mt-4">
+              <SignalReadout
+                direction={selectedSignal.direction}
+                directionLabel={selectedSignal.direction_label}
+                confidence={selectedSignal.confidence_score}
+                risk={selectedSignal.risk}
+                setupQuality={selectedSignal.setup_quality}
+                actionability={selectedSignal.actionability}
+                action={selectedSignal.action}
+                marketRegime={selectedSignal.market_regime}
+                signalContext={selectedSignal.signal_context}
+                subScores={selectedSignal.sub_scores}
+                keyReasons={selectedSignal.key_reasons}
+                contradictions={selectedSignal.contradictions}
+                tradePlan={selectedSignal.signal_trade_plan}
+              />
             </div>
           )}
-        </section>
-
-        {/* ============ 4. THREE COLUMNS: Scanner | Opportunities/Auto | Holdings ============ */}
-        <div className="grid grid-cols-1 gap-x-8 gap-y-8 lg:grid-cols-12">
-
-          {/* Col 1 (3/12) — Market Scanner */}
-          <div className="lg:col-span-3">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-[var(--foreground)]">Scanner</h2>
-              <span className="text-[11px] text-[var(--text-muted)]">{signalsLoading ? "..." : `${scannerAssets.length}`}</span>
-            </div>
-            <div className="space-y-0.5 max-h-[700px] overflow-y-auto custom-scrollbar pr-1">
-              {scannerAssets.map((asset) => {
-                const signal = signalMap[asset.symbol.toUpperCase()];
-                const livePrice = livePrices[asset.symbol.toUpperCase()];
-                const assetHolding = holdings.find((h) => h.symbol === asset.symbol);
-                return (
-                  <div key={asset.symbol} role="button" tabIndex={0}
-                    onClick={() => setSelectedSymbol(asset.symbol)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedSymbol(asset.symbol); }}
-                    className={cn("flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer transition-all",
-                      selectedSymbol === asset.symbol ? "bg-[var(--glass-bg-strong)]" : "hover:bg-[var(--glass-bg)]")}>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[13px] font-semibold text-[var(--foreground)]">{asset.symbol}</span>
-                        {assetHolding && <span className="text-[9px] text-[var(--text-muted)]">H</span>}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[11px] font-mono text-[var(--text-secondary)]">{format(livePrice ?? Number(asset.current_price ?? asset.price ?? 0), 2)}</span>
-                        <span className={cn("text-[10px] font-semibold", Number(asset.change_pct_24h ?? 0) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                          {Number(asset.change_pct_24h ?? 0) >= 0 ? "+" : ""}{Number(asset.change_pct_24h ?? 0).toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                    {signal ? <SignalBadge action={signal.action} confidence={signal.confidence} size="sm" blink={false} />
-                      : <span className="text-[9px] text-[var(--text-muted)]">...</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Col 2 (5/12) — Opportunities / Auto Pilot */}
-          <div className="lg:col-span-5 space-y-6">
-            {tradingMode === "manual" ? (
-              <>
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-semibold text-[var(--foreground)]">Opportunities</h2>
-                    <span className="text-[11px] text-[var(--text-muted)]">{opportunities.length} setups</span>
-                  </div>
-                  {opportunities.length > 0 ? opportunities.slice(0, 6).map((opp) => (
-                    <div key={`${opp.symbol}-${opp.action}`} className="py-3 border-b border-white/[0.04] last:border-0">
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[14px] font-semibold text-[var(--foreground)]">{opp.symbol}</span>
-                          <SignalBadge action={opp.action} confidence={opp.confidence} size="sm" blink={false} />
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[13px] font-semibold text-[var(--foreground)]">{format(opp.recommendedUsd)}</span>
-                          <p className="text-[11px] text-[var(--text-muted)]">{Math.round(opp.confidence * 100)}%</p>
-                        </div>
-                      </div>
-                      <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed mb-2">{opp.reasoning}</p>
-                      <div className="flex items-center gap-4 text-[12px]">
-                        <span className={cn("font-semibold", opp.side === "buy" ? "text-[var(--success)]" : "text-[var(--danger)]")}>{opp.side.toUpperCase()}</span>
-                        <span className="text-[var(--text-muted)]">{opp.riskNote}</span>
-                        <span className="text-[var(--text-muted)]">{opp.methods.join(" / ")}</span>
-                        <button onClick={() => primeOpportunity(opp)}
-                          disabled={!walletUnlocked}
-                          className={cn("ml-auto font-semibold disabled:opacity-40", opp.side === "buy" ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                          {walletUnlocked ? "Execute" : "Locked"}
-                        </button>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="py-6 text-center">
-                      <Sparkles className="h-5 w-5 mx-auto mb-2 text-[var(--text-muted)] opacity-30" />
-                      <p className="text-[13px] text-[var(--text-muted)]">Le scanner AI analyse les signaux...</p>
-                      <p className="text-[11px] text-[var(--text-muted)] mt-1">Les opportunit&eacute;s apparaitront d&egrave;s qu&apos;un setup sera qualifi&eacute;.</p>
-                    </div>
-                  )}
-                </div>
-                {/* Execution feed */}
-                <div>
-                  <h3 className="text-xs font-semibold text-[var(--foreground)] mb-3">Execution Feed</h3>
-                  <div className="space-y-1">
-                    {executionFeed.slice(0, 6).map((entry) => (
-                      <div key={entry.id} className="flex items-center justify-between py-2">
-                        <div>
-                          <span className="text-[13px] font-semibold text-[var(--foreground)]">
-                            {entry.symbol} {entry.side.toUpperCase()}
-                          </span>
-                          <span className="text-[11px] text-[var(--text-muted)] ml-2">
-                            {formatRelative(entry.timestamp)}
-                          </span>
-                          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                            {entry.execution_price != null
-                              ? `Filled @ ${format(entry.execution_price, 2)}`
-                              : entry.requested_price != null
-                                ? `Target @ ${format(entry.requested_price, 2)}`
-                                : "Awaiting fill"}
-                            {entry.fee > 0 ? ` · Fee ${format(entry.fee, 2)}` : ""}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[12px] font-semibold text-[var(--foreground)]">{entry.status}</span>
-                          <span className="text-[11px] text-[var(--text-muted)] ml-2">{entry.quantity.toFixed(6)}</span>
-                        </div>
-                      </div>
-                    ))}
-                    {executionFeed.length === 0 && <p className="text-[12px] text-[var(--text-muted)]">No execution activity yet.</p>}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* ===== AUTO PILOT PANEL ===== */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
-                      <Bot className="h-3.5 w-3.5 accent-text" /> Auto Pilot
-                    </h2>
-                    <span className={cn("text-[11px] font-semibold", autoStatus?.enabled ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>
-                      {autoStatus?.enabled ? "ARMED" : "MONITORING"}
-                    </span>
-                  </div>
-
-                  {/* AI Status row */}
-                  <div className="grid grid-cols-4 gap-3 mb-4">
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Last run</p><p className="text-[13px] font-semibold text-[var(--foreground)]">{formatMaybe(autoStatus?.last_run)}</p></div>
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Trades</p><p className="text-[13px] font-semibold text-[var(--foreground)]">{autoStatus?.trades_today ?? 0}</p></div>
-                    <div><p className="text-[11px] text-[var(--text-muted)]">AI PnL</p><p className={cn("text-[13px] font-semibold", (autoStatus?.total_pnl ?? 0) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{format(autoStatus?.total_pnl ?? 0)}</p></div>
-                    <div><p className="text-[11px] text-[var(--text-muted)]">Regime</p><p className={cn("text-[13px] font-semibold", regime.tone)}>{regime.label}</p></div>
-                  </div>
-
-                  {/* Active Strategies */}
-                  <h3 className="text-xs font-semibold text-[var(--foreground)] mb-2">Active Strategies</h3>
-                  {activeStrategies.length > 0 ? activeStrategies.map((strat) => (
-                    <div key={strat.id} className="py-2.5 border-b border-white/[0.04] last:border-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[13px] font-semibold text-[var(--foreground)]">{strat.name}</span>
-                        <span className="text-[11px] font-semibold text-[var(--success)]">active</span>
-                      </div>
-                      <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">{strat.description}</p>
-                      {strat.performance && (
-                        <div className="flex gap-4 mt-1.5 text-[11px] text-[var(--text-muted)]">
-                          <span>Win {(strat.performance.win_rate * 100).toFixed(0)}%</span>
-                          <span>Sharpe {strat.performance.sharpe_ratio.toFixed(2)}</span>
-                        </div>
-                      )}
-                    </div>
-                  )) : <p className="text-[12px] text-[var(--text-muted)] mb-3">No active strategies.</p>}
-                </div>
-
-                {/* Decision Ledger — AI thinking/actions log */}
-                <div>
-                  <h3 className="text-xs font-semibold text-[var(--foreground)] mb-3 flex items-center gap-1.5">
-                    <Zap className="h-3 w-3 accent-text" /> Decision Ledger
-                  </h3>
-                  {decisionLedger.length > 0 ? (
-                    <div className="space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
-                      {decisionLedger.slice(0, 10).map((entry) => (
-                        <div key={entry.id} className="py-2.5 border-b border-white/[0.04] last:border-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[13px] font-semibold text-[var(--foreground)]">{entry.symbol}</span>
-                              <span className={cn("text-[11px] font-semibold", entry.action.includes("BUY") ? "text-[var(--success)]" : "text-[var(--danger)]")}>{entry.action}</span>
-                              <span className="text-[10px] text-[var(--text-muted)]">{entry.strategy}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[12px] font-semibold font-mono text-[var(--foreground)]">{format(entry.amountUsd)}</span>
-                              <span className="text-[10px] text-[var(--text-muted)]">{formatRelative(entry.timestamp)}</span>
-                            </div>
-                          </div>
-                          <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">{entry.analysis}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-6 text-center">
-                      <Bot className="h-5 w-5 mx-auto mb-2 text-[var(--text-muted)] opacity-30" />
-                      <p className="text-[12px] text-[var(--text-muted)]">Les d&eacute;cisions AI apparaitront ici d&egrave;s que l&apos;autopilote ex&eacute;cutera un cycle.</p>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Col 3 (4/12) — Holdings + Performance */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Holdings */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-semibold text-[var(--foreground)]">Holdings</h2>
-                <span className="text-[11px] text-[var(--text-muted)]">{holdings.length} lines</span>
-              </div>
-              {!walletUnlocked ? (
-                <WalletAccessPanel
-                  compact
-                  title="Holdings stay hidden until you connect your own account"
-                  reason="You can still use the scanner, price chart, signals and market regime view in read-only mode."
-                />
-              ) : (
-                <div className="space-y-1.5">
-                {holdings.slice(0, 8).map((holding) => (
-                  <div key={holding.symbol} className="flex items-center justify-between py-1.5">
-                    <div>
-                      <p className="text-[13px] font-semibold text-[var(--foreground)]">{holding.symbol}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">{holding.total.toFixed(holding.price >= 1000 ? 4 : 6)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[13px] font-semibold text-[var(--foreground)]">{format(holding.value)}</p>
-                      <p className={cn("text-[10px]", holding.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{holding.changePct >= 0 ? "+" : ""}{holding.changePct.toFixed(2)}%</p>
-                    </div>
-                  </div>
-                ))}
-                {holdings.length === 0 && <p className="text-[12px] text-[var(--text-muted)]">No funded balances.</p>}
-                </div>
-              )}
-            </div>
-
-            {/* Performance */}
-            <div>
-              <h2 className="text-xs font-semibold text-[var(--foreground)] mb-3">Performance</h2>
-              {!walletUnlocked ? (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <div><p className="text-[11px] text-[var(--text-muted)]">Sharpe</p><p className="text-sm font-semibold text-[var(--foreground)]">Locked</p></div>
-                  <div><p className="text-[11px] text-[var(--text-muted)]">Win rate</p><p className="text-sm font-semibold text-[var(--foreground)]">Locked</p></div>
-                  <div><p className="text-[11px] text-[var(--text-muted)]">Trades</p><p className="text-sm font-semibold text-[var(--foreground)]">Locked</p></div>
-                  <div><p className="text-[11px] text-[var(--text-muted)]">AI PnL</p><p className="text-sm font-semibold text-[var(--foreground)]">Locked</p></div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <div><p className="text-[11px] text-[var(--text-muted)]">Sharpe</p><p className="text-sm font-semibold text-[var(--foreground)]">{analytics ? analytics.sharpe_ratio.toFixed(2) : "--"}</p></div>
-                  <div><p className="text-[11px] text-[var(--text-muted)]">Win rate</p><p className="text-sm font-semibold text-[var(--foreground)]">{analytics ? `${(analytics.win_rate * 100).toFixed(0)}%` : "--"}</p></div>
-                  <div><p className="text-[11px] text-[var(--text-muted)]">Trades</p><p className="text-sm font-semibold text-[var(--foreground)]">{autoStatus?.trades_today ?? analytics?.total_trades ?? 0}</p></div>
-                  <div><p className="text-[11px] text-[var(--text-muted)]">AI PnL</p><p className={cn("text-sm font-semibold", (autoStatus?.total_pnl ?? 0) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{format(autoStatus?.total_pnl ?? 0)}</p></div>
-                </div>
-              )}
-            </div>
-
-            {/* Positions */}
-            {positions.length > 0 && (
-              <div>
-                <h2 className="text-xs font-semibold text-[var(--foreground)] mb-3">Open Positions</h2>
-                <div className="space-y-1.5">
-                  {positions.slice(0, 5).map((pos) => (
-                    <div key={pos.id} className="flex items-center justify-between py-1.5">
-                      <div>
-                        <p className="text-[13px] font-semibold text-[var(--foreground)]">{pos.symbol}</p>
-                        <p className="text-[10px] text-[var(--text-muted)]">Entry {format(Number(pos.avg_entry_price ?? 0), 2)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={cn("text-[13px] font-semibold", Number(pos.pnl ?? 0) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{format(Number(pos.pnl ?? 0))}</p>
-                        <p className="text-[10px] text-[var(--text-muted)]">{Number(pos.pnl_pct ?? 0) >= 0 ? "+" : ""}{Number(pos.pnl_pct ?? 0).toFixed(2)}%</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
+          </section>
         </div>
 
-        {/* ============ 5. AI REASONING MONITOR — always visible bottom panel ============ */}
-        <AIReasoningMonitor
-          entries={monitorEntries}
-          loading={loading}
-          tradingMode={tradingMode}
-          armed={Boolean(autoStatus?.enabled)}
-        />
+
       </div>
 
       {tradeModalOpen && selectedSymbol ? (
         <QuickTradeModal
           symbol={selectedSymbol}
-          price={Number(livePrices[selectedSymbol.toUpperCase()] ?? selectedAsset?.current_price ?? selectedAsset?.price ?? selectedPosition?.current_price ?? 0)}
+          price={resolveAssetPrice(selectedSymbol.toUpperCase(), selectedAsset) || Number(selectedPosition?.current_price ?? 0)}
           initialSide={tradeIntent.side}
           initialUsdAmount={tradeIntent.amount}
           availableQuote={cashValue}

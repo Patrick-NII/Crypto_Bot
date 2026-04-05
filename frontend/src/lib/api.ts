@@ -524,7 +524,147 @@ function normalizeRiskProfile(profile: BackendRiskProfile): RiskProfile {
 // In-memory cache to avoid hammering Binance on every page nav
 let _tickerCache: { data: BinanceTicker[]; ts: number } | null = null;
 const TICKER_CACHE_MS = 10000; // 10s cache
+const OHLCV_CACHE_MS = 15_000;
+const PERSISTED_OHLCV_CACHE_MS = 300_000;
+const SIGNAL_CACHE_MS = 20_000;
+const PERSISTED_SIGNAL_CACHE_MS = 180_000;
+const MARKET_CACHE_MS = 10_000;
+const SNAPSHOT_CACHE_MS = 5_000;
+const ME_CACHE_MS = 10_000;
+const FEAR_GREED_CACHE_MS = 60_000;
 const DEFAULT_PRICE_SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"];
+const _ohlcvCache = new Map<string, { ts: number; data: OHLCVPoint[]; promise?: Promise<OHLCVPoint[]> }>();
+const _signalCache = new Map<string, { ts: number; data?: SignalData; promise?: Promise<SignalData> }>();
+let _marketCache: { data: AllCryptosResponse; ts: number } | null = null;
+let _meCache: { data: UserProfile; ts: number } | null = null;
+let _fearGreedCache: { data: { value: number; label: string }; ts: number } | null = null;
+let _snapshotCache: { scope: string; data: PortfolioSnapshot; ts: number } | null = null;
+const CLIENT_CACHE_PREFIX = "okamoey-cache:v1:";
+
+function currentCacheScope() {
+  const token = getAccessToken();
+  return token ? token.slice(-16) : "anon";
+}
+
+function clientCacheKey(key: string, scoped = false) {
+  return `${CLIENT_CACHE_PREFIX}${scoped ? `${currentCacheScope()}:` : ""}${key}`;
+}
+
+function readClientCache<T>(key: string, maxAge = Number.POSITIVE_INFINITY): { data: T; ts: number } | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data?: T; ts?: number };
+    if (parsed.ts == null || parsed.data == null) return null;
+    if (Date.now() - parsed.ts > maxAge) return null;
+    return { data: parsed.data, ts: parsed.ts };
+  } catch {
+    return null;
+  }
+}
+
+function writeClientCache<T>(key: string, data: T) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+  } catch {
+    // Ignore storage quota issues.
+  }
+}
+
+function trimAllCryptosResponse(response: AllCryptosResponse, limit: number): AllCryptosResponse {
+  const data = response.data.slice(0, limit);
+  return {
+    data,
+    total: Math.max(response.total ?? data.length, data.length),
+    page: 1,
+    limit,
+  };
+}
+
+function rememberAllCryptos(response: AllCryptosResponse) {
+  const payload = trimAllCryptosResponse(response, response.data.length);
+  _marketCache = { data: payload, ts: Date.now() };
+  writeClientCache(clientCacheKey("markets:all"), payload);
+  return payload;
+}
+
+function readPersistedAllCryptos() {
+  const cached = readClientCache<AllCryptosResponse>(clientCacheKey("markets:all"), MARKET_CACHE_MS);
+  if (!cached) return null;
+  _marketCache = cached;
+  return cached.data;
+}
+
+function rememberMe(profile: UserProfile) {
+  _meCache = { data: profile, ts: Date.now() };
+  writeClientCache(clientCacheKey("auth:me", true), profile);
+  return profile;
+}
+
+function readPersistedMe(maxAge = ME_CACHE_MS) {
+  const cached = readClientCache<UserProfile>(clientCacheKey("auth:me", true), maxAge);
+  if (!cached) return null;
+  _meCache = cached;
+  return cached.data;
+}
+
+function rememberFearGreed(data: { value: number; label: string }) {
+  _fearGreedCache = { data, ts: Date.now() };
+  writeClientCache(clientCacheKey("markets:fear-greed"), data);
+  return data;
+}
+
+function readPersistedFearGreed(maxAge = FEAR_GREED_CACHE_MS) {
+  const cached = readClientCache<{ value: number; label: string }>(
+    clientCacheKey("markets:fear-greed"),
+    maxAge,
+  );
+  if (!cached) return null;
+  _fearGreedCache = cached;
+  return cached.data;
+}
+
+function rememberSnapshot(snapshot: PortfolioSnapshot) {
+  const scope = currentCacheScope();
+  _snapshotCache = { scope, data: snapshot, ts: Date.now() };
+  writeClientCache(clientCacheKey("portfolio:snapshot", true), snapshot);
+  return snapshot;
+}
+
+function readPersistedSnapshot(maxAge = SNAPSHOT_CACHE_MS) {
+  const cached = readClientCache<PortfolioSnapshot>(clientCacheKey("portfolio:snapshot", true), maxAge);
+  if (!cached) return null;
+  _snapshotCache = { scope: currentCacheScope(), data: cached.data, ts: cached.ts };
+  return cached.data;
+}
+
+function readPersistedOHLCV(key: string, maxAge = PERSISTED_OHLCV_CACHE_MS) {
+  return readClientCache<OHLCVPoint[]>(clientCacheKey(`ohlcv:${key}`), maxAge);
+}
+
+function rememberOHLCV(key: string, data: OHLCVPoint[]) {
+  _ohlcvCache.set(key, { ts: Date.now(), data });
+  writeClientCache(clientCacheKey(`ohlcv:${key}`), data);
+  return data;
+}
+
+function readPersistedSignal(key: string, maxAge = PERSISTED_SIGNAL_CACHE_MS) {
+  return readClientCache<SignalData>(clientCacheKey(`signal:${key}`), maxAge);
+}
+
+function rememberSignal(key: string, data: SignalData) {
+  const normalized = {
+    ...data,
+    symbol: data.symbol.toUpperCase(),
+  };
+  _signalCache.set(key, { ts: Date.now(), data: normalized });
+  writeClientCache(clientCacheKey(`signal:${key}`), normalized);
+  return normalized;
+}
 
 function normalizeHistoryPoint(point: BackendHistoryPoint): OHLCVPoint {
   return {
@@ -728,7 +868,17 @@ async function getAllTickers(): Promise<BinanceTicker[]> {
 // ---- Prices / Market Data (ALL from Binance) ----
 
 export const pricesApi = {
+  peekAllCryptos: (limit = 250): AllCryptosResponse | null => {
+    if (_marketCache?.data) return trimAllCryptosResponse(_marketCache.data, limit);
+    const persisted = readPersistedAllCryptos();
+    return persisted ? trimAllCryptosResponse(persisted, limit) : null;
+  },
+
   getAllCryptos: async (limit = 250): Promise<AllCryptosResponse> => {
+    if (_marketCache && Date.now() - _marketCache.ts < MARKET_CACHE_MS) {
+      return trimAllCryptosResponse(_marketCache.data, limit);
+    }
+
     try {
       const tickers = await getAllTickers();
       if (tickers.length > 0) {
@@ -736,7 +886,7 @@ export const pricesApi = {
           .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
           .slice(0, limit);
 
-        return {
+        return rememberAllCryptos({
           data: sorted.map((t, i) => {
             const sym = t.symbol.replace("USDT", "");
             return {
@@ -762,51 +912,118 @@ export const pricesApi = {
           total: sorted.length,
           page: 1,
           limit,
-        };
+        });
       }
     } catch {
       // Gateway fallback below
     }
 
     const backend = await fetchJson<BackendMarketListingResponse>(`/markets/all?limit=${limit}&page=1`);
-    return {
+    return rememberAllCryptos({
       data: backend.data.map((coin, index) => normalizeBackendCrypto(coin, index)),
       total: backend.total,
       page: backend.page,
       limit: backend.limit,
-    };
+    });
+  },
+
+  peekOHLCV: (symbol: string, interval = "1d", limit = 90): OHLCVPoint[] => {
+    const key = `${symbol.toUpperCase()}|${interval}|${limit}`;
+    const memory = _ohlcvCache.get(key);
+    if (memory?.data?.length) return memory.data;
+
+    const persisted = readPersistedOHLCV(key, Number.POSITIVE_INFINITY);
+    if (!persisted?.data?.length) return [];
+    _ohlcvCache.set(key, { ts: persisted.ts, data: persisted.data });
+    return persisted.data;
   },
 
   getOHLCV: async (symbol: string, interval = "1d", limit = 90): Promise<OHLCVPoint[]> => {
-    try {
-      const response = await fetchJson<BackendHistoryResponse>(
-        `/prices/history/${symbol.toUpperCase()}?interval=${encodeURIComponent(interval)}&limit=${limit}`,
-      );
-      return response.data.map(normalizeHistoryPoint);
-    } catch {
+    const key = `${symbol.toUpperCase()}|${interval}|${limit}`;
+    const persisted = readPersistedOHLCV(key);
+    if (persisted?.data?.length && !_ohlcvCache.has(key)) {
+      _ohlcvCache.set(key, { ts: persisted.ts, data: persisted.data });
+    }
+
+    const cached = _ohlcvCache.get(key);
+
+    if (cached?.data && Date.now() - cached.ts < OHLCV_CACHE_MS) {
+      return cached.data;
+    }
+
+    if (cached?.promise) {
+      return cached.promise;
+    }
+
+    const request = (async () => {
       try {
-        const pair = `${symbol.toUpperCase()}USDT`;
-        const data = await fetchBinance<number[][]>(`/klines?symbol=${pair}&interval=${interval}&limit=${limit}`);
-        return data.map(normalizeKlineRow);
+        const response = await fetchJson<BackendHistoryResponse>(
+          `/prices/history/${symbol.toUpperCase()}?interval=${encodeURIComponent(interval)}&limit=${limit}`,
+        );
+        const data = response.data.map(normalizeHistoryPoint);
+        return rememberOHLCV(key, data);
       } catch {
-        return [];
+        try {
+          const pair = `${symbol.toUpperCase()}USDT`;
+          const data = await fetchBinance<number[][]>(`/klines?symbol=${pair}&interval=${interval}&limit=${limit}`);
+          const normalized = data.map(normalizeKlineRow);
+          return rememberOHLCV(key, normalized);
+        } catch {
+          const stale = _ohlcvCache.get(key)?.data ?? persisted?.data ?? [];
+          if (stale.length > 0) {
+            rememberOHLCV(key, stale);
+          } else {
+            _ohlcvCache.set(key, { ts: Date.now(), data: stale });
+          }
+          return stale;
+        }
+      }
+    })();
+
+    _ohlcvCache.set(key, {
+      ts: cached?.ts ?? 0,
+      data: cached?.data ?? [],
+      promise: request,
+    });
+
+    try {
+      return await request;
+    } finally {
+      const latest = _ohlcvCache.get(key);
+      if (latest?.promise === request) {
+        _ohlcvCache.set(key, {
+          ts: latest.ts,
+          data: latest.data,
+        });
       }
     }
   },
 
+  peekFearGreed: (): { value: number; label: string } | null => {
+    if (_fearGreedCache?.data) return _fearGreedCache.data;
+    return readPersistedFearGreed(Number.POSITIVE_INFINITY);
+  },
+
   getFearGreed: async (): Promise<{ value: number; label: string }> => {
+    if (_fearGreedCache && Date.now() - _fearGreedCache.ts < FEAR_GREED_CACHE_MS) {
+      return _fearGreedCache.data;
+    }
+
     try {
       const response = await fetchJson<BackendFearGreedResponse>("/markets/fear-greed");
-      return {
+      return rememberFearGreed({
         value: Number(response.data.value ?? 50),
         label: String(response.data.classification ?? "Neutral"),
-      };
+      });
     } catch {
       try {
         const r = await fetch("https://api.alternative.me/fng/?limit=1&format=json");
         const d = await r.json();
         const e = d?.data?.[0];
-        return { value: Number(e?.value ?? 50), label: String(e?.value_classification ?? "Neutral") };
+        return rememberFearGreed({
+          value: Number(e?.value ?? 50),
+          label: String(e?.value_classification ?? "Neutral"),
+        });
       } catch {
         return { value: 50, label: "Neutral" };
       }
@@ -898,6 +1115,12 @@ export const binanceApi = {
 // ---- Portfolio ----
 
 export const portfolioApi = {
+  peekSnapshot: () => {
+    if (_snapshotCache && _snapshotCache.scope === currentCacheScope()) {
+      return _snapshotCache.data;
+    }
+    return readPersistedSnapshot(Number.POSITIVE_INFINITY);
+  },
   list: async () => {
     const portfolios = await fetchJson<BackendPortfolio[]>("/portfolios");
     return portfolios.map(normalizePortfolio);
@@ -914,8 +1137,22 @@ export const portfolioApi = {
   },
   getTransactions: async () => [],
   getSnapshot: async () => {
-    const snapshot = await fetchJson<BackendPortfolioSnapshot>("/portfolios/snapshot");
-    return normalizePortfolioSnapshot(snapshot);
+    if (
+      _snapshotCache &&
+      _snapshotCache.scope === currentCacheScope() &&
+      Date.now() - _snapshotCache.ts < SNAPSHOT_CACHE_MS
+    ) {
+      return _snapshotCache.data;
+    }
+
+    try {
+      const snapshot = await fetchJson<BackendPortfolioSnapshot>("/portfolios/snapshot");
+      return rememberSnapshot(normalizePortfolioSnapshot(snapshot));
+    } catch (error) {
+      const stale = portfolioApi.peekSnapshot();
+      if (stale) return stale;
+      throw error;
+    }
   },
   closePosition: (positionId: string) => fetchJson<TradeResult>(`/positions/${positionId}/close`, { method: "POST" }),
   updateStopLoss: (positionId: string, stopLoss: number) =>
@@ -987,6 +1224,12 @@ export const tradingApi = {
 
 // ---- Signals (computed from Binance klines) ----
 
+interface SubScoreData {
+  category: string;
+  score: number;
+  label: string;
+}
+
 interface SignalData {
   symbol: string;
   action: string;
@@ -995,6 +1238,24 @@ interface SignalData {
   reasoning: string;
   indicators: Array<{ name: string; value: number; signal: number; description: string }>;
   timestamp: string;
+  // Enhanced scoring (V2)
+  score_100: number;
+  action_label: string;
+  confidence_level: string;
+  status: string;
+  sub_scores: SubScoreData[];
+  key_reasons: string[];
+  // V3 multi-dimensional
+  direction: number;
+  direction_label: string;
+  confidence_score: number;
+  risk: number;
+  setup_quality: number;
+  actionability: string;
+  market_regime: string;
+  signal_context: string;
+  contradictions: Array<{ description: string; severity: string }>;
+  signal_trade_plan: { side: string; entry_zone: string; invalidation_zone: string; target_zone: string; risk_reward: string; validity: string; execution_style: string } | null;
 }
 
 async function computeSignal(symbol: string): Promise<SignalData> {
@@ -1005,7 +1266,7 @@ async function computeSignal(symbol: string): Promise<SignalData> {
   } catch { /* empty */ }
 
   if (closes.length < 15) {
-    return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Insufficient data", indicators: [], timestamp: new Date().toISOString() };
+    return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Insufficient data", indicators: [], timestamp: new Date().toISOString(), score_100: 50, action_label: "Neutre / attente", confidence_level: "faible", status: "ignore", sub_scores: [], key_reasons: ["Donnees insuffisantes"], direction: 50, direction_label: "Neutre / attente", confidence_score: 0, risk: 50, setup_quality: 0, actionability: "IGNORE", market_regime: "UNKNOWN", signal_context: "mixed", contradictions: [], signal_trade_plan: null };
   }
 
   // RSI
@@ -1034,26 +1295,129 @@ async function computeSignal(symbol: string): Promise<SignalData> {
   const score = (rsiSig*1.2 + emaSig*1.1 + bbSig*1.0) / 3.3;
   const action = score > 0.5 ? "STRONG_BUY" : score > 0.25 ? "BUY" : score > 0.08 ? "ACCUMULATE" : score > -0.08 ? "HOLD" : score > -0.25 ? "REDUCE" : score > -0.5 ? "SELL" : "STRONG_SELL";
 
+  // Enhanced scoring: convert -1..+1 to 0..100
+  const score_100 = Math.max(0, Math.min(100, Math.round((score + 1) / 2 * 100)));
+  const momentumScore = Math.max(0, Math.min(100, Math.round((rsiSig + 1) / 2 * 100)));
+  const trendScore = Math.max(0, Math.min(100, Math.round((emaSig + 1) / 2 * 100)));
+  const volatilityScore = Math.max(0, Math.min(100, Math.round(((bbSig * -1) + 1) / 2 * 100))); // invert: low BB = high vol opportunity
+
+  const labelMap = (s: number) => s >= 80 ? "Achat fort" : s >= 70 ? "Achat" : s >= 60 ? "Achat prudent" : s >= 45 ? "Neutre / attente" : s >= 30 ? "Biais vendeur" : "Vente forte";
+  const momLabel = (s: number) => s >= 80 ? "Impulsion forte" : s >= 60 ? "En acceleration" : s >= 40 ? "Neutre" : s >= 20 ? "Pression baissiere" : "Epuisement vendeur";
+  const trendLabel = (s: number) => s >= 80 ? "Tendance tres forte" : s >= 60 ? "Tendance haussiere" : s >= 40 ? "Consolidation" : s >= 20 ? "Tendance fragile" : "Tendance baissiere forte";
+  const volLabel = (s: number) => s >= 80 ? "Volatilite extreme" : s >= 60 ? "En expansion" : s >= 40 ? "Expansion moderee" : s >= 20 ? "Faible expansion" : "Calme / compresse";
+
+  // Confidence from indicator agreement
+  const sigs = [rsiSig, emaSig, bbSig];
+  const posCount = sigs.filter(s => s > 0.15).length;
+  const negCount = sigs.filter(s => s < -0.15).length;
+  const agreement = Math.max(posCount, negCount) / sigs.length;
+  const confLevel = agreement >= 0.85 ? "tres eleve" : agreement >= 0.65 ? "eleve" : agreement >= 0.45 ? "moyen" : "faible";
+
+  // Status
+  const isExtreme = score_100 >= 75 || score_100 <= 25;
+  const isDirectional = score_100 >= 60 || score_100 <= 40;
+  const status = isExtreme && agreement >= 0.65 ? "high_conviction" : isDirectional ? "actionable" : agreement < 0.45 ? "watch" : "ignore";
+
+  // Key reasons (top 2 by signal strength)
+  const indicators = [
+    { name: "RSI", value: Math.round(rsi), signal: rsiSig, description: rsi < 30 ? `RSI ${rsi.toFixed(0)} — Zone de survente` : rsi > 70 ? `RSI ${rsi.toFixed(0)} — Zone de surachat` : rsi < 45 ? `RSI ${rsi.toFixed(0)} — Momentum en reprise` : rsi > 55 ? `RSI ${rsi.toFixed(0)} — Pression vendeuse` : `RSI ${rsi.toFixed(0)} — Zone neutre` },
+    { name: "EMA Cross", value: Math.round(ed*100)/100, signal: emaSig, description: (ed > 0 && pd <= 0) ? "Croisement haussier EMA 9/21" : (ed < 0 && pd >= 0) ? "Croisement baissier EMA 9/21" : ed > 0 ? "EMA haussiere alignee" : "EMA baissiere alignee" },
+    { name: "Bollinger", value: Math.round(pos*100)/100, signal: bbSig, description: pos < 0.15 ? "Prix sous bande basse — rebond probable" : pos > 0.85 ? "Prix sur bande haute — risque de rejet" : pos < 0.4 ? "Prix en zone basse des bandes" : pos > 0.6 ? "Prix en zone haute des bandes" : "Prix au milieu des bandes" },
+  ];
+  const sortedByStrength = [...indicators].sort((a, b) => Math.abs(b.signal) - Math.abs(a.signal));
+  const key_reasons = sortedByStrength.slice(0, 2).filter(i => Math.abs(i.signal) > 0.1).map(i => i.description);
+
   return {
     symbol: symbol.toUpperCase(),
     action,
     confidence: Math.min(Math.abs(score), 1),
     score: Math.round(score * 1000) / 1000,
     reasoning: `RSI=${rsi.toFixed(0)}, EMA${ed>0?"+":"-"}, BB${pos<0.3?"low":pos>0.7?"high":"mid"}`,
-    indicators: [
-      { name: "RSI", value: Math.round(rsi), signal: rsiSig, description: `RSI ${rsi.toFixed(0)} — ${rsi<30?"Oversold":rsi>70?"Overbought":"Neutral"}` },
-      { name: "EMA Cross", value: Math.round(ed*100)/100, signal: emaSig, description: `EMA 9/21 ${ed>0?"bullish":"bearish"}` },
-      { name: "Bollinger", value: Math.round(pos*100)/100, signal: bbSig, description: `Price at ${(pos*100).toFixed(0)}% of bands` },
-    ],
+    indicators,
     timestamp: new Date().toISOString(),
+    score_100,
+    action_label: labelMap(score_100),
+    confidence_level: confLevel,
+    status,
+    sub_scores: [
+      { category: "momentum", score: momentumScore, label: momLabel(momentumScore) },
+      { category: "trend", score: trendScore, label: trendLabel(trendScore) },
+      { category: "volatility", score: volatilityScore, label: volLabel(volatilityScore) },
+    ],
+    key_reasons: key_reasons.length > 0 ? key_reasons : ["Signaux mixtes — pas de direction claire"],
+    // V3 multi-dimensional
+    direction: score_100,
+    direction_label: labelMap(score_100),
+    confidence_score: Math.round(agreement * 100),
+    risk: Math.max(0, Math.min(100, 30 + (score_100 >= 80 || score_100 <= 20 ? 20 : 0) + (agreement < 0.45 ? 15 : 0))),
+    setup_quality: Math.max(0, Math.min(100, Math.round(agreement * 70) + (score_100 >= 60 || score_100 <= 40 ? 15 : 0))),
+    actionability: (Math.abs(score_100 - 50) >= 25 && agreement >= 0.65) ? "HIGH_CONVICTION" : (Math.abs(score_100 - 50) >= 15 && agreement >= 0.45) ? "ACTIONABLE" : Math.abs(score_100 - 50) >= 10 ? "WATCH" : "IGNORE",
+    market_regime: "UNKNOWN",
+    signal_context: "mixed",
+    contradictions: (rsiSig > 0.3 && emaSig < -0.3) || (rsiSig < -0.3 && emaSig > 0.3) ? [{ description: "RSI et EMA en desaccord", severity: "moderate" }] : [],
+    signal_trade_plan: null,
   };
 }
 
 export const signalsApi = {
-  getSignal: (symbol: string) => computeSignal(symbol),
+  peekSignal: (symbol: string): SignalData | null => {
+    const key = symbol.toUpperCase();
+    const memory = _signalCache.get(key);
+    if (memory?.data) return memory.data;
+
+    const persisted = readPersistedSignal(key, Number.POSITIVE_INFINITY);
+    if (!persisted?.data) return null;
+
+    _signalCache.set(key, { ts: persisted.ts, data: persisted.data });
+    return persisted.data;
+  },
+  getSignal: async (symbol: string) => {
+    const key = symbol.toUpperCase();
+    const persisted = readPersistedSignal(key);
+    if (persisted?.data && !_signalCache.has(key)) {
+      _signalCache.set(key, { ts: persisted.ts, data: persisted.data });
+    }
+
+    const cached = _signalCache.get(key);
+    if (cached?.data && Date.now() - cached.ts < SIGNAL_CACHE_MS) {
+      return cached.data;
+    }
+
+    if (cached?.promise) {
+      return cached.promise;
+    }
+
+    const request = (async () => {
+      try {
+        return rememberSignal(key, await computeSignal(key));
+      } catch (error) {
+        const stale = signalsApi.peekSignal(key);
+        if (stale) return stale;
+        throw error;
+      }
+    })();
+
+    _signalCache.set(key, {
+      ts: cached?.ts ?? persisted?.ts ?? 0,
+      data: cached?.data ?? persisted?.data,
+      promise: request,
+    });
+
+    try {
+      return await request;
+    } finally {
+      const latest = _signalCache.get(key);
+      if (latest?.promise === request) {
+        _signalCache.set(key, {
+          ts: latest.ts,
+          data: latest.data,
+        });
+      }
+    }
+  },
   getAllSignals: async () => {
     const syms = ["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","LINK"];
-    const results = await Promise.allSettled(syms.map(s => computeSignal(s)));
+    const results = await Promise.allSettled(syms.map((symbol) => signalsApi.getSignal(symbol)));
     return results.filter((r): r is PromiseFulfilledResult<SignalData> => r.status === "fulfilled").map(r => r.value);
   },
 };
@@ -1080,13 +1444,30 @@ export const alertsApi = {
 // ---- Auth / User ----
 
 export const authApi = {
+  peekCachedMe: () => {
+    if (_meCache) {
+      return _meCache.data;
+    }
+    return readPersistedMe(Number.POSITIVE_INFINITY);
+  },
   getMe: async () => {
     const token = getAccessToken();
     if (token === "demo-token") {
       const demo = getDemoUser();
       if (demo) return demo;
     }
-    return fetchJson<UserProfile>("/auth/me");
+    if (_meCache && Date.now() - _meCache.ts < ME_CACHE_MS) {
+      return _meCache.data;
+    }
+
+    try {
+      const me = await fetchJson<UserProfile>("/auth/me");
+      return rememberMe(me);
+    } catch (error) {
+      const stale = authApi.peekCachedMe();
+      if (stale) return stale;
+      throw error;
+    }
   },
   updateMe: (
     data: Partial<
