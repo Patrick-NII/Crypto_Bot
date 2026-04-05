@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, type IChartApi, type ISeriesApi, type Time, ColorType, CandlestickSeries, LineSeries } from "lightweight-charts";
 import { pricesApi } from "@/lib/api";
-import { priceWs } from "@/lib/websocket";
-import { cn } from "@/lib/utils";
+import { binanceStream } from "@/lib/binance-stream";
+import { cn, toChartTime } from "@/lib/utils";
+import type { OHLCVPoint } from "@/lib/types";
 
 const INTERVALS = [
   { label: "1H", value: "1m", limit: 60 },
@@ -23,6 +24,8 @@ interface PriceChartProps {
   className?: string;
   showIntervals?: boolean;
   defaultInterval?: string;
+  realtime?: boolean;
+  showLoader?: boolean;
 }
 
 interface CandlePoint {
@@ -51,6 +54,8 @@ export function PriceChart({
   className,
   showIntervals = false,
   defaultInterval = "1M",
+  realtime = true,
+  showLoader = true,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -61,6 +66,32 @@ export function PriceChart({
   const lastCandleRef = useRef<CandlePoint | null>(null);
 
   const interval = INTERVALS.find((i) => i.label === activeInterval) ?? INTERVALS[3];
+
+  const applyData = useCallback((data: OHLCVPoint[]) => {
+    if (!seriesRef.current || !chartRef.current || data.length === 0) return false;
+
+    if (type === "candlestick") {
+      const candleData = data.map((d) => ({
+        time: toChartTime(d.time) as Time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+      }));
+      (seriesRef.current as ISeriesApi<"Candlestick">).setData(candleData);
+      lastCandleRef.current = candleData[candleData.length - 1] ?? null;
+    } else {
+      const lineData = data.map((d) => ({
+        time: toChartTime(d.time) as Time,
+        value: d.close,
+      }));
+      (seriesRef.current as ISeriesApi<"Line">).setData(lineData);
+      lastCandleRef.current = null;
+    }
+
+    chartRef.current.timeScale().fitContent();
+    return true;
+  }, [type]);
 
   // Create chart
   useEffect(() => {
@@ -131,44 +162,34 @@ export function PriceChart({
   const fetchData = useCallback(async () => {
     if (!seriesRef.current || !chartRef.current) return;
 
-    setLoading(true);
-    setError(null);
+    const cachedData = pricesApi.peekOHLCV(symbol, interval.value, interval.limit);
+    const hasCachedData = cachedData.length > 0;
+    if (hasCachedData) {
+      applyData(cachedData);
+      setLoading(false);
+      setError(null);
+    } else {
+      lastCandleRef.current = null;
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const data = await pricesApi.getOHLCV(symbol, interval.value, interval.limit);
 
       if (!data || data.length === 0) {
-        setError("No data available");
+        if (!hasCachedData) setError("No data available");
         setLoading(false);
         return;
       }
 
-      if (type === "candlestick") {
-        const candleData = data.map((d) => ({
-          time: d.time as Time,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-        }));
-        (seriesRef.current as ISeriesApi<"Candlestick">).setData(candleData);
-        lastCandleRef.current = candleData[candleData.length - 1] ?? null;
-      } else {
-        const lineData = data.map((d) => ({
-          time: d.time as Time,
-          value: d.close,
-        }));
-        (seriesRef.current as ISeriesApi<"Line">).setData(lineData);
-        lastCandleRef.current = null;
-      }
-
-      chartRef.current.timeScale().fitContent();
+      applyData(data);
       setLoading(false);
     } catch {
-      setError("Failed to load chart data");
+      if (!hasCachedData) setError("Failed to load chart data");
       setLoading(false);
     }
-  }, [symbol, interval.value, interval.limit, type]);
+  }, [applyData, interval.limit, interval.value, symbol]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -177,35 +198,36 @@ export function PriceChart({
     return () => clearTimeout(timer);
   }, [fetchData]);
 
-  // WebSocket live updates
+  // Binance stream live updates (~1s)
   useEffect(() => {
-    if (!seriesRef.current) return;
+    if (!seriesRef.current || !realtime) return;
 
-    const unsub = priceWs.subscribe(symbol, (priceData) => {
+    const unsub = binanceStream.subscribe(symbol, (tick) => {
       if (!seriesRef.current) return;
-      const now = Math.floor(Date.now() / 1000) as Time;
+      const now = Math.floor(Date.now() / 1000);
 
       if (type === "line") {
         (seriesRef.current as ISeriesApi<"Line">).update({
-          time: now,
-          value: priceData.price,
+          time: toChartTime(now) as Time,
+          value: tick.price,
         });
         return;
       }
 
       const series = seriesRef.current as ISeriesApi<"Candlestick">;
       const bucketSize = intervalToSeconds(interval.value);
-      const bucketTime = (Math.floor(Number(now) / bucketSize) * bucketSize) as Time;
+      const rawBucketTime = Math.floor(now / bucketSize) * bucketSize;
+      const bucketTime = toChartTime(rawBucketTime) as Time;
       const previous = lastCandleRef.current;
 
       if (!previous || Number(previous.time) !== Number(bucketTime)) {
-        const open = previous?.close ?? priceData.price;
+        const open = previous?.close ?? tick.price;
         const nextCandle: CandlePoint = {
           time: bucketTime,
           open,
-          high: Math.max(open, priceData.price),
-          low: Math.min(open, priceData.price),
-          close: priceData.price,
+          high: Math.max(open, tick.price),
+          low: Math.min(open, tick.price),
+          close: tick.price,
         };
         lastCandleRef.current = nextCandle;
         series.update(nextCandle);
@@ -214,16 +236,16 @@ export function PriceChart({
 
       const nextCandle: CandlePoint = {
         ...previous,
-        high: Math.max(previous.high, priceData.price),
-        low: Math.min(previous.low, priceData.price),
-        close: priceData.price,
+        high: Math.max(previous.high, tick.price),
+        low: Math.min(previous.low, tick.price),
+        close: tick.price,
       };
       lastCandleRef.current = nextCandle;
       series.update(nextCandle);
     });
 
     return unsub;
-  }, [symbol, type, interval.value]);
+  }, [interval.value, realtime, symbol, type]);
 
   return (
     <div className={cn("relative w-full", className)}>
@@ -248,7 +270,7 @@ export function PriceChart({
       )}
 
       {/* Loading */}
-      {loading && (
+      {loading && showLoader && (
         <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-[#14141b]" style={{ height }}>
           <div className="flex flex-col items-center gap-2">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#06d6a0]/20 border-t-[#06d6a0]" />
