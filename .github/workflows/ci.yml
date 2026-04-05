@@ -1,0 +1,67 @@
+# =============================================================================
+# CI — Runs on every push and pull request
+# Validates code quality and builds Docker images
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [dev, staging, main]
+  pull_request:
+    branches: [dev, staging, main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/okamoey
+
+jobs:
+  # ── Frontend checks ──────────────────────────────────────────────
+  frontend:
+    name: Frontend lint & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  # ── Docker build validation ──────────────────────────────────────
+  docker-build:
+    name: Docker build (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - frontend
+          - gateway
+          - auth-service
+          - portfolio-service
+          - trading-engine
+          - market-data-service
+          - risk-service
+          - ai-agent-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service == 'frontend' && 'frontend' || format('services/{0}', matrix.service) }}
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:ci-${{ github.sha }}

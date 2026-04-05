@@ -1,0 +1,36 @@
+# Secrets — never include in Docker images
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code
+.claude
+
+# Node
+node_modules
+.next
+
+# Python
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+
+# Docker
+docker-compose*.yml
+Makefile
+
+# Docs
+*.md
+LICENSE

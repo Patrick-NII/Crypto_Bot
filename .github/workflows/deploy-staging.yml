@@ -1,0 +1,65 @@
+# =============================================================================
+# Deploy Staging — Triggered on push/merge to staging branch
+# Builds images, tags them, pushes to GitHub Container Registry
+# =============================================================================
+
+name: Deploy Staging
+
+on:
+  push:
+    branches: [staging]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/okamoey
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & Push (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: frontend
+            context: frontend
+          - service: gateway
+            context: services/gateway
+          - service: auth-service
+            context: services/auth-service
+          - service: portfolio-service
+            context: services/portfolio-service
+          - service: trading-engine
+            context: services/trading-engine
+          - service: market-data-service
+            context: services/market-data-service
+          - service: risk-service
+            context: services/risk-service
+          - service: ai-agent-service
+            context: services/ai-agent-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:staging
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:staging-${{ github.sha }}

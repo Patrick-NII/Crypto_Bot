@@ -1,0 +1,20 @@
+# =============================================================================
+# Okamoey — DEV environment override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Or simply: make dev
+#
+# Overrides ports for frontend (3100) and gateway (8100) so dev and staging
+# can coexist on the same machine. Shares postgres, redis, and all backend
+# services with staging to keep resource usage manageable.
+# =============================================================================
+
+services:
+  frontend:
+    container_name: okamoey-frontend-dev
+    ports:
+      - "${DEV_FRONTEND_PORT:-3100}:80"
+
+  gateway:
+    container_name: okamoey-gateway-dev
+    ports:
+      - "${DEV_GATEWAY_PORT:-8100}:8000"
