@@ -1,14 +1,18 @@
 from fastapi import FastAPI
 
 from app.api.ml import router as ml_router
+from app.api.ml_v2 import router as ml_v2_router
+from app.api.scanner import router as scanner_router
 
 app = FastAPI(
     title="ML Service",
-    description="Machine learning signals, backtesting, and model management",
-    version="0.1.0",
+    description="Signal engine, multi-asset scanner, and strategy ranking",
+    version="1.0.0",
 )
 
 app.include_router(ml_router)
+app.include_router(ml_v2_router)
+app.include_router(scanner_router)
 
 
 @app.get("/health")

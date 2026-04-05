@@ -29,6 +29,12 @@ SYM_TO_CG = {
 }
 
 
+class SubScoreItem(BaseModel):
+    category: str
+    score: int
+    label: str
+
+
 class SignalResponse(BaseModel):
     symbol: str
     action: str
@@ -40,6 +46,24 @@ class SignalResponse(BaseModel):
     price: float | None = None
     regime: str | None = None
     source: str = "market-data-service"
+    # Enhanced scoring V2
+    score_100: int | None = None
+    action_label: str | None = None
+    confidence_level: str | None = None
+    status: str | None = None
+    sub_scores: list[SubScoreItem] | None = None
+    key_reasons: list[str] | None = None
+    # V3 multi-dimensional
+    direction: int | None = None
+    direction_label: str | None = None
+    confidence_score: int | None = None
+    risk: int | None = None
+    setup_quality: int | None = None
+    actionability: str | None = None
+    market_regime: str | None = None
+    signal_context: str | None = None
+    contradictions: list[dict] | None = None
+    signal_trade_plan: dict | None = None
 
 
 class MultiSignalResponse(BaseModel):
@@ -159,6 +183,11 @@ async def _compute_signal(symbol: str, interval: str = "1h", lookback: int = 120
         )
 
     signal = generate_signal(symbol.upper(), closes, volumes if len(volumes) >= len(closes) else None)
+
+    # Enhanced scoring
+    from app.engine.enhanced_scoring import compute_enhanced_scores
+    enhanced = compute_enhanced_scores(signal.indicators, signal.score)
+
     return SignalResponse(
         symbol=signal.symbol,
         action=signal.action.value,
@@ -173,6 +202,36 @@ async def _compute_signal(symbol: str, interval: str = "1h", lookback: int = 120
         price=closes[-1],
         regime=_classify_regime(closes),
         source=source,
+        score_100=enhanced.score_100,
+        action_label=enhanced.label,
+        confidence_level=enhanced.confidence_level,
+        status=enhanced.actionability.lower(),
+        sub_scores=[
+            SubScoreItem(category=ss.category, score=ss.score, label=ss.label)
+            for ss in enhanced.sub_scores
+        ],
+        key_reasons=enhanced.key_reasons,
+        direction=enhanced.direction,
+        direction_label=enhanced.direction_label,
+        confidence_score=enhanced.confidence,
+        risk=enhanced.risk,
+        setup_quality=enhanced.setup_quality,
+        actionability=enhanced.actionability,
+        market_regime=enhanced.market_regime,
+        signal_context=enhanced.signal_context,
+        contradictions=[
+            {"description": c.description, "severity": c.severity}
+            for c in enhanced.contradictions
+        ],
+        signal_trade_plan={
+            "side": enhanced.trade_plan.side,
+            "entry_zone": enhanced.trade_plan.entry_zone,
+            "invalidation_zone": enhanced.trade_plan.invalidation_zone,
+            "target_zone": enhanced.trade_plan.target_zone,
+            "risk_reward": enhanced.trade_plan.risk_reward,
+            "validity": enhanced.trade_plan.validity,
+            "execution_style": enhanced.trade_plan.execution_style,
+        } if enhanced.trade_plan else None,
     )
 
 
@@ -181,8 +240,56 @@ async def get_signal(
     symbol: str,
     interval: str = Query("1h", description="Candlestick interval"),
     lookback: int = Query(120, ge=30, le=500, description="Number of candles"),
+    mode: str | None = Query(None, description="Trading mode: scalping, intraday, swing (optional, uses legacy path if omitted)"),
 ):
-    """Get a trading signal for a single symbol from the unified market feed."""
+    """Get a trading signal for a single symbol from the unified market feed.
+
+    Without `mode`: legacy behavior (backward-compatible).
+    With `mode`: uses the new multi-TF signal engine.
+    """
+    if mode and mode in ("scalping", "intraday", "swing"):
+        # New path: use evolved signal engine
+        from app.services.data_fetcher import fetch_multi_timeframe, fetch_closes_and_volumes
+        from app.engine.signal_engine import compute_signal as engine_compute
+        from app.engine.market_context import build_market_context
+        from app.settings.user_settings import get_settings
+        from dataclasses import asdict
+
+        settings = get_settings(mode)
+        tf_config = {settings.primary_timeframe: lookback}
+        for tf in settings.confirmation_timeframes:
+            tf_config[tf] = min(lookback, 60)
+
+        candles_by_tf = await fetch_multi_timeframe(symbol.upper(), tf_config)
+        btc_closes = None
+        if settings.btc_trend_filter and symbol.upper() != "BTC":
+            try:
+                c, _, _ = await fetch_closes_and_volumes("BTC", "15m", 100)
+                btc_closes = c if len(c) >= 20 else None
+            except Exception:
+                pass
+
+        result, ctx = engine_compute(symbol.upper(), candles_by_tf, settings, btc_closes)
+        primary_candles = candles_by_tf.get(settings.primary_timeframe, [])
+        price = primary_candles[-1].close if primary_candles else None
+
+        return SignalResponse(
+            symbol=symbol.upper(),
+            action=result.action,
+            confidence=result.confidence,
+            score=result.score,
+            reasoning=result.reasoning,
+            indicators=[
+                {"name": i.name, "value": i.value, "signal": i.signal, "description": i.description}
+                for i in result.indicators
+            ],
+            timestamp=_utc_now(),
+            price=price,
+            regime=ctx.regime,
+            source="signal-engine-v2",
+        )
+
+    # Legacy path: unchanged behavior
     return await _compute_signal(symbol.upper(), interval=interval, lookback=lookback)
 
 
