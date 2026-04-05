@@ -1,0 +1,467 @@
+"""Enhanced Scoring V2 — multi-dimensional decision engine.
+
+5 independent scoring dimensions:
+  1. DirectionScore (0-100) — where is price going?
+  2. ConfidenceScore (0-100) — how coherent is the signal?
+  3. RiskScore (0-100) — how dangerous is the entry? (higher = riskier)
+  4. SetupQualityScore (0-100) — how clean is the setup?
+  5. Actionability — categorical: IGNORE / WATCH / ACTIONABLE / HIGH_CONVICTION
+
+Plus: MarketRegime, SignalContext, contradiction detection, trade plan stub.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from app.core.models import IndicatorSnapshot, MarketContext
+
+
+# ── Direction labels ──
+
+def _direction_label(s: int) -> str:
+    if s >= 80: return "Forte impulsion acheteuse"
+    if s >= 65: return "Biais acheteur"
+    if s >= 55: return "Leger biais haussier"
+    if s >= 45: return "Neutre / attente"
+    if s >= 35: return "Leger biais baissier"
+    if s >= 20: return "Biais vendeur"
+    return "Forte pression vendeuse"
+
+
+def _action_from_direction(s: int) -> str:
+    if s >= 80: return "STRONG_BUY"
+    if s >= 65: return "BUY"
+    if s >= 55: return "ACCUMULATE"
+    if s >= 45: return "HOLD"
+    if s >= 35: return "REDUCE"
+    if s >= 20: return "SELL"
+    return "STRONG_SELL"
+
+
+# ── Regime labels ──
+
+def _regime_label(ctx: MarketContext | None) -> str:
+    if not ctx:
+        return "UNKNOWN"
+    r = ctx.regime
+    if r == "trend_up" or r == "trend_down":
+        return "TRENDING"
+    if r == "high_volatility":
+        if ctx.volatility_percentile >= 80:
+            return "CHAOTIC"
+        return "EXPANDING"
+    if r == "range":
+        if ctx.volatility_percentile <= 25:
+            return "COMPRESSED"
+        return "RANGING"
+    return "UNKNOWN"
+
+
+# ── Signal context ──
+
+def _signal_context(direction: int, ctx: MarketContext | None) -> str:
+    if not ctx:
+        return "mixed"
+
+    bullish_dir = direction >= 55
+    bearish_dir = direction <= 45
+    trend_up = ctx.regime == "trend_up"
+    trend_down = ctx.regime == "trend_down"
+
+    if bullish_dir and trend_up:
+        return "trend_aligned"
+    if bearish_dir and trend_down:
+        return "trend_aligned"
+    if bullish_dir and trend_down:
+        return "counter_trend"
+    if bearish_dir and trend_up:
+        return "counter_trend"
+    if ctx.volatility_percentile <= 20:
+        return "breakout_candidate"
+    if direction <= 25 or direction >= 75:
+        return "exhaustion_zone"
+    return "mixed"
+
+
+# ── Interpretation helpers ──
+
+INTERPRETATIONS = {
+    "momentum": {
+        (0, 20): "Pression vendeuse encore peu mature",
+        (21, 40): "Momentum baissier en cours",
+        (41, 59): "Pas de momentum clair",
+        (60, 79): "Momentum haussier en construction",
+        (80, 100): "Acceleration haussiere forte",
+    },
+    "trend": {
+        (0, 20): "Structure baissiere dominante",
+        (21, 40): "Tendance fragile, risque de cassure",
+        (41, 59): "Consolidation, pas de tendance claire",
+        (60, 79): "Tendance de fond haussiere",
+        (80, 100): "Tendance tres forte et soutenue",
+    },
+    "volatility": {
+        (0, 20): "Marche calme, compression potentielle",
+        (21, 40): "Volatilite faible, attente de catalyseur",
+        (41, 59): "Volatilite moderee, conditions normales",
+        (60, 79): "Volatilite elevee, prudence sur le sizing",
+        (80, 100): "Volatilite extreme, risque de faux signal",
+    },
+    "volume": {
+        (0, 20): "Aucune conviction, mouvement non soutenu",
+        (21, 40): "Volume faible, signal non confirme",
+        (41, 59): "Volume normal, confirmation partielle",
+        (60, 79): "Volume solide, mouvement credible",
+        (80, 100): "Spike de volume, activite exceptionnelle",
+    },
+}
+
+
+def _interpret(cat: str, score: int) -> str:
+    m = INTERPRETATIONS.get(cat, INTERPRETATIONS["momentum"])
+    for (lo, hi), text in m.items():
+        if lo <= score <= hi:
+            return text
+    return "Neutre"
+
+
+# ── Data structures ──
+
+@dataclass
+class SubScore:
+    category: str
+    score: int
+    label: str
+    indicator_count: int = 0
+
+
+@dataclass
+class Contradiction:
+    description: str
+    severity: str  # mild, moderate, strong
+
+
+@dataclass
+class TradePlanStub:
+    side: str              # buy, sell, none
+    entry_zone: str        # "current price area"
+    invalidation_zone: str
+    target_zone: str
+    risk_reward: str
+    validity: str          # "next 5-15 min" etc.
+    execution_style: str   # scalping, intraday, swing
+
+
+@dataclass
+class EnhancedScore:
+    # 5 core dimensions
+    direction: int              # 0-100
+    direction_label: str
+    confidence: int             # 0-100
+    risk: int                   # 0-100 (higher = riskier)
+    setup_quality: int          # 0-100
+    actionability: str          # IGNORE, WATCH, ACTIONABLE, HIGH_CONVICTION
+
+    # Context
+    action: str                 # STRONG_BUY..STRONG_SELL
+    market_regime: str          # TRENDING, RANGING, COMPRESSED, EXPANDING, CHAOTIC
+    signal_context: str         # trend_aligned, counter_trend, mixed, etc.
+
+    # Details
+    sub_scores: list[SubScore] = field(default_factory=list)
+    key_reasons: list[str] = field(default_factory=list)
+    contradictions: list[Contradiction] = field(default_factory=list)
+    trade_plan: TradePlanStub | None = None
+
+    # Legacy compat
+    score_100: int = 50
+    label: str = ""
+    confidence_level: str = "moyen"
+
+
+def _signal_to_100(signal: float) -> int:
+    return max(0, min(100, round((signal + 1) / 2 * 100)))
+
+
+def _cat_score(indicators: list[IndicatorSnapshot], category: str) -> tuple[int, int]:
+    """Compute weighted sub-score for a category. Returns (score_0_100, count)."""
+    inds = [i for i in indicators if (i.category == category) or (i.category == "general" and category == "momentum")]
+    if not inds:
+        return 50, 0
+    tw = sum(i.weight for i in inds)
+    ws = sum(i.signal * i.weight for i in inds) / tw if tw > 0 else 0
+    return _signal_to_100(ws), len(inds)
+
+
+# ── Contradiction detection ──
+
+def _detect_contradictions(
+    indicators: list[IndicatorSnapshot],
+    direction: int,
+    sub_scores: dict[str, int],
+    ctx: MarketContext | None,
+) -> list[Contradiction]:
+    cs: list[Contradiction] = []
+
+    mom = sub_scores.get("momentum", 50)
+    trend = sub_scores.get("trend", 50)
+    vol = sub_scores.get("volatility", 50)
+    volume = sub_scores.get("volume", 50)
+
+    # Direction vs volume
+    if abs(direction - 50) > 15 and volume < 35:
+        cs.append(Contradiction(
+            "Signal directionnel fort mais volume non confirme",
+            "moderate",
+        ))
+
+    # Momentum vs trend divergence
+    if (mom >= 60 and trend <= 35) or (mom <= 40 and trend >= 65):
+        cs.append(Contradiction(
+            "Momentum et tendance en desaccord",
+            "strong",
+        ))
+
+    # Extreme volatility with directional signal
+    if vol >= 75 and abs(direction - 50) > 10:
+        cs.append(Contradiction(
+            "Volatilite excessive, risque de faux signal",
+            "moderate",
+        ))
+
+    # Counter-trend
+    if ctx and ((direction >= 60 and ctx.regime == "trend_down") or (direction <= 40 and ctx.regime == "trend_up")):
+        cs.append(Contradiction(
+            "Signal contre la tendance de fond",
+            "strong",
+        ))
+
+    return cs
+
+
+# ── Risk score ──
+
+def _compute_risk(
+    vol_score: int,
+    contradictions: list[Contradiction],
+    direction: int,
+    ctx: MarketContext | None,
+) -> int:
+    risk = 30  # baseline
+
+    # Volatility contribution
+    if vol_score >= 80:
+        risk += 30
+    elif vol_score >= 60:
+        risk += 15
+    elif vol_score <= 20:
+        risk += 5  # compressed = slightly risky (breakout could go either way)
+
+    # Contradictions
+    for c in contradictions:
+        if c.severity == "strong":
+            risk += 15
+        elif c.severity == "moderate":
+            risk += 8
+
+    # Extreme direction = extended move risk
+    if direction >= 85 or direction <= 15:
+        risk += 10
+
+    # Counter-trend penalty
+    if ctx and ((direction >= 55 and ctx.regime == "trend_down") or (direction <= 45 and ctx.regime == "trend_up")):
+        risk += 12
+
+    return max(0, min(100, risk))
+
+
+# ── Setup quality ──
+
+def _compute_setup_quality(
+    confidence: int,
+    risk: int,
+    contradictions: list[Contradiction],
+    volume_score: int,
+) -> int:
+    quality = confidence  # start from confidence
+
+    # Risk penalty
+    if risk >= 70:
+        quality -= 25
+    elif risk >= 50:
+        quality -= 10
+
+    # Contradiction penalty
+    quality -= len(contradictions) * 10
+
+    # Volume bonus
+    if volume_score >= 65:
+        quality += 10
+    elif volume_score <= 30:
+        quality -= 10
+
+    return max(0, min(100, quality))
+
+
+# ── Actionability ──
+
+def _compute_actionability(
+    direction: int,
+    confidence: int,
+    risk: int,
+    setup_quality: int,
+    contradictions: list[Contradiction],
+) -> str:
+    strong_contradictions = sum(1 for c in contradictions if c.severity == "strong")
+
+    # Too many contradictions → never high conviction
+    if strong_contradictions >= 2:
+        return "WATCH" if abs(direction - 50) > 15 else "IGNORE"
+
+    # High conviction: strong direction + high confidence + low risk + good setup
+    if abs(direction - 50) >= 25 and confidence >= 70 and risk <= 45 and setup_quality >= 60:
+        return "HIGH_CONVICTION"
+
+    # Actionable: decent direction + reasonable confidence + acceptable risk
+    if abs(direction - 50) >= 15 and confidence >= 45 and risk <= 65:
+        return "ACTIONABLE"
+
+    # Watch: some signal but not clean enough
+    if abs(direction - 50) >= 10:
+        return "WATCH"
+
+    return "IGNORE"
+
+
+# ── Trade plan stub ──
+
+def _build_trade_plan(
+    direction: int,
+    actionability: str,
+    ctx: MarketContext | None,
+) -> TradePlanStub | None:
+    if actionability == "IGNORE":
+        return None
+
+    bullish = direction >= 55
+    side = "buy" if bullish else "sell" if direction <= 45 else "none"
+    if side == "none":
+        return None
+
+    atr = ctx.atr if ctx else 0
+    atr_str = f"{atr:.2f}" if atr > 0 else "N/A"
+
+    return TradePlanStub(
+        side=side,
+        entry_zone="Prix actuel",
+        invalidation_zone=f"{'Sous' if bullish else 'Au-dessus de'} {('1.5' if actionability == 'HIGH_CONVICTION' else '1.0')} x ATR ({atr_str})",
+        target_zone=f"{'1.5' if actionability != 'HIGH_CONVICTION' else '2.0'} x ATR dans la direction",
+        risk_reward=f"{'1.5' if actionability != 'HIGH_CONVICTION' else '2.0'}:1 estime",
+        validity="5-15 min" if not ctx or ctx.regime != "range" else "15-60 min",
+        execution_style="scalping",
+    )
+
+
+# ── Key reasons with interpretive phrasing ──
+
+def _build_reasons(indicators: list[IndicatorSnapshot], sub_scores: dict[str, int], max_n: int = 3) -> list[str]:
+    if not indicators:
+        return ["Donnees insuffisantes"]
+
+    reasons: list[str] = []
+    sorted_inds = sorted(indicators, key=lambda i: abs(i.signal), reverse=True)
+
+    for ind in sorted_inds[:max_n]:
+        if abs(ind.signal) < 0.1:
+            continue
+        cat = ind.category if ind.category in INTERPRETATIONS else "momentum"
+        cat_s = sub_scores.get(cat, 50)
+        reasons.append(_interpret(cat, cat_s))
+
+    return reasons or ["Signaux mixtes, pas de direction claire"]
+
+
+# ── Main entry point ──
+
+def compute_enhanced_scores(
+    indicators: list[IndicatorSnapshot],
+    raw_score: float = 0.0,
+    market_context: MarketContext | None = None,
+) -> EnhancedScore:
+
+    # 1. Direction
+    direction = _signal_to_100(raw_score)
+
+    # 2. Sub-scores
+    sub_score_map: dict[str, int] = {}
+    sub_scores: list[SubScore] = []
+    for cat in ["momentum", "trend", "volatility", "volume"]:
+        s, cnt = _cat_score(indicators, cat)
+        sub_score_map[cat] = s
+        sub_scores.append(SubScore(cat, s, _interpret(cat, s), cnt))
+
+    # 3. Confidence (indicator agreement)
+    signals = [i.signal for i in indicators]
+    pos = sum(1 for s in signals if s > 0.15)
+    neg = sum(1 for s in signals if s < -0.15)
+    total = max(len(signals), 1)
+    agreement = max(pos, neg) / total
+    confidence = max(0, min(100, round(agreement * 100)))
+
+    # 4. Contradictions
+    contradictions = _detect_contradictions(indicators, direction, sub_score_map, market_context)
+
+    # Reduce confidence for contradictions
+    for c in contradictions:
+        if c.severity == "strong":
+            confidence = max(0, confidence - 15)
+        elif c.severity == "moderate":
+            confidence = max(0, confidence - 8)
+
+    # 5. Risk
+    risk = _compute_risk(sub_score_map.get("volatility", 50), contradictions, direction, market_context)
+
+    # 6. Setup quality
+    setup_quality = _compute_setup_quality(confidence, risk, contradictions, sub_score_map.get("volume", 50))
+
+    # 7. Actionability
+    actionability = _compute_actionability(direction, confidence, risk, setup_quality, contradictions)
+
+    # 8. Context
+    regime = _regime_label(market_context)
+    sig_ctx = _signal_context(direction, market_context)
+
+    # 9. Trade plan
+    trade_plan = _build_trade_plan(direction, actionability, market_context)
+
+    # 10. Key reasons
+    key_reasons = _build_reasons(indicators, sub_score_map)
+
+    # Add contradiction warnings to reasons
+    for c in contradictions:
+        if c.severity == "strong":
+            key_reasons.append(f"Attention : {c.description}")
+
+    # Confidence level label
+    conf_level = "tres eleve" if confidence >= 80 else "eleve" if confidence >= 60 else "moyen" if confidence >= 40 else "faible"
+
+    return EnhancedScore(
+        direction=direction,
+        direction_label=_direction_label(direction),
+        confidence=confidence,
+        risk=risk,
+        setup_quality=setup_quality,
+        actionability=actionability,
+        action=_action_from_direction(direction),
+        market_regime=regime,
+        signal_context=sig_ctx,
+        sub_scores=sub_scores,
+        key_reasons=key_reasons[:4],
+        contradictions=contradictions,
+        trade_plan=trade_plan,
+        # Legacy compat
+        score_100=direction,
+        label=_direction_label(direction),
+        confidence_level=conf_level,
+    )
