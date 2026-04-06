@@ -6,16 +6,16 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: gluetrade-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-gluetrade}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gluetrade_dev}
-      POSTGRES_DB: ${POSTGRES_DB:-gluetrade_trading}
+      POSTGRES_USER: ${POSTGRES_USER:-okamoey}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-okamoey_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-okamoey_trading}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gluetrade}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-okamoey}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -75,7 +75,7 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-auth
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
@@ -100,7 +100,7 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-portfolio
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
@@ -143,7 +143,7 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-trading
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
       - MARKET_DATA_SERVICE_URL=http://market-data-service:8003
       - RISK_SERVICE_URL=http://risk-service:8005
@@ -171,7 +171,7 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-risk
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
       - MAX_PORTFOLIO_DRAWDOWN=${MAX_PORTFOLIO_DRAWDOWN:-0.15}
       - DEFAULT_STOP_LOSS_PCT=${DEFAULT_STOP_LOSS_PCT:-0.05}
@@ -192,7 +192,7 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-ml
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
       - MARKET_DATA_SERVICE_URL=http://market-data-service:8003
     ports:
@@ -252,7 +252,7 @@ services:
     container_name: gluetrade-ai-agent
     environment:
       - REDIS_HOST=redis
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret}
@@ -278,7 +278,7 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-billing
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-gluetrade}:${POSTGRES_PASSWORD:-gluetrade_dev}@postgres:5432/${POSTGRES_DB:-gluetrade_trading}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
       - REDIS_HOST=redis
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
