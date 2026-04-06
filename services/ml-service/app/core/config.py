@@ -6,9 +6,12 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     MARKET_DATA_SERVICE_URL: str = "http://localhost:8003"
     MODEL_RETRAIN_INTERVAL_HOURS: int = 24
+    SCANNER_META_MODEL_PATH: str = ""
 
-    class Config:
-        env_file = ".env"
+    model_config = {
+        "env_file": ".env",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

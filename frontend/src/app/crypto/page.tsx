@@ -88,6 +88,18 @@ interface SignalDetail {
   signal_context: string;
   contradictions: Array<{ description: string; severity: string }>;
   signal_trade_plan: { side: string; entry_zone: string; invalidation_zone: string; target_zone: string; risk_reward: string; validity: string; execution_style: string } | null;
+  horizon: string;
+  setup_type: string;
+  regime: string;
+  regime_fit: number;
+  confirmation_score: number;
+  execution_risk: number;
+  liquidity_score: number;
+  notrade_reasons: string[];
+  expected_holding_window: string;
+  freshness_ms: number;
+  scenario?: string | null;
+  scenario_probability?: number | null;
 }
 
 type HoldingSnapshot = WalletHoldingView;
@@ -190,14 +202,54 @@ function actionToSide(action: SignalAction): "buy" | "sell" | "hold" {
   return "hold";
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toSignalDetail(signal: any): SignalDetail {
+  const confidence = Number(signal.confidence ?? 0);
+  return {
+    symbol: signal.symbol.toUpperCase(),
+    action: normalizeAction(signal.action),
+    confidence,
+    score: Number(signal.score ?? 0),
+    reasoning: signal.reasoning ?? "",
+    indicators: signal.indicators ?? [],
+    timestamp: signal.timestamp ?? new Date().toISOString(),
+    score_100: signal.score_100 ?? signal.direction ?? 50,
+    action_label: signal.action_label ?? signal.direction_label ?? "Neutre",
+    confidence_level: signal.confidence_level ?? "moyen",
+    status: signal.status ?? "ignore",
+    sub_scores: signal.sub_scores ?? [],
+    key_reasons: signal.key_reasons ?? [],
+    direction: signal.direction ?? signal.score_100 ?? 50,
+    direction_label: signal.direction_label ?? signal.action_label ?? "Neutre",
+    confidence_score: signal.confidence_score ?? Math.round(confidence * 100),
+    risk: signal.risk ?? signal.execution_risk ?? 50,
+    setup_quality: signal.setup_quality ?? 50,
+    actionability: signal.actionability ?? signal.status?.toUpperCase() ?? "IGNORE",
+    market_regime: signal.market_regime ?? "UNKNOWN",
+    signal_context: signal.signal_context ?? "mixed",
+    contradictions: signal.contradictions ?? [],
+    signal_trade_plan: signal.signal_trade_plan ?? null,
+    horizon: signal.horizon ?? "Scalp 1m/5m/15m/1h",
+    setup_type: signal.setup_type ?? "contextual_setup",
+    regime: signal.regime ?? "UNKNOWN",
+    regime_fit: signal.regime_fit ?? 0,
+    confirmation_score: signal.confirmation_score ?? Math.round(confidence * 100),
+    execution_risk: signal.execution_risk ?? signal.risk ?? 50,
+    liquidity_score: signal.liquidity_score ?? 50,
+    notrade_reasons: signal.notrade_reasons ?? [],
+    expected_holding_window: signal.expected_holding_window ?? "",
+    freshness_ms: signal.freshness_ms ?? 0,
+    scenario: signal.scenario ?? null,
+    scenario_probability: signal.scenario_probability ?? null,
+  };
+}
+
 
 /** Live clock that ticks every second, using the browser's local timezone. */
 function LocalClock() {
   const [time, setTime] = useState("--:--:--");
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const tick = () => {
       setTime(
         new Date().toLocaleTimeString(undefined, {
@@ -215,7 +267,7 @@ function LocalClock() {
 
   return (
     <span className="text-[11px] font-mono text-[var(--text-muted)] tabular-nums" suppressHydrationWarning>
-      {mounted ? time : "--:--:--"}
+      {time}
     </span>
   );
 }
@@ -243,6 +295,36 @@ function marketRegime(market: CryptoMarketData[]) {
   if (breadth > 0.68 && avgMove > 1) return { label: "Momentum risk-on", tone: "text-[var(--success)]", breadth };
   if (breadth < 0.35 && avgMove < -1) return { label: "Risk-off rotation", tone: "text-[var(--danger)]", breadth };
   return { label: "Mixed tape", tone: "text-[var(--warning)]", breadth };
+}
+
+function signalTone(score: number) {
+  if (score >= 80) return "#22c55e";
+  if (score >= 65) return "#4ade80";
+  if (score >= 55) return "#84cc16";
+  if (score >= 45) return "#8888a0";
+  if (score >= 35) return "#f59e0b";
+  if (score >= 20) return "#fb7185";
+  return "#ef4444";
+}
+
+function executionRiskTone(score: number) {
+  if (score <= 35) return "text-[var(--success)]";
+  if (score <= 55) return "text-[var(--warning)]";
+  return "text-[var(--danger)]";
+}
+
+function formatSetupType(setupType: string) {
+  return setupType
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatFreshness(ms: number) {
+  if (!ms || ms < 1_000) return "live";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m`;
 }
 
 function formatMaybe(value: string | null | undefined) {
@@ -654,31 +736,7 @@ export default function CryptoTradingPage() {
     for (const symbol of symbols) {
       const cached = signalsApi.peekSignal(symbol);
       if (!cached) continue;
-      cachedSignals[symbol.toUpperCase()] = {
-        symbol: cached.symbol.toUpperCase(),
-        action: normalizeAction(cached.action),
-        confidence: Number(cached.confidence ?? 0),
-        score: Number(cached.score ?? 0),
-        reasoning: cached.reasoning,
-        indicators: cached.indicators ?? [],
-        timestamp: cached.timestamp,
-        score_100: cached.score_100 ?? 50,
-        action_label: cached.action_label ?? "Neutre",
-        confidence_level: cached.confidence_level ?? "moyen",
-        status: cached.status ?? "ignore",
-        sub_scores: cached.sub_scores ?? [],
-        key_reasons: cached.key_reasons ?? [],
-        direction: cached.direction ?? cached.score_100 ?? 50,
-        direction_label: cached.direction_label ?? cached.action_label ?? "Neutre",
-        confidence_score: cached.confidence_score ?? Math.round((cached.confidence ?? 0) * 100),
-        risk: cached.risk ?? 50,
-        setup_quality: cached.setup_quality ?? 50,
-        actionability: cached.actionability ?? cached.status?.toUpperCase() ?? "IGNORE",
-        market_regime: cached.market_regime ?? "UNKNOWN",
-        signal_context: cached.signal_context ?? "mixed",
-        contradictions: cached.contradictions ?? [],
-        signal_trade_plan: cached.signal_trade_plan ?? null,
-      };
+      cachedSignals[symbol.toUpperCase()] = toSignalDetail(cached);
     }
 
     if (Object.keys(cachedSignals).length > 0) {
@@ -689,38 +747,12 @@ export default function CryptoTradingPage() {
       setSignalsLoading(true);
 
       try {
-        const results = await Promise.allSettled(symbols.map((symbol) => signalsApi.getSignal(symbol)));
+        const results = await signalsApi.getSignals(symbols);
         if (cancelled) return;
 
         const nextSignalMap: Record<string, SignalDetail> = {};
-        for (const result of results) {
-          if (result.status !== "fulfilled") continue;
-          const signal = result.value;
-          nextSignalMap[signal.symbol.toUpperCase()] = {
-            symbol: signal.symbol.toUpperCase(),
-            action: normalizeAction(signal.action),
-            confidence: Number(signal.confidence ?? 0),
-            score: Number(signal.score ?? 0),
-            reasoning: signal.reasoning,
-            indicators: signal.indicators ?? [],
-            timestamp: signal.timestamp,
-            score_100: signal.score_100 ?? 50,
-            action_label: signal.action_label ?? "Neutre",
-            confidence_level: signal.confidence_level ?? "moyen",
-            status: signal.status ?? "ignore",
-            sub_scores: signal.sub_scores ?? [],
-            key_reasons: signal.key_reasons ?? [],
-            direction: signal.direction ?? signal.score_100 ?? 50,
-            direction_label: signal.direction_label ?? signal.action_label ?? "Neutre",
-            confidence_score: signal.confidence_score ?? Math.round((signal.confidence ?? 0) * 100),
-            risk: signal.risk ?? 50,
-            setup_quality: signal.setup_quality ?? 50,
-            actionability: signal.actionability ?? signal.status?.toUpperCase() ?? "IGNORE",
-            market_regime: signal.market_regime ?? "UNKNOWN",
-            signal_context: signal.signal_context ?? "mixed",
-            contradictions: signal.contradictions ?? [],
-            signal_trade_plan: signal.signal_trade_plan ?? null,
-          };
+        for (const signal of results) {
+          nextSignalMap[signal.symbol.toUpperCase()] = toSignalDetail(signal);
         }
 
         setSignalMap((current) => ({ ...current, ...nextSignalMap }));
@@ -801,9 +833,28 @@ export default function CryptoTradingPage() {
   }, [holdings, market, selectedSymbol]);
 
   const scannerAssets = useMemo(() => {
-    if (watchlist.length === 0) return market.slice(0, 10);
-    return market.filter((a) => watchlist.includes(a.symbol.toUpperCase()));
-  }, [market, watchlist]);
+    const base = watchlist.length === 0
+      ? market.slice(0, 10)
+      : market.filter((asset) => watchlist.includes(asset.symbol.toUpperCase()));
+
+    return [...base].sort((left, right) => {
+      const leftSignal = signalMap[left.symbol.toUpperCase()];
+      const rightSignal = signalMap[right.symbol.toUpperCase()];
+      const leftScore =
+        (leftSignal?.actionability === "HIGH_CONVICTION" ? 40 : leftSignal?.actionability === "ACTIONABLE" ? 25 : leftSignal?.actionability === "WATCH" ? 10 : 0)
+        + (leftSignal?.setup_quality ?? 0) * 0.4
+        + (leftSignal?.regime_fit ?? 0) * 0.25
+        + (leftSignal?.confirmation_score ?? 0) * 0.2
+        - (leftSignal?.execution_risk ?? 50) * 0.15;
+      const rightScore =
+        (rightSignal?.actionability === "HIGH_CONVICTION" ? 40 : rightSignal?.actionability === "ACTIONABLE" ? 25 : rightSignal?.actionability === "WATCH" ? 10 : 0)
+        + (rightSignal?.setup_quality ?? 0) * 0.4
+        + (rightSignal?.regime_fit ?? 0) * 0.25
+        + (rightSignal?.confirmation_score ?? 0) * 0.2
+        - (rightSignal?.execution_risk ?? 50) * 0.15;
+      return rightScore - leftScore;
+    });
+  }, [market, signalMap, watchlist]);
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -912,7 +963,6 @@ export default function CryptoTradingPage() {
 
 
   const primeOpportunity = useCallback((opportunity: TradeOpportunity) => {
-    if (!walletUnlocked) return;
     setSelectedSymbol(opportunity.symbol);
     setTradeIntent({
       side: opportunity.side,
@@ -926,7 +976,6 @@ export default function CryptoTradingPage() {
 
   const openTradeModal = useCallback(
     (side: "buy" | "sell") => {
-      if (!walletUnlocked) return;
       const activeOpportunity =
         featuredOpportunity && featuredOpportunity.symbol === selectedSymbol && featuredOpportunity.side === side
           ? featuredOpportunity
@@ -947,7 +996,7 @@ export default function CryptoTradingPage() {
   );
 
   const handleAutoToggle = useCallback(async () => {
-    if (!autoStatus || !walletUnlocked) return;
+    if (!autoStatus) return;
     setArming(true);
     try {
       const next = await aiApi.toggleAutoTrading(!autoStatus.enabled);
@@ -1023,7 +1072,7 @@ export default function CryptoTradingPage() {
             <button onClick={() => void refreshDesk()} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all">
               <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh
             </button>
-            <button onClick={() => void handleAutoToggle()} disabled={!autoStatus || arming || !walletUnlocked}
+            <button onClick={() => void handleAutoToggle()} disabled={!autoStatus || arming}
               className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-all disabled:opacity-40",
                 autoStatus?.enabled ? "bg-[var(--danger)]/12 text-[var(--danger)]" : "bg-[var(--success)]/12 text-[var(--success)]")}>
               {arming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -1147,30 +1196,43 @@ export default function CryptoTradingPage() {
               {scannerAssets.length === 0 && (
                 <p className="text-[11px] text-[var(--text-muted)] text-center py-4">Recherchez et suivez des cryptos</p>
               )}
-              {scannerAssets.map((asset) => {
-                const signal = signalMap[asset.symbol.toUpperCase()];
-                const livePrice = resolveAssetPrice(asset.symbol.toUpperCase(), asset);
-                const liveChangePct = resolveAssetChangePct(asset.symbol.toUpperCase(), asset);
-                return (
-                  <div key={asset.symbol} role="button" tabIndex={0}
-                    onClick={() => setSelectedSymbol(asset.symbol)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedSymbol(asset.symbol); }}
-                    className={cn("flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 group",
-                      selectedSymbol === asset.symbol
-                        ? "bg-[var(--glass-bg-strong)] shadow-sm"
-                        : "hover:bg-[var(--glass-bg)]")}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
-                        <span className={cn("text-[9px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, 2)}</span>
-                        {signal && <span className="text-[9px] font-medium truncate" style={{ color: signal.score_100 >= 60 ? "#4ade80" : signal.score_100 <= 40 ? "#ef4444" : "#8888a0" }}>{signal.action_label}</span>}
-                      </div>
-                    </div>
-                    <LiveSparkline symbol={asset.symbol} price={livePrice} width={50} height={20} maxPoints={60} positive={liveChangePct >= 0} />
-                    {signal ? <ScoreGauge score={signal.score_100} size="sm" /> : <span className="text-[8px] text-[var(--text-muted)]">...</span>}
+	              {scannerAssets.map((asset) => {
+	                const signal = signalMap[asset.symbol.toUpperCase()];
+	                const livePrice = resolveAssetPrice(asset.symbol.toUpperCase(), asset);
+	                const liveChangePct = resolveAssetChangePct(asset.symbol.toUpperCase(), asset);
+	                const primaryReason = signal?.key_reasons?.[0] ?? signal?.notrade_reasons?.[0] ?? null;
+	                return (
+	                  <div key={asset.symbol} role="button" tabIndex={0}
+	                    onClick={() => setSelectedSymbol(asset.symbol)}
+	                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedSymbol(asset.symbol); }}
+	                    className={cn("flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all duration-150 group",
+	                      selectedSymbol === asset.symbol
+	                        ? "bg-[var(--glass-bg-strong)] shadow-sm"
+	                        : "hover:bg-[var(--glass-bg)]")}>
+	                    <div className="min-w-0 flex-1">
+	                      <div className="flex items-center gap-1.5">
+	                        <span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+	                        <span className={cn("text-[9px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
+	                      </div>
+	                      <div className="flex items-center gap-1.5 mt-0.5">
+	                        <span className="text-[10px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, 2)}</span>
+	                        {signal && <span className="text-[9px] font-medium truncate" style={{ color: signalTone(signal.score_100) }}>{signal.action_label}</span>}
+	                      </div>
+	                      {signal && (
+	                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+	                          <span className="text-[8px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
+	                          <span className="text-[8px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
+	                          <span className="text-[8px] text-[var(--text-muted)]">Conf {signal.confidence_score}</span>
+	                          <span className={cn("text-[8px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
+	                          <span className="text-[8px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
+	                        </div>
+	                      )}
+	                      {primaryReason && (
+	                        <p className="mt-1 truncate text-[9px] text-[var(--text-muted)]">{primaryReason}</p>
+	                      )}
+	                    </div>
+	                    <LiveSparkline symbol={asset.symbol} price={livePrice} width={50} height={20} maxPoints={60} positive={liveChangePct >= 0} />
+	                    {signal ? <ScoreGauge score={signal.score_100} size="sm" /> : <span className="text-[8px] text-[var(--text-muted)]">...</span>}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleWatch(asset.symbol); }}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[#ef4444] p-0.5">
@@ -1184,13 +1246,23 @@ export default function CryptoTradingPage() {
 
           {/* RIGHT: Chart + Readout */}
           <section className="min-w-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-[var(--foreground)]">{selectedAsset?.symbol ?? selectedSymbol ?? "Select an asset"}</h2>
-              {selectedSignal && <SignalBadge action={selectedSignal.action} confidence={selectedSignal.confidence} size="md" blink={tradingMode === "auto" && Boolean(autoStatus?.enabled)} />}
-              {selectedAsset && (
-                <span className={cn("text-sm font-semibold", resolveAssetChangePct(selectedAsset.symbol, selectedAsset) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                  {resolveAssetChangePct(selectedAsset.symbol, selectedAsset) >= 0 ? "+" : ""}{resolveAssetChangePct(selectedAsset.symbol, selectedAsset).toFixed(2)}%
+	          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+	            <div className="flex items-center gap-3">
+	              <div>
+	                <h2 className="text-lg font-semibold text-[var(--foreground)]">{selectedAsset?.symbol ?? selectedSymbol ?? "Select an asset"}</h2>
+	                {selectedSignal && (
+	                  <div className="mt-1 flex flex-wrap items-center gap-2">
+	                    <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{selectedSignal.horizon}</span>
+	                    <span className="text-[10px] text-[var(--text-secondary)]">{formatSetupType(selectedSignal.setup_type)}</span>
+	                    <span className="text-[10px] text-[var(--text-muted)]">Regime fit {selectedSignal.regime_fit}</span>
+	                    <span className={cn("text-[10px]", executionRiskTone(selectedSignal.execution_risk))}>Exec {selectedSignal.execution_risk}</span>
+	                  </div>
+	                )}
+	              </div>
+	              {selectedSignal && <SignalBadge action={selectedSignal.action} confidence={selectedSignal.confidence} size="md" blink={tradingMode === "auto" && Boolean(autoStatus?.enabled)} />}
+	              {selectedAsset && (
+	                <span className={cn("text-sm font-semibold", resolveAssetChangePct(selectedAsset.symbol, selectedAsset) >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+	                  {resolveAssetChangePct(selectedAsset.symbol, selectedAsset) >= 0 ? "+" : ""}{resolveAssetChangePct(selectedAsset.symbol, selectedAsset).toFixed(2)}%
                 </span>
               )}
             </div>
@@ -1207,11 +1279,11 @@ export default function CryptoTradingPage() {
                   <Activity className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <button onClick={() => openTradeModal("buy")} disabled={!selectedSymbol || !walletUnlocked}
+              <button onClick={() => openTradeModal("buy")} disabled={!selectedSymbol}
                 className="rounded-lg px-3 py-1.5 text-[12px] font-semibold bg-[var(--success)]/12 text-[var(--success)] hover:bg-[var(--success)]/20 transition disabled:opacity-40">
                 <ArrowUpRight className="inline h-3.5 w-3.5 mr-1" />Buy
               </button>
-              <button onClick={() => openTradeModal("sell")} disabled={!selectedSymbol || !walletUnlocked}
+              <button onClick={() => openTradeModal("sell")} disabled={!selectedSymbol}
                 className="rounded-lg px-3 py-1.5 text-[12px] font-semibold bg-[var(--danger)]/12 text-[var(--danger)] hover:bg-[var(--danger)]/20 transition disabled:opacity-40">
                 <ArrowDownRight className="inline h-3.5 w-3.5 mr-1" />Sell
               </button>
@@ -1225,9 +1297,9 @@ export default function CryptoTradingPage() {
           )}
 
           {/* Signal readout V2 — enriched sub-scores */}
-          {selectedSignal && selectedSignal.sub_scores?.length > 0 && (
-            <div className="mt-4">
-              <SignalReadout
+	          {selectedSignal && selectedSignal.sub_scores?.length > 0 && (
+	            <div className="mt-4">
+	              <SignalReadout
                 direction={selectedSignal.direction}
                 directionLabel={selectedSignal.direction_label}
                 confidence={selectedSignal.confidence_score}
@@ -1241,10 +1313,20 @@ export default function CryptoTradingPage() {
                 keyReasons={selectedSignal.key_reasons}
                 contradictions={selectedSignal.contradictions}
                 tradePlan={selectedSignal.signal_trade_plan}
-              />
-            </div>
-          )}
-          </section>
+	              />
+	            </div>
+	          )}
+	          {selectedSignal && selectedSignal.notrade_reasons.length > 0 && (
+	            <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+	              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
+	              {selectedSignal.notrade_reasons.map((reason, index) => (
+	                <p key={`${reason}-${index}`} className="mt-1 text-[11px] text-[var(--text-secondary)]">
+	                  - {reason}
+	                </p>
+	              ))}
+	            </div>
+	          )}
+	          </section>
         </div>
 
 

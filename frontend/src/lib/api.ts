@@ -1256,6 +1256,137 @@ interface SignalData {
   signal_context: string;
   contradictions: Array<{ description: string; severity: string }>;
   signal_trade_plan: { side: string; entry_zone: string; invalidation_zone: string; target_zone: string; risk_reward: string; validity: string; execution_style: string } | null;
+  horizon: string;
+  setup_type: string;
+  regime: string;
+  regime_fit: number;
+  confirmation_score: number;
+  execution_risk: number;
+  liquidity_score: number;
+  notrade_reasons: string[];
+  expected_holding_window: string;
+  freshness_ms: number;
+  scenario?: string | null;
+  scenario_probability?: number | null;
+}
+
+interface ScannerIndicatorData {
+  name: string;
+  value: number;
+  signal: number;
+  description: string;
+}
+
+interface ScannerSignalPayload {
+  rank: number;
+  symbol: string;
+  horizon: string;
+  setup_type: string;
+  regime: string;
+  reasoning: string;
+  indicators: ScannerIndicatorData[];
+  direction: number;
+  direction_label: string;
+  confidence: number;
+  confidence_score: number;
+  regime_fit: number;
+  confirmation_score: number;
+  execution_risk: number;
+  liquidity_score: number;
+  risk: number;
+  setup_quality: number;
+  actionability: string;
+  action: string;
+  market_regime: string;
+  signal_context: string;
+  sub_scores: SubScoreData[];
+  key_reasons: string[];
+  contradictions: Array<{ description: string; severity: string }>;
+  notrade_reasons: string[];
+  expected_holding_window: string;
+  freshness_ms: number;
+  signal_trade_plan: SignalData["signal_trade_plan"];
+  scenario?: string | null;
+  scenario_probability?: number | null;
+  global_score: number;
+  score_100: number;
+  status: string;
+  action_label: string;
+  confidence_level: string;
+  best_strategy?: {
+    strategy_name?: string;
+    timeframe?: string;
+    reasoning?: string;
+    indicators?: ScannerIndicatorData[];
+  } | null;
+  timestamp: string;
+}
+
+interface ScannerSnapshotPayload {
+  signals: ScannerSignalPayload[];
+  mode: string;
+  scanned: number;
+  timestamp: string;
+}
+
+function normalizeScannerSignal(payload: ScannerSignalPayload): SignalData {
+  const confidenceScore = toNumber(payload.confidence_score ?? payload.confidence);
+  const confidence =
+    payload.confidence <= 1
+      ? toNumber(payload.confidence)
+      : Math.max(0, Math.min(1, confidenceScore / 100));
+
+  const indicators =
+    payload.indicators?.length
+      ? payload.indicators
+      : payload.best_strategy?.indicators ?? [];
+
+  return {
+    symbol: payload.symbol.toUpperCase(),
+    action: payload.action,
+    confidence,
+    score: toNumber(payload.global_score),
+    reasoning:
+      payload.reasoning ||
+      payload.best_strategy?.reasoning ||
+      payload.key_reasons.join(". ") ||
+      payload.action_label,
+    indicators: indicators.map((indicator) => ({
+      name: indicator.name,
+      value: toNumber(indicator.value),
+      signal: toNumber(indicator.signal),
+      description: indicator.description,
+    })),
+    timestamp: payload.timestamp,
+    score_100: payload.score_100 ?? payload.direction,
+    action_label: payload.action_label ?? payload.direction_label,
+    confidence_level: payload.confidence_level ?? "moyen",
+    status: payload.status ?? payload.actionability.toLowerCase(),
+    sub_scores: payload.sub_scores ?? [],
+    key_reasons: payload.key_reasons ?? [],
+    direction: payload.direction,
+    direction_label: payload.direction_label,
+    confidence_score: confidenceScore,
+    risk: payload.risk ?? payload.execution_risk,
+    setup_quality: payload.setup_quality,
+    actionability: payload.actionability,
+    market_regime: payload.market_regime,
+    signal_context: payload.signal_context,
+    contradictions: payload.contradictions ?? [],
+    signal_trade_plan: payload.signal_trade_plan ?? null,
+    horizon: payload.horizon ?? "Scalp 1m/5m/15m/1h",
+    setup_type: payload.setup_type || payload.scenario || payload.best_strategy?.strategy_name || "contextual_setup",
+    regime: payload.regime ?? "RANGE",
+    regime_fit: payload.regime_fit ?? 0,
+    confirmation_score: payload.confirmation_score ?? 0,
+    execution_risk: payload.execution_risk ?? payload.risk ?? 50,
+    liquidity_score: payload.liquidity_score ?? 50,
+    notrade_reasons: payload.notrade_reasons ?? [],
+    expected_holding_window: payload.expected_holding_window ?? "",
+    freshness_ms: payload.freshness_ms ?? 0,
+    scenario: payload.scenario ?? null,
+    scenario_probability: payload.scenario_probability ?? null,
+  };
 }
 
 async function computeSignal(symbol: string): Promise<SignalData> {
@@ -1266,7 +1397,43 @@ async function computeSignal(symbol: string): Promise<SignalData> {
   } catch { /* empty */ }
 
   if (closes.length < 15) {
-    return { symbol, action: "HOLD", confidence: 0, score: 0, reasoning: "Insufficient data", indicators: [], timestamp: new Date().toISOString(), score_100: 50, action_label: "Neutre / attente", confidence_level: "faible", status: "ignore", sub_scores: [], key_reasons: ["Donnees insuffisantes"], direction: 50, direction_label: "Neutre / attente", confidence_score: 0, risk: 50, setup_quality: 0, actionability: "IGNORE", market_regime: "UNKNOWN", signal_context: "mixed", contradictions: [], signal_trade_plan: null };
+    return {
+      symbol,
+      action: "HOLD",
+      confidence: 0,
+      score: 0,
+      reasoning: "Insufficient data",
+      indicators: [],
+      timestamp: new Date().toISOString(),
+      score_100: 50,
+      action_label: "Neutre / attente",
+      confidence_level: "faible",
+      status: "ignore",
+      sub_scores: [],
+      key_reasons: ["Donnees insuffisantes"],
+      direction: 50,
+      direction_label: "Neutre / attente",
+      confidence_score: 0,
+      risk: 50,
+      setup_quality: 0,
+      actionability: "IGNORE",
+      market_regime: "UNKNOWN",
+      signal_context: "mixed",
+      contradictions: [],
+      signal_trade_plan: null,
+      horizon: "Scalp 1h",
+      setup_type: "degraded_fallback",
+      regime: "UNKNOWN",
+      regime_fit: 0,
+      confirmation_score: 0,
+      execution_risk: 50,
+      liquidity_score: 0,
+      notrade_reasons: ["Donnees insuffisantes"],
+      expected_holding_window: "",
+      freshness_ms: 0,
+      scenario: null,
+      scenario_probability: null,
+    };
   }
 
   // RSI
@@ -1356,7 +1523,35 @@ async function computeSignal(symbol: string): Promise<SignalData> {
     signal_context: "mixed",
     contradictions: (rsiSig > 0.3 && emaSig < -0.3) || (rsiSig < -0.3 && emaSig > 0.3) ? [{ description: "RSI et EMA en desaccord", severity: "moderate" }] : [],
     signal_trade_plan: null,
+    horizon: "Scalp 1h",
+    setup_type: "degraded_fallback",
+    regime: "UNKNOWN",
+    regime_fit: Math.max(0, Math.min(100, Math.round(agreement * 60 + Math.abs(score_100 - 50) * 0.8))),
+    confirmation_score: Math.max(0, Math.min(100, Math.round(agreement * 100))),
+    execution_risk: Math.max(0, Math.min(100, 35 + (agreement < 0.45 ? 15 : 0) + (score_100 <= 20 || score_100 >= 80 ? 15 : 0))),
+    liquidity_score: 50,
+    notrade_reasons: [],
+    expected_holding_window: "5-30 min",
+    freshness_ms: 0,
+    scenario: null,
+    scenario_probability: null,
   };
+}
+
+async function fetchScannerSignal(symbol: string, mode = "scalping"): Promise<SignalData> {
+  const payload = await fetchJson<ScannerSignalPayload>(`/scanner/signals/${encodeURIComponent(symbol.toUpperCase())}?mode=${encodeURIComponent(mode)}`);
+  return normalizeScannerSignal(payload);
+}
+
+async function fetchScannerSignals(symbols: string[], mode = "scalping"): Promise<SignalData[]> {
+  const normalizedSymbols = Array.from(new Set(symbols.map((symbol) => symbol.toUpperCase()).filter(Boolean)));
+  if (normalizedSymbols.length === 0) return [];
+  const params = new URLSearchParams({
+    symbols: normalizedSymbols.join(","),
+    mode,
+  });
+  const payload = await fetchJson<ScannerSnapshotPayload>(`/scanner/signals?${params.toString()}`);
+  return payload.signals.map(normalizeScannerSignal);
 }
 
 export const signalsApi = {
@@ -1371,7 +1566,7 @@ export const signalsApi = {
     _signalCache.set(key, { ts: persisted.ts, data: persisted.data });
     return persisted.data;
   },
-  getSignal: async (symbol: string) => {
+  getSignal: async (symbol: string, mode = "scalping") => {
     const key = symbol.toUpperCase();
     const persisted = readPersistedSignal(key);
     if (persisted?.data && !_signalCache.has(key)) {
@@ -1389,11 +1584,15 @@ export const signalsApi = {
 
     const request = (async () => {
       try {
-        return rememberSignal(key, await computeSignal(key));
-      } catch (error) {
-        const stale = signalsApi.peekSignal(key);
-        if (stale) return stale;
-        throw error;
+        return rememberSignal(key, await fetchScannerSignal(key, mode));
+      } catch {
+        try {
+          return rememberSignal(key, await computeSignal(key));
+        } catch (error) {
+          const stale = signalsApi.peekSignal(key);
+          if (stale) return stale;
+          throw error;
+        }
       }
     })();
 
@@ -1415,10 +1614,45 @@ export const signalsApi = {
       }
     }
   },
-  getAllSignals: async () => {
-    const syms = ["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","LINK"];
-    const results = await Promise.allSettled(syms.map((symbol) => signalsApi.getSignal(symbol)));
-    return results.filter((r): r is PromiseFulfilledResult<SignalData> => r.status === "fulfilled").map(r => r.value);
+  getSignals: async (symbols: string[], mode = "scalping") => {
+    const orderedSymbols = Array.from(new Set(symbols.map((symbol) => symbol.toUpperCase()).filter(Boolean)));
+    const results = new Map<string, SignalData>();
+    const missing: string[] = [];
+
+    for (const symbol of orderedSymbols) {
+      const cached = signalsApi.peekSignal(symbol);
+      const fresh = _signalCache.get(symbol);
+      if (cached && fresh?.ts != null && Date.now() - fresh.ts < SIGNAL_CACHE_MS) {
+        results.set(symbol, cached);
+      } else {
+        missing.push(symbol);
+      }
+    }
+
+    if (missing.length > 0) {
+      try {
+        const fetched = await fetchScannerSignals(missing, mode);
+        for (const signal of fetched) {
+          const key = signal.symbol.toUpperCase();
+          results.set(key, rememberSignal(key, signal));
+        }
+      } catch {
+        const fallbacks = await Promise.allSettled(missing.map((symbol) => signalsApi.getSignal(symbol, mode)));
+        for (const fallback of fallbacks) {
+          if (fallback.status === "fulfilled") {
+            results.set(fallback.value.symbol.toUpperCase(), fallback.value);
+          }
+        }
+      }
+    }
+
+    return orderedSymbols
+      .map((symbol) => results.get(symbol))
+      .filter((signal): signal is SignalData => Boolean(signal));
+  },
+  getAllSignals: async (mode = "scalping") => {
+    const syms = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"];
+    return signalsApi.getSignals(syms, mode);
   },
 };
 

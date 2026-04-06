@@ -80,7 +80,7 @@ async def _fetch_risk_snapshot(auth_header: str | None) -> SnapshotRiskMetrics |
 
 
 async def _ensure_wallet_access(auth_header: str | None) -> None:
-    """Block wallet endpoints when the user has not unlocked wallet access."""
+    """Verify the user is authenticated before exposing wallet endpoints."""
     if not auth_header:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization required")
 
@@ -91,19 +91,12 @@ async def _ensure_wallet_access(auth_header: str | None) -> None:
             if resp.status_code == 401:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
             resp.raise_for_status()
-            payload = resp.json()
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Unable to validate wallet access: {exc}",
-        )
-
-    if not payload.get("wallet_access_enabled", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=payload.get("wallet_access_reason", "Wallet access is not enabled"),
+            detail=f"Unable to validate access: {exc}",
         )
 
 

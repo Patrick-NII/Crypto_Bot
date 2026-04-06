@@ -62,7 +62,7 @@ function fmt(n: number | undefined | null, dec = 2): string {
 
 export default function CryptoDetailClient() {
   usePageAccent(PAGE_ACCENTS.crypto.accent, PAGE_ACCENTS.crypto.glow);
-  const { format } = useCurrency();
+  useCurrency();
   const params = useParams();
   const symbol = (params.symbol as string || "BTC").toUpperCase();
 
@@ -70,14 +70,14 @@ export default function CryptoDetailClient() {
   const [livePrice, setLivePrice] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [tradeModal, setTradeModal] = useState<"buy" | "sell" | null>(null);
-  const [isWatched, setIsWatched] = useState(false);
+  const [watchlistVersion, setWatchlistVersion] = useState(0);
   const [signal, setSignal] = useState<{
     action: string; confidence: number; score: number; reasoning: string;
     indicators: Array<{ name: string; value: number; signal: number; description: string }>;
   } | null>(null);
+  const isWatched = getWatchlist().includes(symbol);
 
   useEffect(() => {
-    setIsWatched(getWatchlist().includes(symbol));
     pricesApi.getAllCryptos(250).then((res) => {
       const data = res.data as unknown as CoinData[];
       const found = data.find((c) => (c.symbol ?? "").toUpperCase() === symbol);
@@ -87,7 +87,7 @@ export default function CryptoDetailClient() {
       }
     }).catch(() => {}).finally(() => setLoading(false));
     signalsApi.getSignal(symbol).then(setSignal).catch(() => {});
-  }, [symbol]);
+  }, [symbol, watchlistVersion]);
 
   useEffect(() => {
     const unsub = priceWs.subscribe(symbol, (data) => { if (data.price) setLivePrice(data.price); });
@@ -141,7 +141,7 @@ export default function CryptoDetailClient() {
           </div>
         </div>
         <button
-          onClick={() => { setIsWatched((prev) => { toggleWL(symbol); return !prev; }); }}
+          onClick={() => { toggleWL(symbol); setWatchlistVersion((current) => current + 1); }}
           className={cn("rounded-lg p-2 transition-colors", isWatched ? "text-[#c6f135]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}
         >
           <Star className="h-5 w-5" fill={isWatched ? "currentColor" : "none"} />

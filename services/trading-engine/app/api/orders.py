@@ -37,7 +37,7 @@ def _get_order_manager():
 
 
 async def _ensure_wallet_access(auth_header: Optional[str]) -> None:
-    """Require the user to have unlocked wallet features before exposing trading routes."""
+    """Verify the user is authenticated before exposing trading routes."""
     if not auth_header:
         raise HTTPException(status_code=401, detail="Authorization required")
 
@@ -48,17 +48,10 @@ async def _ensure_wallet_access(auth_header: Optional[str]) -> None:
             if resp.status_code == 401:
                 raise HTTPException(status_code=401, detail="Invalid token")
             resp.raise_for_status()
-            payload = resp.json()
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Unable to validate wallet access: {exc}")
-
-    if not payload.get("wallet_access_enabled", False):
-        raise HTTPException(
-            status_code=403,
-            detail=payload.get("wallet_access_reason", "Wallet access is not enabled"),
-        )
+        raise HTTPException(status_code=502, detail=f"Unable to validate access: {exc}")
 
 
 # ------------------------------------------------------------------

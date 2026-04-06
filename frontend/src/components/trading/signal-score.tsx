@@ -5,18 +5,22 @@ import { cn } from "@/lib/utils";
 // ── Color helpers ──
 
 function scoreColor(score: number): string {
-  if (score >= 75) return "#22c55e";
-  if (score >= 60) return "#4ade80";
+  if (score >= 80) return "#22c55e";
+  if (score >= 65) return "#4ade80";
+  if (score >= 55) return "#84cc16";
   if (score >= 45) return "#8888a0";
-  if (score >= 30) return "#f59e0b";
+  if (score >= 35) return "#f59e0b";
+  if (score >= 20) return "#fb7185";
   return "#ef4444";
 }
 
 function scoreBg(score: number): string {
-  if (score >= 75) return "rgba(34,197,94,0.12)";
-  if (score >= 60) return "rgba(74,222,128,0.08)";
+  if (score >= 80) return "rgba(34,197,94,0.12)";
+  if (score >= 65) return "rgba(74,222,128,0.08)";
+  if (score >= 55) return "rgba(132,204,22,0.10)";
   if (score >= 45) return "rgba(136,136,160,0.06)";
-  if (score >= 30) return "rgba(245,158,11,0.08)";
+  if (score >= 35) return "rgba(245,158,11,0.08)";
+  if (score >= 20) return "rgba(251,113,133,0.08)";
   return "rgba(239,68,68,0.08)";
 }
 

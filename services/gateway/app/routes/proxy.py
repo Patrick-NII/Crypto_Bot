@@ -18,6 +18,7 @@ ROUTE_TABLE: List[tuple[str, str]] = [
     ("/api/v1/orders", settings.TRADING_ENGINE_URL),
     ("/api/v1/risk", settings.RISK_SERVICE_URL),
     ("/api/v1/ml", settings.ML_SERVICE_URL),
+    ("/api/v1/scanner", settings.ML_SERVICE_URL),
     ("/api/v1/notifications", settings.NOTIFICATION_SERVICE_URL),
     ("/api/v1/alerts", settings.NOTIFICATION_SERVICE_URL),
     ("/api/v1/news", settings.NEWS_SERVICE_URL),

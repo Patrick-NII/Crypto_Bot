@@ -142,8 +142,22 @@ class OrderManager:
             await self._publish_event("ORDER_FAILED", order, user_id=user_id)
             return order
 
-        # 4. Execute
-        if settings.TRADING_MODE == "paper":
+        # 4. Execute — try live with per-user credentials, fallback to paper
+        if auth_header:
+            user_client = await self._get_user_exchange_client(auth_header)
+            if user_client is not None:
+                try:
+                    order = await self._execute_live(order_create, exchange_client=user_client)
+                except Exception as exc:
+                    await user_client.close()
+                    raise RuntimeError(f"Live order failed: {exc}")
+                finally:
+                    await user_client.close()
+            elif settings.TRADING_MODE == "live" and self._exchange_client:
+                order = await self._execute_live(order_create)
+            else:
+                order = await self._execute_paper(order_create, current_price, user_id)
+        elif settings.TRADING_MODE == "paper":
             order = await self._execute_paper(order_create, current_price, user_id)
         else:
             order = await self._execute_live(order_create)
@@ -433,9 +447,14 @@ class OrderManager:
             )
             return order
 
-    async def _execute_live(self, order_create: OrderCreate) -> Order:
+    async def _execute_live(
+        self,
+        order_create: OrderCreate,
+        exchange_client: Optional[ExchangeClient] = None,
+    ) -> Order:
         """Execute an order on the live exchange via CCXT."""
-        if self._exchange_client is None:
+        client = exchange_client or self._exchange_client
+        if client is None:
             raise RuntimeError("Exchange client not initialised for live trading")
 
         symbol = order_create.symbol
@@ -444,13 +463,13 @@ class OrderManager:
 
         try:
             if order_create.order_type == OrderType.MARKET:
-                result = await self._exchange_client.place_market_order(
+                result = await client.place_market_order(
                     symbol, side, quantity
                 )
             elif order_create.order_type == OrderType.LIMIT:
                 if order_create.price is None:
                     raise ValueError("Limit orders require a price")
-                result = await self._exchange_client.place_limit_order(
+                result = await client.place_limit_order(
                     symbol, side, quantity, float(order_create.price)
                 )
             else:

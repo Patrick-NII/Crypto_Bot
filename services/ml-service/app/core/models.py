@@ -142,10 +142,23 @@ class RankedOpportunity:
     global_score: float
     confidence: float
     status: str                    # actionable, watch, ignore
+    meta_score: float = 0.0
     best_strategy: StrategyResult | None = None
     all_strategies: list[StrategyResult] = field(default_factory=list)
     market_context: MarketContext | None = None
+    regime_info: RegimeInfo | None = None
+    scenarios: list[Scenario] = field(default_factory=list)
     trade_plan: TradePlan | None = None
+    horizon: str = ""
+    setup_type: str = ""
+    regime: str = "RANGE"
+    regime_fit: int = 0
+    confirmation_score: int = 0
+    execution_risk: int = 50
+    liquidity_score: int = 50
+    expected_holding_window: str = ""
+    freshness_ms: int = 0
+    notrade_reasons: list[str] = field(default_factory=list)
     timestamp: str = ""
 
 
