@@ -170,6 +170,16 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class ExchangeCredentialsResponse(BaseModel):
+    """Decrypted credentials returned to internal services only."""
+
+    provider: str
+    api_key: str
+    api_secret: str
+    passphrase: Optional[str] = None
+    sandbox_mode: bool
+
+
 class MessageResponse(BaseModel):
     """Generic message response."""
 

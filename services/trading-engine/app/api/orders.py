@@ -131,8 +131,12 @@ async def get_balance(request: Request) -> Dict[str, str]:
     Decimal values are serialised as strings for JSON safety.
     """
     mgr = _get_order_manager()
-    await _ensure_wallet_access(request.headers.get("Authorization"))
-    balances = await mgr.get_balance(resolve_request_user_id(request))
+    auth_header = request.headers.get("Authorization")
+    await _ensure_wallet_access(auth_header)
+    balances = await mgr.get_balance(
+        resolve_request_user_id(request),
+        auth_header=auth_header,
+    )
     return {k: str(v) for k, v in balances.items()}
 
 

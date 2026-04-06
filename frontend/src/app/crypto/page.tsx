@@ -313,6 +313,36 @@ export default function CryptoTradingPage() {
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
 
+  // ---- Live Wallet (always fetched, independent of walletUnlocked) ----
+  const [walletPreview, setWalletPreview] = useState<Array<{ currency: string; available: number; reserved: number; total: number }>>([]);
+  const [walletPreviewLoading, setWalletPreviewLoading] = useState(true);
+  const [walletPreviewError, setWalletPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchWallet = async () => {
+      setWalletPreviewLoading(true);
+      setWalletPreviewError(null);
+      try {
+        const result = await tradingApi.getBalances();
+        if (!cancelled) {
+          setWalletPreview(result.filter((b) => b.total > 0));
+          setWalletPreviewError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setWalletPreviewError(err instanceof Error ? err.message : "Failed to fetch wallet");
+          setWalletPreview([]);
+        }
+      } finally {
+        if (!cancelled) setWalletPreviewLoading(false);
+      }
+    };
+    void fetchWallet();
+    const interval = window.setInterval(() => void fetchWallet(), 30_000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, []);
+
   // Watchlist + search
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -405,12 +435,6 @@ export default function CryptoTradingPage() {
     if (autoHistoryResult.status === "fulfilled") setAutoHistory(autoHistoryResult.value);
     if (healthResult.status === "fulfilled") setHealth(healthResult.value);
 
-    if (!walletUnlocked) {
-      setOrders([]);
-      setAnalytics(null);
-      return;
-    }
-
     const [ordersResult, analyticsResult] = await Promise.allSettled([
       tradingApi.getOrders(),
       analyticsApi.getMetrics(),
@@ -448,17 +472,14 @@ export default function CryptoTradingPage() {
       setAccount(nextAccount);
 
       const walletUnlocked = nextAccount?.wallet_access_enabled ?? false;
-      if (walletUnlocked) {
-        const snapshotResult = await snapshotPromise;
-        if (loadRequestRef.current !== requestId) return;
+      // Always try to load the snapshot (backend now serves real data via per-user credentials)
+      const snapshotResult = await snapshotPromise;
+      if (loadRequestRef.current !== requestId) return;
 
-        if (snapshotResult.status === "fulfilled") {
-          setSnapshot(snapshotResult.value);
-        }
-      } else {
+      if (snapshotResult.status === "fulfilled") {
+        setSnapshot(snapshotResult.value);
+      } else if (!walletUnlocked) {
         setSnapshot(null);
-        setOrders([]);
-        setAnalytics(null);
       }
 
       setLoading(false);
@@ -512,9 +533,20 @@ export default function CryptoTradingPage() {
   );
 
   const holdings = useMemo<HoldingSnapshot[]>(() => {
-    if (!snapshot) return [];
-    return buildWalletHoldings(snapshot, marketBySymbol, livePrices);
-  }, [livePrices, marketBySymbol, snapshot]);
+    if (snapshot) return buildWalletHoldings(snapshot, marketBySymbol, livePrices);
+    // Fallback: build holdings from walletPreview (direct Binance balances)
+    if (walletPreview.length === 0) return [];
+    return walletPreview.map((balance) => {
+      const symbol = balance.currency.toUpperCase();
+      const stable = WALLET_STABLES.has(symbol);
+      const mktAsset = marketBySymbol.get(symbol);
+      const price = stable ? 1 : livePrices[symbol] ?? Number(mktAsset?.current_price ?? mktAsset?.price ?? 0);
+      const total = balance.total;
+      const value = total * price;
+      const changePct = stable ? 0 : Number(mktAsset?.price_change_percentage_24h ?? mktAsset?.change_pct_24h ?? 0);
+      return { symbol, total, available: balance.available, reserved: balance.reserved, price, value, changePct, stable };
+    }).filter((h) => h.total > 0).sort((a, b) => b.value - a.value);
+  }, [livePrices, marketBySymbol, snapshot, walletPreview]);
 
   const positions = useMemo(() => snapshot?.positions ?? [], [snapshot]);
   const executionFeed = useMemo(() => snapshot?.execution_feed ?? [], [snapshot]);
@@ -1008,14 +1040,51 @@ export default function CryptoTradingPage() {
           />
         )}
 
-        {/* ============ 2. STATS ROW — flat, no frames ============ */}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-3 xl:grid-cols-5">
-          <DeskMetric label="Equity" value={walletUnlocked ? format(portfolioValue) : "Locked"} sublabel={walletUnlocked ? `${holdings.length} assets` : "Unlock in Settings"} icon={Wallet} />
-          <DeskMetric label="Cash" value={walletUnlocked ? format(cashValue) : "Locked"} sublabel={walletUnlocked ? `${portfolioValue > 0 ? ((cashValue / portfolioValue) * 100).toFixed(0) : 0}% deployable` : "Private balances hidden"} icon={ShieldCheck} />
-          <DeskMetric label="Open PnL" value={walletUnlocked ? format(openPnl) : "Locked"} sublabel={walletUnlocked ? `${openPnlPct >= 0 ? "+" : ""}${openPnlPct.toFixed(2)}%` : "Execution access required"} icon={openPnl >= 0 ? TrendingUp : TrendingDown} tone={walletUnlocked ? (openPnl >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]") : undefined} />
-          <DeskMetric label="Exposure" value={walletUnlocked ? format(marketExposure) : "Locked"} sublabel={walletUnlocked ? `${positions.length || holdings.filter((h) => !h.stable).length} lines` : "Portfolio data locked"} icon={Target} />
-          <DeskMetric label="Risk" value={walletUnlocked ? `${estimatedRisk}/100` : "Locked"} sublabel={walletUnlocked ? riskSummary : "Needs wallet context"} icon={Activity} tone={walletUnlocked ? riskTone(estimatedRisk) : undefined} />
-        </div>
+        {/* ============ MY WALLET — always visible ============ */}
+        <section className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 md:p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 accent-text" />
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">My Wallet</h2>
+              <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+                Binance
+              </span>
+            </div>
+            {walletPreviewLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--text-muted)]" />}
+          </div>
+
+          {walletPreviewError ? (
+            <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/5 px-3 py-2.5">
+              <p className="text-[12px] text-[var(--danger)]">{walletPreviewError}</p>
+              <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                Check your API keys in Settings and ensure wallet access is unlocked.
+              </p>
+            </div>
+          ) : walletPreview.length === 0 && !walletPreviewLoading ? (
+            <p className="text-[12px] text-[var(--text-muted)]">No balances found. Add your Binance API keys in Settings.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {walletPreview.map((balance) => {
+                const stable = WALLET_STABLES.has(balance.currency.toUpperCase());
+                const mktAsset = marketBySymbol.get(balance.currency.toUpperCase());
+                const price = stable ? 1 : livePrices[balance.currency.toUpperCase()] ?? Number(mktAsset?.current_price ?? mktAsset?.price ?? 0);
+                const value = balance.total * price;
+                return (
+                  <div key={balance.currency} className="flex items-center justify-between rounded-xl border border-[var(--glass-border)] bg-[var(--background)]/30 px-3 py-2.5">
+                    <div>
+                      <p className="text-[13px] font-semibold text-[var(--foreground)]">{balance.currency}</p>
+                      <p className="text-[11px] text-[var(--text-muted)]">{balance.total.toFixed(price >= 1000 ? 4 : balance.total < 1 ? 8 : 2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[13px] font-semibold text-[var(--foreground)]">{price > 0 ? format(value) : "--"}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">{stable ? "Stablecoin" : price > 0 ? `@ ${format(price, 2)}` : "No price"}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* ============ MAIN LAYOUT: Scanner (left) + Chart (right) ============ */}
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
@@ -1150,7 +1219,7 @@ export default function CryptoTradingPage() {
           </div>
 
           {selectedSymbol ? (
-            <PriceChart symbol={selectedSymbol} type={chartType} height={320} showIntervals defaultInterval="1W" />
+            <PriceChart symbol={selectedSymbol} type={chartType} height={320} showIntervals defaultInterval="1H" />
           ) : (
             <div className="flex h-[420px] items-center justify-center text-sm text-[var(--text-muted)]">Select an asset from the scanner below</div>
           )}

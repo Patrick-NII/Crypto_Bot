@@ -8,13 +8,13 @@ import { cn, toChartTime } from "@/lib/utils";
 import type { OHLCVPoint } from "@/lib/types";
 
 const INTERVALS = [
+  { label: "5M", value: "1m", limit: 5 },
+  { label: "15M", value: "1m", limit: 15 },
+  { label: "30M", value: "1m", limit: 30 },
   { label: "1H", value: "1m", limit: 60 },
-  { label: "4H", value: "5m", limit: 48 },
-  { label: "1D", value: "5m", limit: 288 },
-  { label: "1W", value: "1h", limit: 168 },
-  { label: "1M", value: "4h", limit: 180 },
-  { label: "3M", value: "1d", limit: 90 },
-  { label: "1Y", value: "1d", limit: 365 },
+  { label: "2H", value: "5m", limit: 24 },
+  { label: "4H", value: "15m", limit: 16 },
+  { label: "6H", value: "30m", limit: 12 },
 ] as const;
 
 interface PriceChartProps {
@@ -53,7 +53,7 @@ export function PriceChart({
   type = "candlestick",
   className,
   showIntervals = false,
-  defaultInterval = "1M",
+  defaultInterval = "1H",
   realtime = true,
   showLoader = true,
 }: PriceChartProps) {

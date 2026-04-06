@@ -29,6 +29,7 @@ from app.models.user import ExchangeConnection, User
 from app.schemas.auth import (
     ExchangeConnectionCreate,
     ExchangeConnectionResponse,
+    ExchangeCredentialsResponse,
     ExchangeProviderResponse,
     LogoutRequest,
     MessageResponse,
@@ -500,6 +501,50 @@ async def list_exchange_connections(
     """Return the current user's configured exchange connections."""
     connections = await _list_connections_for_user(db, current_user.id)
     return [_connection_response(connection) for connection in connections]
+
+
+# ---------------------------------------------------------------------------
+# GET /me/exchange-connections/{provider}/credentials  (service-to-service)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/me/exchange-connections/{provider}/credentials",
+    response_model=ExchangeCredentialsResponse,
+)
+async def get_exchange_credentials(
+    provider: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExchangeCredentialsResponse:
+    """Return decrypted API credentials for the first active connection of *provider*.
+
+    Intended for service-to-service calls (e.g. trading-engine fetching
+    credentials on behalf of the authenticated user).  The caller must
+    forward the user's JWT.
+    """
+    provider = _normalise_provider(provider)
+    result = await db.execute(
+        select(ExchangeConnection).where(
+            ExchangeConnection.user_id == current_user.id,
+            ExchangeConnection.provider == provider,
+            ExchangeConnection.is_active == True,
+        ).order_by(ExchangeConnection.created_at.desc())
+    )
+    connection = result.scalar_one_or_none()
+    if connection is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active {provider} connection found for this user",
+        )
+
+    return ExchangeCredentialsResponse(
+        provider=connection.provider,
+        api_key=decrypt_secret(connection.encrypted_api_key),
+        api_secret=decrypt_secret(connection.encrypted_api_secret),
+        passphrase=decrypt_secret(connection.encrypted_passphrase) if connection.encrypted_passphrase else None,
+        sandbox_mode=connection.sandbox_mode,
+    )
 
 
 # ---------------------------------------------------------------------------

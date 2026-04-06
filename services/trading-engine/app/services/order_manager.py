@@ -40,14 +40,43 @@ class OrderManager:
         self._redis: Any = None  # set via ``init_redis``
         self._http = httpx.AsyncClient(timeout=settings.ORDER_TIMEOUT_SECONDS)
 
-        # Initialise exchange client for live mode
-        if settings.TRADING_MODE == "live":
+        # Initialise a fallback exchange client from env vars for live mode
+        if settings.TRADING_MODE == "live" and settings.BINANCE_API_KEY:
             self._exchange_client = ExchangeClient(
                 exchange_id=settings.DEFAULT_EXCHANGE,
                 api_key=settings.BINANCE_API_KEY,
                 api_secret=settings.BINANCE_API_SECRET,
                 sandbox=False,
             )
+
+    # ------------------------------------------------------------------
+    # Per-user exchange client from auth-service credentials
+    # ------------------------------------------------------------------
+
+    async def _get_user_exchange_client(
+        self,
+        auth_header: Optional[str],
+        provider: str = "binance",
+    ) -> Optional[ExchangeClient]:
+        """Fetch decrypted credentials from the auth-service and build an ExchangeClient."""
+        if not auth_header:
+            return None
+        url = f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me/exchange-connections/{provider}/credentials"
+        try:
+            resp = await self._http.get(url, headers={"Authorization": auth_header})
+            if resp.status_code != 200:
+                logger.warning("Could not fetch user credentials (status %s): %s", resp.status_code, resp.text)
+                return None
+            creds = resp.json()
+            return ExchangeClient(
+                exchange_id=provider,
+                api_key=creds["api_key"],
+                api_secret=creds["api_secret"],
+                sandbox=creds.get("sandbox_mode", False),
+            )
+        except Exception as exc:
+            logger.warning("Failed to fetch user exchange credentials: %s", exc)
+            return None
 
     async def init_redis(self) -> None:
         """Lazily connect to Redis (called during app startup)."""
@@ -183,16 +212,38 @@ class OrderManager:
             )
         return 0
 
-    async def get_balance(self, user_id: str = "default") -> Dict[str, Decimal]:
-        """Return current trading balances."""
-        if settings.TRADING_MODE == "paper":
-            return await self._paper_trader.get_balance(user_id)
-        if self._exchange_client:
+    async def get_balance(
+        self,
+        user_id: str = "default",
+        auth_header: Optional[str] = None,
+    ) -> Dict[str, Decimal]:
+        """Return current trading balances.
+
+        When *auth_header* is provided the method tries to fetch the user's
+        exchange credentials from the auth-service and query Binance directly.
+        Falls back to paper balances when no live credentials are available.
+        """
+        # Try per-user live credentials first
+        if auth_header:
+            client = await self._get_user_exchange_client(auth_header)
+            if client is not None:
+                try:
+                    raw = await client.get_balance()
+                    total = raw.get("total", {})
+                    return {k: Decimal(str(v)) for k, v in total.items() if v and float(v) > 0}
+                except Exception as exc:
+                    logger.error("Live balance fetch failed for user %s: %s", user_id, exc)
+                finally:
+                    await client.close()
+
+        # Fallback: global exchange client (env vars) in live mode
+        if settings.TRADING_MODE == "live" and self._exchange_client:
             raw = await self._exchange_client.get_balance()
-            # CCXT returns nested dicts; extract ``total``
             total = raw.get("total", {})
             return {k: Decimal(str(v)) for k, v in total.items() if v and float(v) > 0}
-        return {}
+
+        # Last resort: paper balances
+        return await self._paper_trader.get_balance(user_id)
 
     async def check_pending_orders(self, user_id: Optional[str] = None) -> List[Order]:
         """Fetch current prices and check all pending paper orders."""
