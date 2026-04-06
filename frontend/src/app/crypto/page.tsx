@@ -604,6 +604,8 @@ export default function CryptoTradingPage() {
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [chartType, setChartType] = useState<DeskChartType>("candlestick");
   const [moversView, setMoversView] = useState<MarketMoversView>("candidates");
+  const [moversSortBy, setMoversSortBy] = useState<"default" | "price" | "change" | "volume">("default");
+  const [moversSortAsc, setMoversSortAsc] = useState(false);
   const [universeView, setUniverseView] = useState<MarketUniverseView>("all");
   const [universeModalOpen, setUniverseModalOpen] = useState(false);
 
@@ -1200,10 +1202,19 @@ export default function CryptoTradingPage() {
     return { all, gainers, losers, candidates };
   }, [marketUniverseItems]);
 
-  const compactMoversItems = useMemo(
-    () => marketUniverseCollections[moversView].slice(0, COMPACT_MOVER_ROWS),
-    [marketUniverseCollections, moversView],
-  );
+  const compactMoversItems = useMemo(() => {
+    const base = [...marketUniverseCollections[moversView]];
+    if (moversSortBy !== "default") {
+      base.sort((a, b) => {
+        let diff = 0;
+        if (moversSortBy === "price") diff = a.price - b.price;
+        else if (moversSortBy === "change") diff = a.changePct24h - b.changePct24h;
+        else if (moversSortBy === "volume") diff = a.volume24h - b.volume24h;
+        return moversSortAsc ? diff : -diff;
+      });
+    }
+    return base.slice(0, COMPACT_MOVER_ROWS);
+  }, [marketUniverseCollections, moversView, moversSortBy, moversSortAsc]);
 
   const modalUniverseItems = useMemo(
     () => marketUniverseCollections[universeView],
@@ -1410,7 +1421,7 @@ export default function CryptoTradingPage() {
         {/* ============ 1. HEADER — compact, centered ============ */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold glow-text">Trading</h1>
+            <h1 className="text-xl md:text-2xl font-bold glow-text">Crypto</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className={cn("text-[12px] font-medium", health?.connected ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>{feedLabel}</span>
               <span className="text-[12px] text-[var(--text-muted)]">&middot; {portfolioHeadline}</span>
@@ -1588,9 +1599,9 @@ export default function CryptoTradingPage() {
                           onClick={() => { setSelectedSymbol(asset.symbol); setSearchQuery(""); }}
                           className="flex-1 text-left min-w-0">
                           <div className="flex items-center gap-2">
-                            <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
-                            <span className="text-[10px] font-mono text-[var(--text-muted)]">{format(lp, 2)}</span>
-                            <span className={cn("text-[9px] font-semibold", cp >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{cp >= 0 ? "+" : ""}{cp.toFixed(1)}%</span>
+                            <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[13px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+                            <span className="text-[10px] font-mono text-[var(--text-muted)]">{format(lp, lp < 1 ? 6 : 2)}</span>
+                            <span className={cn("text-[10px] font-semibold", cp >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{cp >= 0 ? "+" : ""}{cp.toFixed(1)}%</span>
                           </div>
                         </button>
                         <button
@@ -1625,29 +1636,29 @@ export default function CryptoTradingPage() {
 	                        : "hover:bg-[var(--glass-bg)]")}>
 																				<div className="min-w-0 flex-1">
 	                      <div className="flex items-center gap-1.5">
-	                        <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+	                        <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[13px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
 	                        <span className={cn("text-[10px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
 	                      </div>
 	                      <div className="flex items-center gap-1.5 mt-0.5">
-	                        <span className="text-[10px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, 2)}</span>
+	                        <span className="text-[11px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, livePrice < 1 ? 6 : 2)}</span>
 	                        {signal && <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: signalTone(signal.display_score) }}>{signal.action_label}</span>}
 	                      </div>
 	                      {signal && (
 	                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-	                          <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
-	                          <span className="text-[9px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
-	                          <span className="text-[9px] text-[var(--text-muted)]">Indice {signal.composite_score}</span>
-	                          <span className="text-[9px] text-[var(--text-muted)]">Fiab {signal.reliability_score}</span>
-	                          <span className={cn("text-[9px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
-	                          <span className="text-[9px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
+	                          <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
+	                          <span className="text-[10px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
+	                          <span className="text-[10px] text-[var(--text-muted)]">Indice {signal.composite_score}</span>
+	                          <span className="text-[10px] text-[var(--text-muted)]">Fiab {signal.reliability_score}</span>
+	                          <span className={cn("text-[10px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
+	                          <span className="text-[10px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
 	                        </div>
 	                      )}
 	                      {primaryReason && (
-	                        <p className="mt-1 text-[9px] leading-snug text-[var(--text-muted)]">{primaryReason}</p>
+	                        <p className="mt-1 text-[10px] leading-snug text-[var(--text-muted)]">{primaryReason}</p>
 	                      )}
 	                    </div>
 	                    <LiveSparkline symbol={asset.symbol} price={livePrice} width={50} height={20} maxPoints={60} positive={liveChangePct >= 0} />
-	                    {signal ? <ScoreGauge score={signal.display_score} size="sm" /> : <span className="text-[9px] text-[var(--text-muted)]">...</span>}
+	                    {signal ? <ScoreGauge score={signal.display_score} size="sm" /> : <span className="text-[10px] text-[var(--text-muted)]">...</span>}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleWatch(asset.symbol); }}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[#ef4444] p-0.5">
@@ -1682,7 +1693,7 @@ export default function CryptoTradingPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-bold font-mono text-[var(--foreground)]">
-                {selectedAsset ? format(resolveAssetPrice(selectedAsset.symbol, selectedAsset), 2) : "--"}
+                {selectedAsset ? format(resolveAssetPrice(selectedAsset.symbol, selectedAsset), resolveAssetPrice(selectedAsset.symbol, selectedAsset) < 1 ? 6 : 2) : "--"}
               </span>
               {/* Chart type toggle */}
               <div className="flex rounded-md p-0.5" style={{ background: "var(--glass-bg)" }}>
@@ -1728,8 +1739,12 @@ export default function CryptoTradingPage() {
 	                action={selectedSignal.action}
 	                marketRegime={selectedSignal.market_regime}
                 signalContext={selectedSignal.signal_context}
+                horizon={selectedSignal.horizon}
+                setupType={formatSetupType(selectedSignal.setup_type)}
+                expectedHoldingWindow={selectedSignal.expected_holding_window}
                 subScores={selectedSignal.sub_scores}
                 keyReasons={selectedSignal.key_reasons}
+                notTradeReasons={selectedSignal.notrade_reasons}
                 contradictions={selectedSignal.contradictions}
                 tradePlan={selectedSignal.signal_trade_plan}
 	              />
@@ -1740,7 +1755,7 @@ export default function CryptoTradingPage() {
 	              <div className="flex items-center justify-between gap-3">
 	                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
 	                {hiddenPublicationReasonCount > 0 ? (
-	                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[9px] font-medium text-[var(--text-muted)]">
+	                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
 	                    +{hiddenPublicationReasonCount}
 	                  </span>
 	                ) : null}
@@ -1755,8 +1770,8 @@ export default function CryptoTradingPage() {
             <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Market Movers</p>
-                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Discovery layer compacte pour alimenter la watchlist.</p>
+                  <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Market Movers</p>
+                  <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Discovery layer compacte pour alimenter la watchlist.</p>
                 </div>
                 <button
                   type="button"
@@ -1780,7 +1795,7 @@ export default function CryptoTradingPage() {
                     type="button"
                     onClick={() => setMoversView(view)}
                     className={cn(
-                      "rounded-full px-3 py-1 text-[10px] font-semibold transition-all",
+                      "rounded-full px-3 py-1 text-[11px] font-semibold transition-all",
                       moversView === view
                         ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]"
                         : "bg-[var(--glass-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]",
@@ -1790,9 +1805,25 @@ export default function CryptoTradingPage() {
                   </button>
                 ))}
               </div>
-              <div className="mt-3 space-y-1.5">
+              {/* Sortable column headers */}
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px_74px_78px_34px] items-center gap-2 px-2 pb-1 border-b border-white/[0.04]">
+                <button type="button" onClick={() => { setMoversSortBy("default"); setMoversSortAsc(false); }} className={cn("text-left text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "default" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                  Asset
+                </button>
+                <button type="button" onClick={() => { if (moversSortBy === "price") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("price"); setMoversSortAsc(false); } }} className={cn("text-right text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "price" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                  Prix {moversSortBy === "price" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
+                </button>
+                <button type="button" onClick={() => { if (moversSortBy === "change") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("change"); setMoversSortAsc(false); } }} className={cn("text-right text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "change" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                  24h {moversSortBy === "change" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
+                </button>
+                <button type="button" onClick={() => { if (moversSortBy === "volume") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("volume"); setMoversSortAsc(false); } }} className={cn("text-right text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "volume" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                  Vol {moversSortBy === "volume" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
+                </button>
+                <span />
+              </div>
+              <div className="mt-1 space-y-1">
                 {compactMoversItems.length === 0 ? (
-                  <p className="text-[11px] text-[var(--text-muted)]">Le flux de marche est en cours de chargement.</p>
+                  <p className="text-[12px] text-[var(--text-muted)] py-2">Le flux de marche est en cours de chargement.</p>
                 ) : compactMoversItems.map((item) => {
                   const isWatched = watchlist.includes(item.symbol);
                   return (
@@ -1808,17 +1839,17 @@ export default function CryptoTradingPage() {
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <CryptoIcon symbol={item.symbol} imageUrl={item.image} size="xs" />
-                          <span className="truncate text-[12px] font-semibold text-[var(--foreground)]">{item.symbol}</span>
+                          <CryptoIcon symbol={item.symbol} imageUrl={item.image} size="sm" />
+                          <span className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.symbol}</span>
                         </div>
-                        <p className="truncate text-[10px] text-[var(--text-muted)]">{item.name}</p>
+                        <p className="truncate text-[11px] text-[var(--text-muted)]">{item.name}</p>
                       </div>
-                      <span className="text-right text-[11px] font-mono text-[var(--foreground)]">{format(item.price, 2)}</span>
-                      <span className={cn("text-right text-[11px] font-semibold", item.changePct24h >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                      <span className="text-right text-[12px] font-mono text-[var(--foreground)]">{format(item.price, item.price < 1 ? 6 : 2)}</span>
+                      <span className={cn("text-right text-[12px] font-semibold", item.changePct24h >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
                         {item.changePct24h >= 0 ? "+" : ""}
                         {item.changePct24h.toFixed(1)}%
                       </span>
-                      <span className="text-right text-[10px] text-[var(--text-secondary)]">{compactMetricNumber(item.volume24h)}</span>
+                      <span className="text-right text-[11px] text-[var(--text-secondary)]">{compactMetricNumber(item.volume24h)}</span>
                       <div className="flex justify-end">
                         <button
                           type="button"
@@ -1866,6 +1897,9 @@ export default function CryptoTradingPage() {
           availableQuote={cashValue}
           availableBase={selectedHolding?.available ?? selectedHolding?.total ?? 0}
           advisoryText={tradeIntent.advisory}
+          walletAccessEnabled={account?.wallet_access_enabled ?? false}
+          walletAccessReason={account?.wallet_access_reason}
+          liveTradingEnabled={account?.live_trading_enabled ?? false}
           onClose={() => setTradeModalOpen(false)}
           onSuccess={() => { setTradeModalOpen(false); void refreshDesk(); }}
         />

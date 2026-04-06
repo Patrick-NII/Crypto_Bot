@@ -290,7 +290,7 @@ export function Sidebar() {
           <TradingNavLink
             collapsed={collapsed}
             href="/crypto"
-            label="Trading"
+            label="Crypto"
             isActive={isTradingActive}
           />
         </nav>
@@ -350,7 +350,7 @@ export function Sidebar() {
               <TradingNavLink
                 collapsed={false}
                 href="/crypto"
-                label="Trading"
+                label="Crypto"
                 isActive={isTradingActive}
                 onClick={closeMobile}
               />

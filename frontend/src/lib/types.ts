@@ -184,6 +184,32 @@ export interface TradeResult {
   message?: string;
 }
 
+export interface OrderPreflight {
+  requested_symbol: string;
+  resolved_symbol: string;
+  side: "buy" | "sell";
+  base_asset: string;
+  quote_asset: string;
+  input_quantity: string;
+  adjusted_quantity: string;
+  reference_price?: string | null;
+  estimated_price?: string | null;
+  estimated_notional?: string | null;
+  estimated_fee?: string | null;
+  fee_rate: string;
+  min_notional?: string | null;
+  available_quote?: string | null;
+  available_base?: string | null;
+  conversion_symbol?: string | null;
+  conversion_side?: OrderSide | null;
+  conversion_from_asset?: string | null;
+  conversion_required_quantity?: string | null;
+  conversion_estimated_spend?: string | null;
+  can_execute: boolean;
+  blocking_reason?: string | null;
+  notes: string[];
+}
+
 // --- Strategies ---
 
 export interface Strategy {

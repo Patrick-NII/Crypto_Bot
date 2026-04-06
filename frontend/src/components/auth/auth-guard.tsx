@@ -126,6 +126,26 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           <p className="mt-5 text-[10px] text-[var(--text-muted)]">
             Pensez a verifier vos spams. L&apos;email provient de support@gluetrade.com.
           </p>
+
+          {/* Dev only: skip verification on localhost */}
+          {typeof window !== "undefined" && window.location.hostname === "localhost" && (
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem("access_token");
+                  if (!token) return;
+                  await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "/api/v1"}/auth/dev-verify`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  await refreshUser();
+                } catch { /* ignore */ }
+              }}
+              className="mt-3 w-full rounded-xl border border-dashed border-[#f59e0b]/30 py-2 text-[11px] text-[#f59e0b] hover:bg-[#f59e0b]/5 transition-all"
+            >
+              [DEV] Passer la verification
+            </button>
+          )}
         </div>
       </div>
     );

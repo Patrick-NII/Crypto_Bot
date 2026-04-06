@@ -149,6 +149,34 @@ class OrderResponse(BaseModel):
         )
 
 
+class OrderPreflightResponse(BaseModel):
+    """Preflight preview returned before placing an order."""
+
+    requested_symbol: str
+    resolved_symbol: str
+    side: OrderSide
+    base_asset: str
+    quote_asset: str
+    input_quantity: str
+    adjusted_quantity: str
+    reference_price: Optional[str] = None
+    estimated_price: Optional[str] = None
+    estimated_notional: Optional[str] = None
+    estimated_fee: Optional[str] = None
+    fee_rate: str = "0.001"
+    min_notional: Optional[str] = None
+    available_quote: Optional[str] = None
+    available_base: Optional[str] = None
+    conversion_symbol: Optional[str] = None
+    conversion_side: Optional[OrderSide] = None
+    conversion_from_asset: Optional[str] = None
+    conversion_required_quantity: Optional[str] = None
+    conversion_estimated_spend: Optional[str] = None
+    can_execute: bool
+    blocking_reason: Optional[str] = None
+    notes: List[str] = Field(default_factory=list)
+
+
 class OrderListResponse(BaseModel):
     """Paginated list of orders."""
 

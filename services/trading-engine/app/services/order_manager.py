@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.models.order import (
     Order,
     OrderCreate,
+    OrderPreflightResponse,
     OrderStatus,
     OrderType,
 )
@@ -173,6 +174,131 @@ class OrderManager:
         await self._publish_event(event_type, order, user_id=user_id)
 
         return order
+
+    async def preview_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        user_id: str = "default",
+        reference_price: Optional[Decimal] = None,
+        auth_header: Optional[str] = None,
+    ) -> OrderPreflightResponse:
+        """Return a preflight preview for the requested order."""
+        normalized_symbol = ExchangeClient.normalize_symbol(symbol)
+        client: Optional[ExchangeClient] = None
+        should_close = False
+
+        if auth_header:
+            client = await self._get_user_exchange_client(auth_header)
+            should_close = client is not None
+
+        if client is None and settings.TRADING_MODE == "live" and self._exchange_client:
+            client = self._exchange_client
+
+        if client is None:
+            base_asset, quote_asset = normalized_symbol.split("/")
+            if settings.TRADING_MODE == "paper":
+                paper_balances = await self._paper_trader.get_balance(user_id)
+                current_price = await self._fetch_current_price(normalized_symbol)
+                estimated_notional = quantity * current_price
+                estimated_fee = estimated_notional * Decimal("0.001")
+                available_quote = Decimal(str(paper_balances.get(quote_asset, Decimal("0"))))
+                available_base = Decimal(str(paper_balances.get(base_asset, Decimal("0"))))
+                blocking_reason = None
+                can_execute = True
+                if side == "buy" and available_quote < estimated_notional + estimated_fee:
+                    can_execute = False
+                    blocking_reason = (
+                        f"Solde {quote_asset} insuffisant en mode paper: {available_quote} disponible, "
+                        f"~{estimated_notional + estimated_fee:.2f} requis."
+                    )
+                if side == "sell" and available_base < quantity:
+                    can_execute = False
+                    blocking_reason = (
+                        f"Quantite {base_asset} insuffisante en mode paper: {available_base} disponible, "
+                        f"{quantity} requis."
+                    )
+                return OrderPreflightResponse(
+                    requested_symbol=normalized_symbol,
+                    resolved_symbol=normalized_symbol,
+                    side=side,
+                    base_asset=base_asset,
+                    quote_asset=quote_asset,
+                    input_quantity=str(quantity),
+                    adjusted_quantity=str(quantity),
+                    reference_price=str(reference_price) if reference_price is not None else str(current_price),
+                    estimated_price=str(current_price),
+                    estimated_notional=str(estimated_notional),
+                    estimated_fee=str(estimated_fee),
+                    fee_rate="0.001",
+                    min_notional="5",
+                    available_quote=str(available_quote),
+                    available_base=str(available_base),
+                    conversion_symbol=None,
+                    conversion_side=None,
+                    conversion_from_asset=None,
+                    conversion_required_quantity=None,
+                    conversion_estimated_spend=None,
+                    can_execute=can_execute,
+                    blocking_reason=blocking_reason,
+                    notes=["Mode paper: execution simulee sur la paire par defaut."],
+                )
+            return OrderPreflightResponse(
+                requested_symbol=normalized_symbol,
+                resolved_symbol=normalized_symbol,
+                side=side,
+                base_asset=base_asset,
+                quote_asset=quote_asset,
+                input_quantity=str(quantity),
+                adjusted_quantity=str(quantity),
+                reference_price=str(reference_price) if reference_price is not None else None,
+                conversion_symbol=None,
+                conversion_side=None,
+                conversion_from_asset=None,
+                conversion_required_quantity=None,
+                conversion_estimated_spend=None,
+                can_execute=False,
+                blocking_reason="Connectez Binance dans Settings puis activez le trading pour obtenir un ticket d'ordre executable.",
+                notes=["Aucune connexion exchange exploitable n'est disponible pour cet ordre."],
+            )
+
+        try:
+            preview = await client.preview_market_order(
+                normalized_symbol,
+                side=side,
+                quantity=float(quantity),
+                reference_price=float(reference_price) if reference_price is not None else 0.0,
+            )
+        finally:
+            if should_close and client is not None:
+                await client.close()
+
+        return OrderPreflightResponse(
+            requested_symbol=str(preview["requested_symbol"]),
+            resolved_symbol=str(preview["resolved_symbol"]),
+            side=side,
+            base_asset=str(preview["base_asset"]),
+            quote_asset=str(preview["quote_asset"]),
+            input_quantity=str(preview["input_quantity"]),
+            adjusted_quantity=str(preview["adjusted_quantity"]),
+            reference_price=str(preview["reference_price"]) if preview["reference_price"] is not None else None,
+            estimated_price=str(preview["estimated_price"]) if preview["estimated_price"] is not None else None,
+            estimated_notional=str(preview["estimated_notional"]) if preview["estimated_notional"] is not None else None,
+            estimated_fee=str(preview["estimated_fee"]) if preview["estimated_fee"] is not None else None,
+            fee_rate=str(preview["fee_rate"]),
+            min_notional=str(preview["min_notional"]) if preview["min_notional"] is not None else None,
+            available_quote=str(preview["available_quote"]) if preview["available_quote"] is not None else None,
+            available_base=str(preview["available_base"]) if preview["available_base"] is not None else None,
+            conversion_symbol=str(preview["conversion_symbol"]) if preview.get("conversion_symbol") is not None else None,
+            conversion_side=str(preview["conversion_side"]) if preview.get("conversion_side") is not None else None,
+            conversion_from_asset=str(preview["conversion_from_asset"]) if preview.get("conversion_from_asset") is not None else None,
+            conversion_required_quantity=str(preview["conversion_required_quantity"]) if preview.get("conversion_required_quantity") is not None else None,
+            conversion_estimated_spend=str(preview["conversion_estimated_spend"]) if preview.get("conversion_estimated_spend") is not None else None,
+            can_execute=bool(preview["can_execute"]),
+            blocking_reason=str(preview["blocking_reason"]) if preview["blocking_reason"] is not None else None,
+            notes=[str(item) for item in preview.get("notes", [])],
+        )
 
     async def cancel_order(self, order_id: str, user_id: str = "default") -> Order:
         """Cancel an order by ID."""

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Minimum notional fallback (USDT) when market info unavailable
 _DEFAULT_MIN_NOTIONAL = 5.0
+_ESTIMATED_FEE_RATE = 0.001
 
 # ── Binance error code → user-friendly message ──
 _BINANCE_ERRORS: dict[int, str] = {
@@ -212,38 +213,267 @@ class ExchangeClient:
     # Order methods
     # ------------------------------------------------------------------
 
+    # Alternative quote currencies to try when primary fails
+    _ALT_QUOTES = ["EUR", "USDC", "BUSD", "BTC"]
+
+    async def _detect_best_pair(self, base: str, preferred_symbol: str, side: str = "buy") -> str:
+        """Choose the best executable pair for the user.
+
+        For buy orders, prefer a market whose quote asset the user actually holds.
+        """
+        await self._ensure_markets_loaded()
+        preferred_quote = preferred_symbol.split("/")[1] if "/" in preferred_symbol else "USDT"
+        preferred_exists = preferred_symbol in (self._exchange.markets or {})
+
+        if side != "buy":
+            if preferred_exists:
+                return preferred_symbol
+            for quote in self._ALT_QUOTES:
+                alt = f"{base}/{quote}"
+                if alt in (self._exchange.markets or {}):
+                    return alt
+            return preferred_symbol
+
+        free_balances: dict[str, float] = {}
+        try:
+            balance = await self._exchange.fetch_balance()
+            free_balances = {
+                str(asset).upper(): float(amount or 0)
+                for asset, amount in (balance.get("free", {}) or {}).items()
+            }
+        except Exception:
+            free_balances = {}
+
+        candidate_quotes: list[str] = [preferred_quote, *self._ALT_QUOTES]
+        seen: set[str] = set()
+        for quote in candidate_quotes:
+            quote = quote.upper()
+            if quote in seen:
+                continue
+            seen.add(quote)
+            pair = f"{base}/{quote}"
+            if pair not in (self._exchange.markets or {}):
+                continue
+            if float(free_balances.get(quote, 0) or 0) > 0:
+                return pair
+
+        if preferred_exists:
+            return preferred_symbol
+
+        for quote in self._ALT_QUOTES:
+            alt = f"{base}/{quote}"
+            if alt in (self._exchange.markets or {}):
+                return alt
+
+        return preferred_symbol  # fallback
+
+    def _market_min_notional(self, symbol: str) -> float:
+        market = (self._exchange.markets or {}).get(symbol, {})
+        limits = market.get("limits", {}) if isinstance(market, dict) else {}
+        cost_min = (limits.get("cost", {}) or {}).get("min")
+        return float(cost_min) if cost_min else _DEFAULT_MIN_NOTIONAL
+
+    async def preview_market_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        reference_price: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Return an execution preview for a market order without placing it."""
+        normalized = self.normalize_symbol(symbol)
+        base_asset, preferred_quote = normalized.split("/")
+        symbol_to_use = await self._detect_best_pair(base_asset, normalized, side=side)
+        base_for_order, quote_asset = symbol_to_use.split("/")
+        notes: list[str] = []
+
+        await self._ensure_markets_loaded()
+        balances = await self._exchange.fetch_balance()
+        free = balances.get("free", {}) or {}
+        available_quote = float(free.get(quote_asset, 0) or 0)
+        available_base = float(free.get(base_for_order, 0) or 0)
+
+        estimated_price = reference_price if reference_price > 0 else 0.0
+        try:
+            ticker = await self._exchange.fetch_ticker(symbol_to_use)
+            estimated_price = float(ticker.get("last", 0) or ticker.get("close", 0) or estimated_price or 0)
+        except Exception:
+            estimated_price = float(estimated_price or 0)
+
+        requested_notional = quantity * reference_price if reference_price > 0 else 0.0
+        adjusted_quantity = quantity
+
+        if symbol_to_use != normalized:
+            notes.append(f"Execution reroutee vers {symbol_to_use}.")
+            if estimated_price > 0 and requested_notional > 0:
+                adjusted_quantity = requested_notional / estimated_price
+
+        min_notional = self._market_min_notional(symbol_to_use)
+        if estimated_price > 0:
+            adjusted_quantity = await self.adjust_quantity(symbol_to_use, adjusted_quantity, estimated_price)
+
+        estimated_notional = adjusted_quantity * estimated_price if estimated_price > 0 else 0.0
+        estimated_fee = estimated_notional * _ESTIMATED_FEE_RATE if estimated_notional > 0 else 0.0
+        settlement_total = estimated_notional + estimated_fee if side == "buy" else max(estimated_notional - estimated_fee, 0)
+        can_execute = True
+        blocking_reason: str | None = None
+        conversion_symbol: str | None = None
+        conversion_side: str | None = None
+        conversion_from_asset: str | None = None
+        conversion_required_quantity: float | None = None
+        conversion_estimated_spend: float | None = None
+
+        if side == "buy":
+            if available_quote <= 0:
+                can_execute = False
+                alternative_balances = []
+                for quote in ["EUR", "USDT", "USDC", "BUSD", "BTC"]:
+                    amount = float(free.get(quote, 0) or 0)
+                    if amount > 0:
+                        alternative_balances.append(f"{quote} {amount:.2f}")
+                if alternative_balances:
+                    blocking_reason = (
+                        f"Aucun solde {quote_asset} disponible pour {symbol_to_use}. "
+                        f"Soldes detectes: {', '.join(alternative_balances)}."
+                    )
+                    eur_pair = f"{base_asset}/EUR"
+                    if float(free.get("EUR", 0) or 0) > 0 and eur_pair not in (self._exchange.markets or {}):
+                        notes.append(f"La paire {eur_pair} n'existe pas sur Binance.")
+                else:
+                    blocking_reason = f"Aucun solde {quote_asset} disponible pour acheter {base_for_order}."
+
+                required_quote_quantity = settlement_total * 1.005 if settlement_total > 0 else estimated_notional
+                for funding_asset in ["EUR", "USD", "USDC", "BUSD", "BTC"]:
+                    if funding_asset == quote_asset:
+                        continue
+                    funding_balance = float(free.get(funding_asset, 0) or 0)
+                    if funding_balance <= 0:
+                        continue
+                    direct_symbol = f"{quote_asset}/{funding_asset}"
+                    inverse_symbol = f"{funding_asset}/{quote_asset}"
+                    direct_exists = direct_symbol in (self._exchange.markets or {})
+                    inverse_exists = inverse_symbol in (self._exchange.markets or {})
+
+                    if direct_exists:
+                        candidate_required_quantity = required_quote_quantity if required_quote_quantity > 0 else None
+                        candidate_estimated_spend: float | None = None
+                        try:
+                            conversion_ticker = await self._exchange.fetch_ticker(direct_symbol)
+                            conversion_price = float(
+                                conversion_ticker.get("last", 0) or conversion_ticker.get("close", 0) or 0
+                            )
+                            if conversion_price > 0 and candidate_required_quantity is not None:
+                                candidate_estimated_spend = candidate_required_quantity * conversion_price * (1 + _ESTIMATED_FEE_RATE)
+                        except Exception:
+                            candidate_estimated_spend = None
+
+                        if candidate_estimated_spend is None or funding_balance + 1e-12 >= candidate_estimated_spend:
+                            conversion_symbol = direct_symbol
+                            conversion_side = "buy"
+                            conversion_from_asset = funding_asset
+                            conversion_required_quantity = candidate_required_quantity
+                            conversion_estimated_spend = candidate_estimated_spend
+                            notes.append(
+                                f"Vous pouvez acheter {quote_asset} avec {funding_asset} via {direct_symbol} pour financer cet achat."
+                            )
+                            break
+
+                    if inverse_exists:
+                        candidate_required_quantity: float | None = None
+                        candidate_estimated_spend: float | None = None
+                        try:
+                            conversion_ticker = await self._exchange.fetch_ticker(inverse_symbol)
+                            conversion_price = float(
+                                conversion_ticker.get("last", 0) or conversion_ticker.get("close", 0) or 0
+                            )
+                            if conversion_price > 0 and required_quote_quantity > 0:
+                                candidate_required_quantity = (required_quote_quantity / conversion_price) * (1 + _ESTIMATED_FEE_RATE)
+                                candidate_estimated_spend = candidate_required_quantity
+                        except Exception:
+                            candidate_required_quantity = None
+                            candidate_estimated_spend = None
+
+                        if candidate_estimated_spend is None or funding_balance + 1e-12 >= candidate_estimated_spend:
+                            conversion_symbol = inverse_symbol
+                            conversion_side = "sell"
+                            conversion_from_asset = funding_asset
+                            conversion_required_quantity = candidate_required_quantity
+                            conversion_estimated_spend = candidate_estimated_spend
+                            notes.append(
+                                f"Vous pouvez vendre {funding_asset} contre {quote_asset} via {inverse_symbol} pour financer cet achat."
+                            )
+                            break
+            elif settlement_total > 0 and available_quote + 1e-12 < settlement_total:
+                can_execute = False
+                blocking_reason = (
+                    f"Solde {quote_asset} insuffisant: {available_quote:.2f} disponible, "
+                    f"~{settlement_total:.2f} requis."
+                )
+        else:
+            if available_base + 1e-12 < adjusted_quantity:
+                can_execute = False
+                blocking_reason = (
+                    f"Quantite {base_for_order} insuffisante: {available_base:.6f} disponible, "
+                    f"{adjusted_quantity:.6f} requis."
+                )
+
+        if normalized != symbol_to_use and preferred_quote != quote_asset and not any(
+            pair == f"{base_asset}/{preferred_quote}" for pair in (self._exchange.markets or {})
+        ):
+            notes.append(f"La paire {base_asset}/{preferred_quote} n'existe pas sur Binance.")
+
+        return {
+            "requested_symbol": normalized,
+            "resolved_symbol": symbol_to_use,
+            "base_asset": base_for_order,
+            "quote_asset": quote_asset,
+            "input_quantity": quantity,
+            "adjusted_quantity": adjusted_quantity,
+            "reference_price": reference_price if reference_price > 0 else None,
+            "estimated_price": estimated_price if estimated_price > 0 else None,
+            "estimated_notional": estimated_notional if estimated_notional > 0 else None,
+            "estimated_fee": estimated_fee if estimated_fee > 0 else None,
+            "fee_rate": _ESTIMATED_FEE_RATE,
+            "min_notional": min_notional,
+            "available_quote": available_quote if quote_asset else None,
+            "available_base": available_base if base_for_order else None,
+            "conversion_symbol": conversion_symbol,
+            "conversion_side": conversion_side,
+            "conversion_from_asset": conversion_from_asset,
+            "conversion_required_quantity": conversion_required_quantity,
+            "conversion_estimated_spend": conversion_estimated_spend,
+            "can_execute": can_execute,
+            "blocking_reason": blocking_reason,
+            "notes": notes,
+        }
+
     async def place_market_order(
         self, symbol: str, side: str, quantity: float, price: float = 0.0
     ) -> Dict[str, Any]:
-        """Place a market order with automatic filter adjustment."""
-        symbol = self.normalize_symbol(symbol)
+        """Place a market order with automatic pair detection and filter adjustment.
 
-        # Fetch current price if not provided (needed for notional check)
-        if price <= 0:
-            try:
-                ticker = await self._exchange.fetch_ticker(symbol)
-                price = ticker.get("last", 0) or ticker.get("close", 0) or 0
-            except Exception:
-                pass
+        If the user has EUR instead of USDT, automatically switches to EUR pair.
+        """
+        preview = await self.preview_market_order(symbol, side, quantity, reference_price=price)
+        symbol_to_use = str(preview["resolved_symbol"])
+        quantity = float(preview["adjusted_quantity"] or quantity)
+        price = float(preview["estimated_price"] or price or 0)
 
-        # Adjust quantity for Binance filters
-        if price > 0:
-            quantity = await self.adjust_quantity(symbol, quantity, price)
-            if quantity <= 0:
-                raise ValueError(f"Order too small for {symbol} after filter adjustment (min notional: {_DEFAULT_MIN_NOTIONAL} USDT)")
+        if not bool(preview["can_execute"]):
+            raise ValueError(str(preview["blocking_reason"] or "Ordre non executable dans l'etat actuel."))
 
-        logger.info("Placing MARKET %s %.8f %s (notional ~%.2f)", side, quantity, symbol, quantity * price)
+        logger.info("Placing MARKET %s %.8f %s (notional ~%.2f)", side, quantity, symbol_to_use, quantity * price)
         try:
             result = await self._exchange.create_order(
-                symbol=symbol,
+                symbol=symbol_to_use,
                 type="market",
                 side=side,
                 amount=quantity,
             )
-            logger.info("Market order placed: %s", result.get("id"))
+            logger.info("Market order placed: %s on %s", result.get("id"), symbol_to_use)
             return result
         except ccxt.BaseError as exc:
-            logger.error("Market order failed: %s", exc)
+            logger.error("Market order failed on %s: %s", symbol_to_use, exc)
             raise ValueError(parse_exchange_error(exc)) from exc
 
     async def place_limit_order(

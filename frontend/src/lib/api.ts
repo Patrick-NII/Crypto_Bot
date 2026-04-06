@@ -16,6 +16,7 @@ import type {
   Order,
   PaperBalance,
   TradeResult,
+  OrderPreflight,
   OrderSide,
   OrderType,
   Strategy,
@@ -1208,6 +1209,23 @@ export const tradingApi = {
       fee: Number(result.fee),
       message: `Order ${result.status}`,
     };
+  },
+
+  preflightOrder: (params: {
+    symbol: string;
+    side: OrderSide;
+    quantity: number;
+    reference_price?: number;
+  }) => {
+    const search = new URLSearchParams({
+      symbol: params.symbol,
+      side: params.side,
+      quantity: String(params.quantity),
+    });
+    if (params.reference_price != null && Number.isFinite(params.reference_price) && params.reference_price > 0) {
+      search.set("reference_price", String(params.reference_price));
+    }
+    return fetchJson<OrderPreflight>(`/orders/preflight?${search.toString()}`);
   },
 
   getOrders: async (): Promise<Order[]> => {

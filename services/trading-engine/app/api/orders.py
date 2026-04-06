@@ -7,6 +7,7 @@ balance queries, and pending-order checks.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Dict, Optional
 
 import httpx
@@ -18,6 +19,8 @@ from app.models.order import (
     Order,
     OrderCreate,
     OrderListResponse,
+    OrderPreflightResponse,
+    OrderSide,
     OrderResponse,
     OrderStatus,
 )
@@ -131,6 +134,33 @@ async def get_balance(request: Request) -> Dict[str, str]:
         auth_header=auth_header,
     )
     return {k: str(v) for k, v in balances.items()}
+
+
+@router.get("/preflight", response_model=OrderPreflightResponse)
+async def preflight_order(
+    request: Request,
+    symbol: str = Query(..., min_length=2, description="Asset or pair to trade"),
+    side: OrderSide = Query(OrderSide.BUY, description="Trade side"),
+    quantity: float = Query(..., gt=0, description="Base quantity requested"),
+    reference_price: Optional[float] = Query(None, gt=0, description="Reference price used by the UI"),
+) -> OrderPreflightResponse:
+    """Preview pair resolution, balances, fees and blockers before placing an order."""
+    mgr = _get_order_manager()
+    auth_header = request.headers.get("Authorization")
+    await _ensure_wallet_access(auth_header)
+    try:
+        return await mgr.preview_order(
+            symbol=symbol,
+            side=side.value,
+            quantity=Decimal(str(quantity)),
+            user_id=resolve_request_user_id(request),
+            reference_price=Decimal(str(reference_price)) if reference_price is not None else None,
+            auth_header=auth_header,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.post("/check-pending")

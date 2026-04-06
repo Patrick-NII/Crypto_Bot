@@ -500,6 +500,25 @@ async def update_me(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# POST /dev-verify  (development only — skip email verification)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/dev-verify", response_model=MessageResponse)
+async def dev_verify(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """Mark user as verified without email. Only works in non-production."""
+    if current_user.is_verified:
+        return MessageResponse(message="Deja verifie.")
+    current_user.is_verified = True
+    db.add(current_user)
+    await db.flush()
+    return MessageResponse(message="Compte verifie (mode dev).")
+
+
 @router.post("/me/accept-terms", response_model=UserResponse)
 async def accept_terms(
     payload: TermsAcceptance,

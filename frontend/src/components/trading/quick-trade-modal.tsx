@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { X, ArrowUpRight, ArrowDownRight, Loader2, ArrowRight, Info } from "lucide-react";
 import { tradingApi } from "@/lib/api";
+import type { OrderPreflight } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const FEE_RATE = 0.001;
@@ -15,7 +17,13 @@ function getTradeErrorMessage(raw: string): string {
   if (lower.includes("notional") || lower.includes("trop petit") || lower.includes("too small"))
     return "Montant trop petit. Minimum ~5$ par ordre.";
 
+  if (lower.includes("aucun solde") || lower.includes("non executable") || lower.includes("indisponible"))
+    return raw;
+
   // Solde insuffisant
+  if ((lower.includes("insufficient") || lower.includes("insuffisant") || lower.includes("solde")) && raw.length <= 220 && !raw.includes("{"))
+    return raw;
+
   if (lower.includes("insufficient") || lower.includes("insuffisant") || lower.includes("solde"))
     return "Solde insuffisant pour cet ordre.";
 
@@ -40,7 +48,7 @@ function getTradeErrorMessage(raw: string): string {
     return "Trop de requetes. Attendez quelques secondes.";
 
   // Si le message backend est deja clair et court, l'afficher tel quel
-  if (raw.length <= 100 && !raw.includes("{"))
+  if (raw.length <= 220 && !raw.includes("{"))
     return raw;
 
   return "Erreur lors de l'execution. Reessayez.";
@@ -56,6 +64,9 @@ interface QuickTradeModalProps {
   availableQuote?: number;
   availableBase?: number;
   advisoryText?: string;
+  walletAccessEnabled?: boolean;
+  walletAccessReason?: string;
+  liveTradingEnabled?: boolean;
 }
 
 export function QuickTradeModal({
@@ -68,30 +79,146 @@ export function QuickTradeModal({
   availableQuote,
   availableBase,
   advisoryText,
+  walletAccessEnabled = true,
+  walletAccessReason,
+  liveTradingEnabled = true,
 }: QuickTradeModalProps) {
   const [side, setSide] = useState<"buy" | "sell">(initialSide);
   const [amount, setAmount] = useState(initialUsdAmount ? initialUsdAmount.toFixed(2) : "");
+  const [savedQuoteAmount, setSavedQuoteAmount] = useState(initialUsdAmount ? initialUsdAmount.toFixed(2) : "");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [preflight, setPreflight] = useState<OrderPreflight | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [tradeSymbol, setTradeSymbol] = useState(symbol);
+  const [inputMode, setInputMode] = useState<"quote" | "base">("quote");
 
-  const usdAmount = parseFloat(amount) || 0;
-  const cryptoAmount = price > 0 ? usdAmount / price : 0;
-  const fee = usdAmount * FEE_RATE;
-  const settlementTotal = side === "buy" ? usdAmount + fee : Math.max(usdAmount - fee, 0);
+  const displayAsset = symbol.includes("/") ? symbol.split("/")[0] : symbol;
+  const numericAmount = parseFloat(amount) || 0;
+  const conversionMode = tradeSymbol !== symbol && inputMode === "base";
+  const effectivePrice = Number(preflight?.estimated_price ?? (tradeSymbol === symbol ? price : 0) ?? 0);
+  const requestedQuantity =
+    inputMode === "base"
+      ? numericAmount
+      : effectivePrice > 0
+        ? numericAmount / effectivePrice
+        : 0;
+  const fee = (inputMode === "quote" ? numericAmount : requestedQuantity * effectivePrice) * FEE_RATE;
+  const previewQuantity = requestedQuantity > 0 ? requestedQuantity : effectivePrice > 0 ? 5 / effectivePrice : 0.000001;
+  const connectionHint = !walletAccessEnabled
+    ? (walletAccessReason ?? "Connectez une cle Binance dans Settings pour debloquer l'execution.")
+    : !liveTradingEnabled
+      ? "Le trading n'est pas active sur votre connexion Binance. Activez l'option execution dans Settings."
+      : null;
+  const tradeBlockingReason = preflightError ?? (numericAmount > 0 ? preflight?.blocking_reason ?? null : null);
+  const resolvedPair = preflight?.resolved_symbol ?? (tradeSymbol.includes("/") ? tradeSymbol : `${tradeSymbol}/USDT`);
+  const baseAsset = preflight?.base_asset ?? (tradeSymbol.includes("/") ? tradeSymbol.split("/")[0] : tradeSymbol);
+  const quoteAsset = preflight?.quote_asset ?? "USDT";
+  const preflightQuote = Number(preflight?.available_quote ?? availableQuote ?? 0);
+  const preflightBase = Number(preflight?.available_base ?? availableBase ?? 0);
+  const minNotional = Number(preflight?.min_notional ?? 0);
+  const preflightFee = Number(preflight?.estimated_fee ?? fee);
+  const preflightNotional = Number(preflight?.estimated_notional ?? (inputMode === "quote" ? numericAmount : requestedQuantity * effectivePrice));
+  const showConversionCta = Boolean(
+    inputMode === "quote" &&
+    side === "buy" &&
+    tradeBlockingReason &&
+    preflight?.conversion_symbol &&
+    preflight?.conversion_side &&
+    preflight?.conversion_from_asset,
+  );
+  const conversionTargetAsset =
+    preflight?.conversion_side === "sell"
+      ? (preflight?.conversion_symbol?.split("/")[1] ?? quoteAsset)
+      : (preflight?.conversion_symbol?.split("/")[0] ?? quoteAsset);
+  const submitLabel =
+    tradeSymbol !== symbol && inputMode === "base"
+      ? `Convertir en ${side === "buy" ? baseAsset : quoteAsset}`
+      : `${side === "buy" ? "Buy" : "Sell"} ${displayAsset}`;
 
   useEffect(() => {
     setSide(initialSide);
     setAmount(initialUsdAmount ? initialUsdAmount.toFixed(2) : "");
+    setSavedQuoteAmount(initialUsdAmount ? initialUsdAmount.toFixed(2) : "");
     setResult(null);
+    setPreflight(null);
+    setPreflightError(null);
+    setTradeSymbol(symbol);
+    setInputMode("quote");
   }, [initialSide, initialUsdAmount, symbol]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!tradeSymbol || !Number.isFinite(previewQuantity) || previewQuantity <= 0) {
+        setPreflight(null);
+        return;
+      }
+
+      setPreflightLoading(true);
+      setPreflightError(null);
+      void tradingApi.preflightOrder({
+        symbol: tradeSymbol,
+        side,
+        quantity: previewQuantity,
+        reference_price: tradeSymbol === symbol && price > 0 ? price : undefined,
+      })
+        .then((payload) => {
+          if (!cancelled) setPreflight(payload);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPreflight(null);
+            setPreflightError("Impossible de verifier l'ordre pour le moment. Reessayez dans quelques secondes.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setPreflightLoading(false);
+        });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [previewQuantity, price, side, tradeSymbol]);
+
+  const handlePrepareConversion = () => {
+    if (!preflight?.conversion_symbol || !preflight?.conversion_side || !preflight?.conversion_required_quantity) return;
+    setSavedQuoteAmount(amount);
+    setTradeSymbol(preflight.conversion_symbol);
+    setInputMode("base");
+    setSide(preflight.conversion_side);
+    setAmount(Number(preflight.conversion_required_quantity).toFixed(4));
+    setResult(null);
+    setPreflight(null);
+    setPreflightError(null);
+  };
+
+  const handleBackToPrimaryTrade = () => {
+    setTradeSymbol(symbol);
+    setInputMode("quote");
+    setSide(initialSide);
+    setAmount(savedQuoteAmount || (initialUsdAmount ? initialUsdAmount.toFixed(2) : ""));
+    setResult(null);
+    setPreflight(null);
+    setPreflightError(null);
+  };
+
   const handleTrade = async () => {
-    if (usdAmount <= 0) return;
+    if (numericAmount <= 0 || requestedQuantity <= 0 || tradeBlockingReason || (preflight && !preflight.can_execute)) return;
     setLoading(true);
     setResult(null);
     try {
-      await tradingApi.placeOrder({ symbol, side, order_type: "market", quantity: cryptoAmount });
-      setResult({ ok: true, msg: `${side === "buy" ? "Bought" : "Sold"} ${cryptoAmount.toFixed(6)} ${symbol}` });
+      await tradingApi.placeOrder({ symbol: tradeSymbol, side, order_type: "market", quantity: requestedQuantity });
+      setResult({
+        ok: true,
+        msg:
+          tradeSymbol !== symbol
+            ? `Conversion executee: ${requestedQuantity.toFixed(6)} ${baseAsset} via ${resolvedPair}`
+            : `${side === "buy" ? "Bought" : "Sold"} ${requestedQuantity.toFixed(6)} ${baseAsset}`,
+      });
       onSuccess?.();
     } catch (err: unknown) {
       const detail = err instanceof Error ? err.message : "Order failed";
@@ -112,8 +239,14 @@ export function QuickTradeModal({
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-[var(--foreground)]">{symbol}</h2>
-            <p className="text-sm text-[var(--text-secondary)]">${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <h2 className="text-lg font-bold text-[var(--foreground)]">
+              {tradeSymbol !== symbol ? `Conversion via ${resolvedPair}` : displayAsset}
+            </h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              {effectivePrice > 0
+                ? `${effectivePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} ${quoteAsset}`
+                : "Prix indisponible"}
+            </p>
           </div>
           <button onClick={onClose} className="rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--glass-bg)]">
             <X className="h-5 w-5" />
@@ -124,8 +257,9 @@ export function QuickTradeModal({
         <div className="mb-5 flex rounded-xl p-1" style={{ background: "var(--glass-bg)" }}>
           <button
             onClick={() => setSide("buy")}
+            disabled={conversionMode}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold transition-all",
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60",
               side === "buy" ? "bg-[var(--success)] text-white shadow-lg" : "text-[var(--text-secondary)]",
             )}
           >
@@ -133,8 +267,9 @@ export function QuickTradeModal({
           </button>
           <button
             onClick={() => setSide("sell")}
+            disabled={conversionMode}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold transition-all",
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60",
               side === "sell" ? "bg-[var(--danger)] text-white shadow-lg" : "text-[var(--text-secondary)]",
             )}
           >
@@ -149,70 +284,195 @@ export function QuickTradeModal({
           </div>
         )}
 
-        {/* Available balance */}
-        {(availableQuote != null || availableBase != null) && (
-          <div className="mb-3 flex items-center justify-between rounded-xl border border-[var(--glass-border)] px-4 py-2 text-xs" style={{ background: "var(--glass-bg)" }}>
-            <span className="text-[var(--text-muted)]">Available</span>
-            <span className="text-[var(--text-secondary)]">
-              ${Number(availableQuote ?? 0).toFixed(2)} / {Number(availableBase ?? 0).toFixed(6)} {symbol}
-            </span>
+        {connectionHint && (
+          <div className="mb-3 rounded-xl border border-[var(--glass-border)] px-4 py-3 text-xs leading-5 text-[var(--text-secondary)]" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--page-accent)]" />
+              <div>
+                <p className="font-semibold text-[var(--foreground)]">Connexion Binance requise</p>
+                <p className="mt-1">{connectionHint}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Link
+                    href="/settings"
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--glass-border)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--foreground)] hover:bg-[var(--glass-bg)]"
+                  >
+                    Ouvrir Settings
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                  <span className="text-[11px] text-[var(--text-muted)]">1. Ajouter Binance 2. Activer trading 3. Revenir ici</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tradeSymbol !== symbol && (
+          <div className="mb-3 rounded-xl border border-[var(--page-accent)]/20 px-4 py-3 text-xs leading-5 text-[var(--text-secondary)]" style={{ background: "color-mix(in srgb, var(--page-accent) 10%, transparent)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-[var(--foreground)]">Mode conversion</p>
+                <p className="mt-1">
+                  Vous preparez {side === "buy" ? baseAsset : quoteAsset} via {resolvedPair} pour financer ensuite l'achat de {displayAsset}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleBackToPrimaryTrade}
+                className="shrink-0 rounded-lg border border-[var(--glass-border)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--foreground)] hover:bg-[var(--glass-bg)]"
+              >
+                Retour
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-3 rounded-xl border border-[var(--glass-border)] px-4 py-3 text-xs" style={{ background: "var(--glass-bg)" }}>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            <div>
+              <span className="text-[var(--text-muted)]">Paire</span>
+              <p className="mt-0.5 text-[13px] font-semibold text-[var(--foreground)]">{resolvedPair}</p>
+            </div>
+            <div>
+              <span className="text-[var(--text-muted)]">Devise debitee</span>
+              <p className="mt-0.5 text-[13px] font-semibold text-[var(--foreground)]">{side === "buy" ? quoteAsset : baseAsset}</p>
+            </div>
+            <div>
+              <span className="text-[var(--text-muted)]">Disponible</span>
+              <p className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
+                {side === "buy" ? `${preflightQuote.toFixed(2)} ${quoteAsset}` : `${preflightBase.toFixed(6)} ${baseAsset}`}
+              </p>
+            </div>
+            <div>
+              <span className="text-[var(--text-muted)]">Minimum d'ordre</span>
+              <p className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
+                {minNotional > 0 ? `${minNotional.toFixed(2)} ${quoteAsset}` : "Chargement..."}
+              </p>
+            </div>
+          </div>
+          {preflight?.notes?.length ? (
+            <div className="mt-2 border-t border-[var(--glass-border)] pt-2">
+              {preflight.notes.slice(0, 2).map((note) => (
+                <p key={note} className="text-[11px] leading-5 text-[var(--text-muted)]">
+                  - {note}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        {showConversionCta && (
+          <div className="mb-4 rounded-xl border border-[var(--page-accent)]/20 px-4 py-3 text-xs leading-5 text-[var(--text-secondary)]" style={{ background: "color-mix(in srgb, var(--page-accent) 8%, transparent)" }}>
+            <div className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--page-accent)]" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-[var(--foreground)]">
+                  Cette paire s'exécute en {quoteAsset}
+                </p>
+                <p className="mt-1">
+                  Votre solde utile est en {preflight?.conversion_from_asset}. Conversion guidée disponible via{" "}
+                  {preflight?.conversion_symbol}.
+                </p>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                  Objectif: ~{Number(preflight?.conversion_required_quantity ?? 0).toFixed(4)} {conversionTargetAsset}
+                  {preflight?.conversion_estimated_spend
+                    ? ` • depense estimee ~${Number(preflight.conversion_estimated_spend).toFixed(2)} ${preflight.conversion_from_asset}`
+                    : ""}
+                </p>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={handlePrepareConversion}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--glass-border)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--foreground)] hover:bg-[var(--glass-bg)]"
+                  >
+                    Convertir en {conversionTargetAsset}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Amount input */}
         <div className="mb-4">
           <div className="flex items-center rounded-xl px-5 py-4 border border-[var(--glass-border)]" style={{ background: "var(--glass-bg)" }}>
-            <span className="mr-2 text-3xl font-bold text-[var(--text-muted)]">$</span>
+            <span className="mr-2 text-2xl font-bold text-[var(--text-muted)]">{inputMode === "base" ? baseAsset : quoteAsset}</span>
             <input
               type="number"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                if (inputMode === "quote") setSavedQuoteAmount(e.target.value);
+              }}
               placeholder="0.00"
               className="flex-1 bg-transparent text-3xl font-bold text-[var(--foreground)] outline-none placeholder-[var(--text-muted)]/30"
               autoFocus
             />
           </div>
-          {usdAmount > 0 && (
+          {numericAmount > 0 && (
             <p className="mt-1.5 text-right text-xs text-[var(--text-muted)]">
-              &asymp; {cryptoAmount.toFixed(6)} {symbol}
+              {inputMode === "quote"
+                ? `≈ ${requestedQuantity.toFixed(6)} ${baseAsset}`
+                : `≈ ${(side === "buy" ? preflightNotional + preflightFee : Math.max(preflightNotional - preflightFee, 0)).toFixed(2)} ${quoteAsset}`}
             </p>
           )}
         </div>
 
         {/* Presets */}
-        <div className="mb-5 flex gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setAmount(String(p))}
-              className={cn(
-                "flex-1 rounded-xl py-2.5 text-xs font-medium transition-all border",
-                amount === String(p)
-                  ? "border-[var(--page-accent)]/30 bg-[var(--page-accent)]/12 text-[var(--page-accent)]"
-                  : "border-[var(--glass-border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-              )}
-              style={amount !== String(p) ? { background: "var(--glass-bg)" } : undefined}
-            >
-              ${p}
-            </button>
-          ))}
-        </div>
+        {inputMode === "quote" ? (
+          <div className="mb-5 flex gap-2">
+            {PRESETS.map((p) => (
+              <button
+                key={p}
+                onClick={() => {
+                  setAmount(String(p));
+                  setSavedQuoteAmount(String(p));
+                }}
+                className={cn(
+                  "flex-1 rounded-xl py-2.5 text-xs font-medium transition-all border",
+                  amount === String(p)
+                    ? "border-[var(--page-accent)]/30 bg-[var(--page-accent)]/12 text-[var(--page-accent)]"
+                    : "border-[var(--glass-border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                )}
+                style={amount !== String(p) ? { background: "var(--glass-bg)" } : undefined}
+              >
+                ${p}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mb-5 rounded-xl border border-[var(--glass-border)] px-4 py-3 text-[11px] text-[var(--text-muted)]" style={{ background: "var(--glass-bg)" }}>
+            Quantite pre-remplie d'apres le besoin estime pour financer l'ordre initial.
+          </div>
+        )}
 
         {/* Fee summary */}
-        {usdAmount > 0 && (
+        {numericAmount > 0 && (
           <div className="mb-5 space-y-2 rounded-xl p-4 border border-[var(--glass-border)]" style={{ background: "var(--glass-bg)" }}>
             <div className="flex justify-between text-xs">
-              <span className="text-[var(--text-muted)]">Amount</span>
-              <span className="text-[var(--text-secondary)]">${usdAmount.toFixed(2)}</span>
+              <span className="text-[var(--text-muted)]">{inputMode === "base" ? "Quantite cible" : "Montant cible"}</span>
+              <span className="text-[var(--text-secondary)]">
+                {inputMode === "base" ? `${numericAmount.toFixed(4)} ${baseAsset}` : `${numericAmount.toFixed(2)} ${quoteAsset}`}
+              </span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-[var(--text-muted)]">Fee ({(FEE_RATE * 100).toFixed(1)}%)</span>
-              <span className="text-[var(--text-secondary)]">${fee.toFixed(2)}</span>
+              <span className="text-[var(--text-muted)]">Frais estimes</span>
+              <span className="text-[var(--text-secondary)]">
+                {preflightLoading ? "..." : `${preflightFee.toFixed(2)} ${quoteAsset}`}
+              </span>
             </div>
             <div className="flex justify-between border-t border-[var(--glass-border)] pt-2 text-xs font-semibold">
-              <span className="text-[var(--text-secondary)]">{side === "buy" ? "Estimated cost" : "Estimated proceeds"}</span>
-              <span className="text-[var(--foreground)]">${settlementTotal.toFixed(2)}</span>
+              <span className="text-[var(--text-secondary)]">{side === "buy" ? "Debit reel estime" : "Produit estime"}</span>
+              <span className="text-[var(--foreground)]">
+                {preflightLoading ? "..." : `${(side === "buy" ? preflightNotional + preflightFee : Math.max(preflightNotional - preflightFee, 0)).toFixed(2)} ${quoteAsset}`}
+              </span>
             </div>
+          </div>
+        )}
+
+        {tradeBlockingReason && (
+          <div className="mb-4 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)]">
+            {tradeBlockingReason}
           </div>
         )}
 
@@ -226,13 +486,13 @@ export function QuickTradeModal({
         {/* Submit */}
         <button
           onClick={handleTrade}
-          disabled={usdAmount <= 0 || loading}
+          disabled={numericAmount <= 0 || loading || preflightLoading || Boolean(tradeBlockingReason) || (preflight == null && numericAmount > 0)}
           className={cn(
             "w-full rounded-xl py-4 text-base font-bold transition-all disabled:opacity-40",
             side === "buy" ? "bg-[var(--success)] text-white hover:brightness-110" : "bg-[var(--danger)] text-white hover:brightness-110",
           )}
         >
-          {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : `${side === "buy" ? "Buy" : "Sell"} ${symbol}`}
+          {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : submitLabel}
         </button>
       </div>
     </div>
