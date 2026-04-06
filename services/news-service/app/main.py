@@ -1,4 +1,4 @@
-"""Okamoey News Intelligence Service."""
+"""GlueTrade News Intelligence Service."""
 
 import logging
 from contextlib import asynccontextmanager

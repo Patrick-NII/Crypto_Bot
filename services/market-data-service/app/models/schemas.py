@@ -1,4 +1,4 @@
-"""Pydantic models for the Okamoey Market Data Service."""
+"""Pydantic models for the GlueTrade Market Data Service."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional

@@ -1,8 +1,8 @@
-# 🚀 Guide d'Utilisation - Plateforme Okamoey
+# 🚀 Guide d'Utilisation - Plateforme GlueTrade
 
 ## 📋 Vue d'ensemble
 
-Okamoey est maintenant une **plateforme professionnelle de gestion d'actifs crypto** avec :
+GlueTrade est maintenant une **plateforme professionnelle de gestion d'actifs crypto** avec :
 - 🤖 **IA avancée** pour l'analyse de marché
 - 📊 **Surveillance en temps réel** des 40 actifs prioritaires
 - 🎯 **Détection d'opportunités** avec scoring 80%+ confiance
@@ -13,7 +13,7 @@ Okamoey est maintenant une **plateforme professionnelle de gestion d'actifs cryp
 ## 🏗️ Nouvelle Architecture
 
 ```
-okamoey/
+gluetrade/
 ├── core/           # Cœur du système
 ├── services/       # Services métier
 ├── monitoring/     # Surveillance et alertes
@@ -26,12 +26,12 @@ okamoey/
 
 ### 1. **Lancer la plateforme complète**
 ```bash
-python start_okamoey.py
+python start_gluetrade.py
 ```
 
 ### 2. **Arrêter la plateforme**
 ```bash
-python stop_okamoey.py
+python stop_gluetrade.py
 ```
 
 ### 3. **Surveillance manuelle**
@@ -116,11 +116,11 @@ MIN_CONFIDENCE_LEVEL=80.0
 
 ### **Fichiers de logs**
 - `logs/auto_monitor.log` - Surveillance automatique
-- `logs/okamoey.log` - Bot principal
+- `logs/gluetrade.log` - Bot principal
 - `logs/monitoring.log` - Analyses manuelles
 
 ### **Surveillance des processus**
-- Fichier `okamoey.pid` avec les PIDs actifs
+- Fichier `gluetrade.pid` avec les PIDs actifs
 - Redémarrage automatique en cas de crash
 - Statut toutes les heures dans les logs
 
@@ -190,22 +190,22 @@ python tools/scripts/setup_cron.py install
 ### **Problèmes courants**
 1. **Bot ne répond pas** → Vérifier TOKEN et CHAT_ID
 2. **Analyses vides** → Vérifier OPENAI_API_KEY
-3. **Surveillance arrêtée** → Redémarrer avec `start_okamoey.py`
+3. **Surveillance arrêtée** → Redémarrer avec `start_gluetrade.py`
 4. **Erreurs API** → Vérifier les limites de requêtes
 
 ### **Logs de debug**
 ```bash
 # Voir les logs en temps réel
 tail -f logs/auto_monitor.log
-tail -f logs/okamoey.log
+tail -f logs/gluetrade.log
 
 # Vérifier les processus
-ps aux | grep okamoey
+ps aux | grep gluetrade
 ```
 
 ---
 
-## 🎉 **Okamoey - Votre Assistant Portfolio Intelligent**
+## 🎉 **GlueTrade - Votre Assistant Portfolio Intelligent**
 
 La plateforme est maintenant prête pour une utilisation professionnelle et la monétisation. Elle combine IA avancée, surveillance temps réel et analyses exclusives pour offrir une valeur unique dans l'écosystème crypto.
 

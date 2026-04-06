@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script de surveillance simplifié pour Okamoey
+Script de surveillance simplifié pour GlueTrade
 Peut être lancé manuellement ou via cron
 """
 

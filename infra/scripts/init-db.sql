@@ -1,5 +1,5 @@
 -- =============================================================================
--- Okamoey Trading Platform - Database Initialization
+-- GlueTrade Trading Platform - Database Initialization
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

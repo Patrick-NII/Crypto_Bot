@@ -23,7 +23,7 @@ class BaseAgent:
     def build_system_prompt(self, context: str) -> str:
         """Combine the agent's system prompt with live context data."""
         base = (
-            f"You are {self.config.name}, an AI assistant for the Okamoey crypto trading platform.\n"
+            f"You are {self.config.name}, an AI assistant for the GlueTrade crypto trading platform.\n"
             f"Role: {self.config.description}\n\n"
             f"{self.config.system_prompt}\n\n"
         )

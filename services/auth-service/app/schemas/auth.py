@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import datetime
+from typing import Any, Optional
 
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
 
 RiskProfileValue = "conservative|moderate|aggressive"
 
@@ -49,6 +49,7 @@ class UserUpdate(BaseModel):
     billing_cycle: Optional[str] = Field(None, pattern=r"^(monthly|yearly)$")
     ai_behavior_style: Optional[str] = Field(None, pattern=r"^(gentle|balanced|assertive|aggressive)$")
     ai_assistant_tone: Optional[str] = Field(None, pattern=r"^(concise|coach|analytical)$")
+    preferences: Optional[dict[str, Any]] = None
 
 
 class TermsAcceptance(BaseModel):
@@ -122,6 +123,7 @@ class UserResponse(BaseModel):
     wallet_access_reason: str
     connected_exchanges_count: int
     live_trading_enabled: bool
+    preferences: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 

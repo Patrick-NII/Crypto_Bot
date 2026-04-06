@@ -1,6 +1,6 @@
 # core/bot/user_handlers.py
 """
-Gestionnaires d'utilisateurs pour le bot Telegram Okamoey
+Gestionnaires d'utilisateurs pour le bot Telegram GlueTrade
 """
 
 import os
@@ -225,7 +225,7 @@ Pour commencer à suivre vos investissements:
     def handle_help(self, update, context) -> str:
         """Gère la commande /help - Aide et support"""
         try:
-            message = """🤖 **OKAMOEY - AIDE ET SUPPORT**
+            message = """🤖 **GLUETRADE - AIDE ET SUPPORT**
 
 📱 **Commandes principales:**
 • `/start` - Inscription et onboarding
@@ -248,9 +248,9 @@ Pour commencer à suivre vos investissements:
 • **Pro** (99.99€) - Tout + API + formation
 
 📞 **Support:**
-• Email: support@okamoey.com
-• Canal: @okamoey_channel
-• Groupe: @okamoey_community
+• Email: support@gluetrade.com
+• Canal: @gluetrade_channel
+• Groupe: @gluetrade_community
 
 🔒 **Sécurité:**
 • Vos données sont chiffrées
@@ -284,7 +284,7 @@ Pour commencer à suivre vos investissements:
         try:
             subscription_info = self.user_service.get_subscription_info(telegram_user.id)
             
-            message = f"""🎉 **BIENVENUE SUR OKAMOEY, {telegram_user.first_name or telegram_user.username or 'Investisseur'} !**
+            message = f"""🎉 **BIENVENUE SUR GLUETRADE, {telegram_user.first_name or telegram_user.username or 'Investisseur'} !**
 
 🤖 **Votre assistant IA crypto personnel**
 
@@ -299,7 +299,7 @@ Pour commencer à suivre vos investissements:
 3. 📊 **Configurer votre portfolio** (Premium)
 4. 🚨 **Créer des alertes** personnalisées (Premium)
 
-📢 **Canal de diffusion:** @okamoey_channel
+📢 **Canal de diffusion:** @gluetrade_channel
 • Mises à jour marché toutes les 30 minutes
 • Opportunités d'investissement
 • Analyses techniques avancées
@@ -315,13 +315,13 @@ Pour commencer à suivre vos investissements:
 • Conseils IA adaptés
 • Analyses quotidiennes
 
-Bienvenue dans la communauté Okamoey ! 🚀"""
+Bienvenue dans la communauté GlueTrade ! 🚀"""
             
             return message
             
         except Exception as e:
             print(f"Erreur génération message bienvenue: {e}")
-            return "Bienvenue sur Okamoey ! Utilisez /help pour commencer."
+            return "Bienvenue sur GlueTrade ! Utilisez /help pour commencer."
     
     def _generate_profile_message(self, user, wallets, subscription) -> str:
         """Génère le message de profil"""
@@ -367,7 +367,7 @@ Bienvenue dans la communauté Okamoey ! 🚀"""
     def _generate_subscription_message(self, subscription_info, pricing) -> str:
         """Génère le message d'abonnement"""
         try:
-            message = f"""💎 **ABONNEMENTS OKAMOEY**
+            message = f"""💎 **ABONNEMENTS GLUETRADE**
 
 📊 **Votre abonnement actuel:**
 • Niveau: {subscription_info['tier_name']}

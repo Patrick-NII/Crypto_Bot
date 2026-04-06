@@ -80,7 +80,7 @@ async def _fetch_single_rss(source_name: str, url: str, limit: int) -> list[dict
     """Fetch and parse a single RSS feed."""
     try:
         async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "OkamoeyBot/1.0"})
+            resp = await client.get(url, headers={"User-Agent": "GlueTradeBot/1.0"})
             resp.raise_for_status()
 
         root = ET.fromstring(resp.text)

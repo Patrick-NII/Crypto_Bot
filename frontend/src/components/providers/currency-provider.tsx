@@ -37,7 +37,7 @@ export function useCurrency() {
   return useContext(CurrencyContext);
 }
 
-const STORAGE_KEY = "okamoey-currency";
+const STORAGE_KEY = "gluetrade-currency";
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [currency, setCurrencyState] = useState<CurrencyCode>("usd");

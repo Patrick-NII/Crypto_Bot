@@ -23,7 +23,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const SIDEBAR_KEY = "okamoey-sidebar-collapsed";
+const SIDEBAR_KEY = "gluetrade-sidebar-collapsed";
 
 function readCollapsedPreference() {
   if (typeof window === "undefined") return false;
@@ -266,11 +266,18 @@ export function Sidebar() {
       >
         <div className="flex h-12 items-center justify-between border-b border-[var(--glass-border)] px-3">
           {!collapsed ? (
-            <div className="min-w-0">
-              <span className="glow-text text-base font-bold tracking-wide">OKAMOEY</span>
-              {user ? <p className="truncate text-[10px] text-[var(--text-muted)]">{user.username}</p> : null}
+            <div className="min-w-0 flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-compact.svg" alt="GT" className="h-7 w-7" />
+              <div>
+                <span className="glow-text text-base font-bold tracking-wide">GlueTrade</span>
+                {user ? <p className="truncate text-[10px] text-[var(--text-muted)]">{user.username}</p> : null}
+              </div>
             </div>
-          ) : null}
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src="/logo-compact.svg" alt="GT" className="h-6 w-6" />
+          )}
           <button
             onClick={toggleCollapsed}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-all hover:bg-[var(--glass-bg)] hover:text-[var(--foreground)]"
@@ -306,7 +313,11 @@ export function Sidebar() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <span className="glow-text text-sm font-bold">OKAMOEY Trading</span>
+        <div className="flex items-center gap-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-compact.svg" alt="GT" className="h-5 w-5" />
+          <span className="glow-text text-sm font-bold">GlueTrade</span>
+        </div>
         <div className="w-8" />
       </div>
 
@@ -322,7 +333,11 @@ export function Sidebar() {
             }}
           >
             <div className="flex h-12 items-center justify-between border-b border-[var(--glass-border)] px-4">
-              <span className="glow-text text-base font-bold">OKAMOEY</span>
+              <div className="flex items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo-compact.svg" alt="GT" className="h-6 w-6" />
+                <span className="glow-text text-base font-bold">GlueTrade</span>
+              </div>
               <button
                 onClick={closeMobile}
                 className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--glass-bg)] hover:text-[var(--foreground)]"

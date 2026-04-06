@@ -81,9 +81,9 @@ try:
     ai_analysis = generate_ai_analysis(cryptos)
 
     message = (
-        "📢 *L'HEBDOMADAIRE DE OKAMOEY*\n\n"
+        "📢 *L'HEBDOMADAIRE DE GLUETRADE*\n\n"
         f"{market_summary}\n\n"
-        "💡 *Analyse Okamoey :*\n"
+        "💡 *Analyse GlueTrade :*\n"
         f"{ai_analysis}"
     )
 

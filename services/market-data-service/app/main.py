@@ -1,4 +1,4 @@
-"""Okamoey Market Data Service - FastAPI application entry point.
+"""GlueTrade Market Data Service - FastAPI application entry point.
 
 Provides REST and WebSocket APIs for real-time cryptocurrency market data.
 Port: 8003
@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Real-time cryptocurrency market data for the Okamoey trading platform",
+    description="Real-time cryptocurrency market data for the GlueTrade trading platform",
     lifespan=lifespan,
 )
 

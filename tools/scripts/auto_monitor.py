@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script de surveillance automatique pour Okamoey
+Script de surveillance automatique pour GlueTrade
 Remplace les cron jobs en tournant en continu
 """
 
@@ -43,7 +43,7 @@ class AutoMonitor:
         
     def start(self):
         """Démarre le moniteur automatique"""
-        logger.info("🚀 Démarrage du moniteur automatique Okamoey...")
+        logger.info("🚀 Démarrage du moniteur automatique GlueTrade...")
         self.running = True
         
         # Démarrer les threads

@@ -85,8 +85,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("okamoey-theme") as Theme | null;
-    const savedMode = localStorage.getItem("okamoey-trading-mode") as TradingMode | null;
+    const savedTheme = localStorage.getItem("gluetrade-theme") as Theme | null;
+    const savedMode = localStorage.getItem("gluetrade-trading-mode") as TradingMode | null;
     if (savedTheme) setTheme(savedTheme);
     if (savedMode) setTradingModeState(savedMode);
     setMounted(true);
@@ -95,7 +95,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("okamoey-theme", theme);
+    localStorage.setItem("gluetrade-theme", theme);
   }, [theme, mounted]);
 
   const toggleTheme = useCallback(() => {
@@ -104,7 +104,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTradingMode = useCallback((mode: TradingMode) => {
     setTradingModeState(mode);
-    localStorage.setItem("okamoey-trading-mode", mode);
+    localStorage.setItem("gluetrade-trading-mode", mode);
   }, []);
 
   return (

@@ -173,5 +173,5 @@ async def get_fear_greed() -> FearGreedResponse:
     summary="List supported exchanges",
 )
 async def get_exchanges() -> ExchangesResponse:
-    """List all exchanges supported by the Okamoey market data service."""
+    """List all exchanges supported by the GlueTrade market data service."""
     return ExchangesResponse(success=True, data=SUPPORTED_EXCHANGES)

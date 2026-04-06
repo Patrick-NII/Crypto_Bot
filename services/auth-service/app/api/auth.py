@@ -198,6 +198,10 @@ def _connection_response(connection: ExchangeConnection) -> ExchangeConnectionRe
     )
 
 
+def _normalize_preferences(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
 async def _user_response(user: User, db: AsyncSession) -> UserResponse:
     connections, live_trading_enabled, reason = await _sync_user_access_state(user, db)
     return UserResponse(
@@ -218,6 +222,7 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
         wallet_access_reason=reason,
         connected_exchanges_count=sum(1 for connection in connections if connection.is_active),
         live_trading_enabled=live_trading_enabled,
+        preferences=_normalize_preferences(user.preferences),
         created_at=user.created_at,
     )
 
@@ -271,6 +276,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         ai_behavior_style="balanced",
         ai_assistant_tone="analytical",
         wallet_access_enabled=False,
+        preferences={},
     )
     db.add(user)
     await db.flush()
@@ -449,6 +455,9 @@ async def update_me(
 
     if payload.ai_assistant_tone is not None:
         current_user.ai_assistant_tone = payload.ai_assistant_tone
+
+    if payload.preferences is not None:
+        current_user.preferences = _normalize_preferences(payload.preferences)
 
     db.add(current_user)
     await db.flush()

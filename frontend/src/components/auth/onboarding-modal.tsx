@@ -53,7 +53,7 @@ export function OnboardingModal() {
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#22c55e]/12">
               <Check className="h-7 w-7 text-[#22c55e]" />
             </div>
-            <h2 className="text-xl font-bold text-[var(--foreground)] mb-2">Bienvenue sur Okamoey</h2>
+            <h2 className="text-xl font-bold text-[var(--foreground)] mb-2">Bienvenue sur GlueTrade</h2>
             <p className="text-[14px] text-[var(--text-muted)]">
               Redirection vers les r&eacute;glages pour connecter votre exchange...
             </p>
@@ -82,7 +82,7 @@ export function OnboardingModal() {
                   1. Acc&egrave;s et utilisation
                 </h3>
                 <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
-                  Okamoey fournit une couche d&apos;intelligence artificielle par-dessus votre compte exchange.
+                  GlueTrade fournit une couche d&apos;intelligence artificielle par-dessus votre compte exchange.
                   Vous restez propri&eacute;taire de vos fonds et de vos cl&eacute;s API &agrave; tout moment.
                 </p>
               </div>
@@ -137,7 +137,7 @@ export function OnboardingModal() {
               />
               <span className="text-[13px] text-[var(--text-secondary)] leading-relaxed">
                 J&apos;ai lu et j&apos;accepte les conditions g&eacute;n&eacute;rales d&apos;utilisation
-                et la politique de confidentialit&eacute; d&apos;Okamoey (version 2026-04).
+                et la politique de confidentialit&eacute; d&apos;GlueTrade (version 2026-04).
               </span>
             </label>
 

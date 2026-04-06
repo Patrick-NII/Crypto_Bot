@@ -1,4 +1,4 @@
-"""Okamoey Portfolio Service -- FastAPI application entry-point."""
+"""GlueTrade Portfolio Service -- FastAPI application entry-point."""
 
 from contextlib import asynccontextmanager
 

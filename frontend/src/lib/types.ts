@@ -1,5 +1,5 @@
 // ============================================================
-// Okamoey Trading Platform - Shared TypeScript Types
+// GlueTrade Trading Platform - Shared TypeScript Types
 // ============================================================
 
 // --- Market Data ---
@@ -279,6 +279,23 @@ export type SubscriptionStatus = "trial" | "active" | "inactive" | "past_due" | 
 export type BillingCycle = "monthly" | "yearly";
 export type AIBehaviorStyle = "gentle" | "balanced" | "assertive" | "aggressive";
 export type AIAssistantTone = "concise" | "coach" | "analytical";
+export type DeskChartType = "candlestick" | "line";
+export type MarketMoversView = "gainers" | "losers" | "candidates";
+export type MarketUniverseView = "all" | MarketMoversView;
+
+export interface UserPreferences {
+  crypto_desk?: {
+    watchlist?: string[];
+    selected_symbol?: string | null;
+    chart_type?: DeskChartType;
+    movers_view?: MarketMoversView;
+    universe_view?: MarketUniverseView;
+  };
+  app?: {
+    theme?: "dark" | "light";
+    trading_mode?: "manual" | "auto";
+  };
+}
 
 export interface RiskProfile {
   profile_id: RiskProfileId;
@@ -335,6 +352,7 @@ export interface UserProfile {
   wallet_access_reason: string;
   connected_exchanges_count: number;
   live_trading_enabled: boolean;
+  preferences: UserPreferences;
   created_at: string;
 }
 

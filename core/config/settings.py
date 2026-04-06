@@ -1,6 +1,6 @@
 # core/config/settings.py
 """
-Configuration centralisée pour la plateforme Okamoey
+Configuration centralisée pour la plateforme GlueTrade
 """
 
 import os
@@ -35,7 +35,7 @@ class Config:
     ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY', '')
     
     # Base de données
-    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///data/okamoey.db')
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///data/gluetrade.db')
     
     # Configuration des services
     CRYPTO_UPDATE_INTERVAL = int(os.getenv('CRYPTO_UPDATE_INTERVAL', '300'))  # 5 minutes
@@ -52,7 +52,7 @@ class Config:
     
     # Logging
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-    LOG_FILE = LOGS_DIR / "okamoey.log"
+    LOG_FILE = LOGS_DIR / "gluetrade.log"
     
     # Cache
     CACHE_DURATION = int(os.getenv('CACHE_DURATION', '3600'))  # 1 heure

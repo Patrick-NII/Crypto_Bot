@@ -25,7 +25,7 @@ export default function LoginPage() {
       "demo_user",
       JSON.stringify({
         id: "demo-001",
-        email: "demo@okamoey.com",
+        email: "demo@gluetrade.com",
         username: "DemoTrader",
         subscription_plan: "pro",
         subscription_status: "trial",
@@ -75,8 +75,10 @@ export default function LoginPage() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(6,214,160,0.06)_0%,transparent_50%)]" />
       <div className="relative w-full max-w-md">
         <div className="mb-8 text-center">
-          <Link href="/" className="text-2xl font-bold glow-text">
-            OKAMOEY
+          <Link href="/" className="flex items-center justify-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-compact.svg" alt="GlueTrade" className="h-10 w-10" />
+            <span className="text-2xl font-bold glow-text">GlueTrade</span>
           </Link>
           <p className="mt-2 text-sm text-[#8888a0]">Sign in to your account</p>
         </div>
@@ -151,7 +153,7 @@ export default function LoginPage() {
               Enter Demo Mode
             </button>
             <p className="mt-2 text-center text-[12px] text-[#55556a]">
-              demo@okamoey.com &middot; No backend required
+              demo@gluetrade.com &middot; No backend required
             </p>
           </div>
         </form>

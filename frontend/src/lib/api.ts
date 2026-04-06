@@ -1,5 +1,5 @@
 // ============================================================
-// Okamoey Trading Platform - API Client
+// GlueTrade Trading Platform - API Client
 // Binance API via local proxy (primary) + Gateway fallback
 // ============================================================
 
@@ -87,7 +87,7 @@ function getDemoUser(): UserProfile | null {
     const parsed = JSON.parse(raw) as Partial<UserProfile>;
     return {
       id: parsed.id ?? "demo-001",
-      email: parsed.email ?? "demo@okamoey.com",
+      email: parsed.email ?? "demo@gluetrade.com",
       username: parsed.username ?? "DemoTrader",
       is_active: true,
       is_verified: true,
@@ -104,6 +104,7 @@ function getDemoUser(): UserProfile | null {
         parsed.wallet_access_reason ?? "Demo mode does not expose private wallet data.",
       connected_exchanges_count: parsed.connected_exchanges_count ?? 0,
       live_trading_enabled: parsed.live_trading_enabled ?? false,
+      preferences: parsed.preferences ?? {},
       created_at: parsed.created_at ?? new Date().toISOString(),
     };
   } catch {
@@ -539,7 +540,7 @@ let _marketCache: { data: AllCryptosResponse; ts: number } | null = null;
 let _meCache: { data: UserProfile; ts: number } | null = null;
 let _fearGreedCache: { data: { value: number; label: string }; ts: number } | null = null;
 let _snapshotCache: { scope: string; data: PortfolioSnapshot; ts: number } | null = null;
-const CLIENT_CACHE_PREFIX = "okamoey-cache:v4:";
+const CLIENT_CACHE_PREFIX = "gluetrade-cache:v4:";
 
 function currentCacheScope() {
   const token = getAccessToken();
@@ -1835,9 +1836,10 @@ export const authApi = {
         | "billing_cycle"
         | "ai_behavior_style"
         | "ai_assistant_tone"
+        | "preferences"
       >
     > & { telegram_chat_id?: string | null },
-  ) => fetchJson<UserProfile>("/auth/me", { method: "PUT", body: JSON.stringify(data) }),
+  ) => fetchJson<UserProfile>("/auth/me", { method: "PUT", body: JSON.stringify(data) }).then(rememberMe),
   acceptTerms: (termsVersion = "2026-04") =>
     fetchJson<UserProfile>("/auth/me/accept-terms", {
       method: "POST",

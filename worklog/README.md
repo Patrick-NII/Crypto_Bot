@@ -1,6 +1,6 @@
 # Worklog - Journal de Travail
 
-Ce dossier contient le journal de travail du projet Okamoey Trading Platform.
+Ce dossier contient le journal de travail du projet GlueTrade Trading Platform.
 Chaque entree documente le travail effectue, les bugs rencontres et corriges,
 et fournit un resume clair pour la reprise du travail.
 

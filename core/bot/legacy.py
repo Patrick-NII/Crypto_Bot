@@ -1,4 +1,4 @@
-# okamoey_bot.py
+# gluetrade_bot.py
 import os
 import json
 from datetime import datetime

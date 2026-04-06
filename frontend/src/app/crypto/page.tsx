@@ -26,6 +26,7 @@ import { useCurrency } from "@/components/providers/currency-provider";
 import { PriceChart } from "@/components/charts/price-chart";
 import { LiveSparkline } from "@/components/charts/live-sparkline";
 import { QuickTradeModal } from "@/components/trading/quick-trade-modal";
+import { MarketUniverseModal, type MarketUniverseItem } from "@/components/trading/market-universe-modal";
 import { ScoreGauge, SignalReadout } from "@/components/trading/signal-score";
 import {
   type AutoTradingHistorySnapshot,
@@ -49,6 +50,9 @@ import { cn, formatRelative } from "@/lib/utils";
 import type {
   AnalyticsMetrics,
   CryptoMarketData,
+  DeskChartType,
+  MarketMoversView,
+  MarketUniverseView,
   Order,
   PortfolioSnapshot,
   Strategy,
@@ -60,9 +64,11 @@ const SIGNAL_REFRESH_INTERVAL = 45_000;
 const SIGNAL_SCAN_LIMIT = 8;
 const WATCHLIST_KEY = "watchlist";
 const DEFAULT_WATCHLIST = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"];
-const TRADING_VIEW_CACHE_KEY = "okamoey-trading-view:v4";
+const TRADING_VIEW_CACHE_KEY = "gluetrade-trading-view:v5";
 const TRADING_VIEW_CACHE_TTL = 300_000;
 const SCANNER_BLOCKLIST = new Set(["USDC", "USDT", "USD1", "FDUSD", "TUSD", "USDE", "XAUT", "PAXG", "STO", "U"]);
+const COMPACT_MOVER_ROWS = 4;
+const VISIBLE_PUBLICATION_FILTERS = 2;
 
 interface SignalDetail {
   symbol: string;
@@ -146,7 +152,9 @@ interface TradeIntent {
 
 interface TradingViewCache {
   selectedSymbol: string | null;
-  chartType: "candlestick" | "line";
+  chartType: DeskChartType;
+  moversView: MarketMoversView;
+  universeView: MarketUniverseView;
   orders: Order[];
   analytics: AnalyticsMetrics | null;
   strategies: Strategy[];
@@ -230,6 +238,33 @@ function uniqueStrings(items: string[]) {
     result.push(normalized);
   }
   return result;
+}
+
+function isDeskChartType(value: string | null | undefined): value is DeskChartType {
+  return value === "candlestick" || value === "line";
+}
+
+function normalizeDeskChartType(value: string | null | undefined): DeskChartType {
+  return isDeskChartType(value) ? value : "candlestick";
+}
+
+function normalizeMoversView(value: string | null | undefined): MarketMoversView {
+  if (value === "gainers" || value === "losers" || value === "candidates") return value;
+  return "candidates";
+}
+
+function normalizeUniverseView(value: string | null | undefined): MarketUniverseView {
+  if (value === "all") return "all";
+  return normalizeMoversView(value);
+}
+
+function sanitizeWatchlistSymbols(symbols: string[] | null | undefined) {
+  if (!Array.isArray(symbols)) return [];
+  return unique(
+    symbols
+      .map((symbol) => String(symbol ?? "").trim().toUpperCase())
+      .filter((symbol) => /^[A-Z0-9]{2,12}$/.test(symbol) && !SCANNER_BLOCKLIST.has(symbol)),
+  );
 }
 
 function normalizeSignalStatus(status?: string, actionability?: string) {
@@ -453,6 +488,46 @@ function formatSetupType(setupType: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function compactMetricNumber(value: number) {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return `${Math.round(value)}`;
+}
+
+function computeDiscoveryScore({
+  changePct24h,
+  volume24h,
+  rank,
+  signal,
+}: {
+  changePct24h: number;
+  volume24h: number;
+  rank: number | null;
+  signal?: SignalDetail;
+}) {
+  const liquidityScore = clamp((Math.log10(Math.max(volume24h, 1)) - 4.5) * 24, 0, 100);
+  const moveMagnitude = Math.abs(changePct24h);
+  const moveQuality = clamp(100 - Math.abs(moveMagnitude - 6) * 10, 12, 100);
+  const stabilityPenalty = clamp(Math.max(0, moveMagnitude - 18) * 2.8, 0, 28);
+  const rankScore = rank ? clamp(100 - Math.max(rank - 1, 0) * 0.35, 32, 100) : 44;
+  const signalScore = signal ? signal.composite_score * 0.55 + signal.reliability_score * 0.45 : 50;
+  const directionalFit = changePct24h >= 0 ? 56 : 48;
+
+  return clamp(
+    Math.round(
+      liquidityScore * 0.34 +
+      moveQuality * 0.24 +
+      rankScore * 0.16 +
+      signalScore * 0.18 +
+      directionalFit * 0.08 -
+      stabilityPenalty,
+    ),
+    0,
+    100,
+  );
+}
+
 function formatFreshness(ms: number) {
   if (!ms || ms < 1_000) return "live";
   const seconds = Math.round(ms / 1000);
@@ -527,7 +602,10 @@ export default function CryptoTradingPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [tradeIntent, setTradeIntent] = useState<TradeIntent>({ side: "buy" });
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
-  const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
+  const [chartType, setChartType] = useState<DeskChartType>("candlestick");
+  const [moversView, setMoversView] = useState<MarketMoversView>("candidates");
+  const [universeView, setUniverseView] = useState<MarketUniverseView>("all");
+  const [universeModalOpen, setUniverseModalOpen] = useState(false);
 
   // ---- Live Wallet (always fetched, independent of walletUnlocked) ----
   const [walletPreview, setWalletPreview] = useState<Array<{ currency: string; available: number; reserved: number; total: number }>>([]);
@@ -562,30 +640,36 @@ export default function CryptoTradingPage() {
   // Watchlist + search
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const accountPreferencesHydratedRef = useRef<string | null>(null);
+  const accountPrefsSaveTimerRef = useRef<number | null>(null);
+  const lastSavedPreferencesRef = useRef<string>("");
 
   // Load watchlist from localStorage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem(WATCHLIST_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored) as string[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        const parsed = sanitizeWatchlistSymbols(JSON.parse(stored) as string[]);
+        if (parsed.length > 0) {
           setWatchlist(parsed);
           return;
         }
       }
     } catch { /* empty */ }
     // First time: seed with defaults
-    setWatchlist(DEFAULT_WATCHLIST);
-    try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(DEFAULT_WATCHLIST)); } catch { /* empty */ }
+    const seeded = sanitizeWatchlistSymbols(DEFAULT_WATCHLIST);
+    setWatchlist(seeded);
+    try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(seeded)); } catch { /* empty */ }
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist)); } catch { /* empty */ }
+  }, [watchlist]);
 
   const toggleWatch = useCallback((symbol: string) => {
     setWatchlist((prev) => {
       const upper = symbol.toUpperCase();
-      const next = prev.includes(upper) ? prev.filter((s) => s !== upper) : [...prev, upper];
-      try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next)); } catch { /* empty */ }
-      return next;
+      return prev.includes(upper) ? prev.filter((s) => s !== upper) : [...prev, upper];
     });
   }, []);
   const loadRequestRef = useRef(0);
@@ -619,7 +703,9 @@ export default function CryptoTradingPage() {
         Object.entries(cachedView.signalMap ?? {}).map(([symbol, signal]) => [symbol.toUpperCase(), toSignalDetail(signal)]),
       );
       setSignalMap(normalizedSignalMap);
-      setChartType(cachedView.chartType);
+      setChartType(normalizeDeskChartType(cachedView.chartType));
+      setMoversView(normalizeMoversView(cachedView.moversView));
+      setUniverseView(normalizeUniverseView(cachedView.universeView));
       if (cachedView.selectedSymbol) {
         setSelectedSymbol(cachedView.selectedSymbol);
       }
@@ -725,9 +811,85 @@ export default function CryptoTradingPage() {
   }, [hydrateFromCache, refreshDesk]);
 
   useEffect(() => {
+    if (!account?.id || accountPreferencesHydratedRef.current === account.id) return;
+
+    const deskPreferences = account.preferences?.crypto_desk;
+    const appPreferences = account.preferences?.app;
+
+    if (deskPreferences && Object.prototype.hasOwnProperty.call(deskPreferences, "watchlist")) {
+      setWatchlist(sanitizeWatchlistSymbols(deskPreferences.watchlist) ?? []);
+    }
+    if (deskPreferences && Object.prototype.hasOwnProperty.call(deskPreferences, "selected_symbol")) {
+      setSelectedSymbol(deskPreferences.selected_symbol?.toUpperCase() ?? null);
+    }
+    if (deskPreferences?.chart_type) {
+      setChartType(normalizeDeskChartType(deskPreferences.chart_type));
+    }
+    if (deskPreferences?.movers_view) {
+      setMoversView(normalizeMoversView(deskPreferences.movers_view));
+    }
+    if (deskPreferences?.universe_view) {
+      setUniverseView(normalizeUniverseView(deskPreferences.universe_view));
+    }
+    if (appPreferences?.trading_mode) {
+      setTradingMode(appPreferences.trading_mode);
+    }
+
+    lastSavedPreferencesRef.current = JSON.stringify(account.preferences ?? {});
+    accountPreferencesHydratedRef.current = account.id;
+  }, [account, setTradingMode]);
+
+  useEffect(() => {
+    if (!account?.id || accountPreferencesHydratedRef.current !== account.id) return;
+
+    const nextPreferences = {
+      ...(account.preferences ?? {}),
+      crypto_desk: {
+        ...(account.preferences?.crypto_desk ?? {}),
+        watchlist,
+        selected_symbol: selectedSymbol ?? null,
+        chart_type: chartType,
+        movers_view: moversView,
+        universe_view: universeView,
+      },
+      app: {
+        ...(account.preferences?.app ?? {}),
+        trading_mode: tradingMode,
+      },
+    };
+
+    const serialized = JSON.stringify(nextPreferences);
+    if (serialized === lastSavedPreferencesRef.current) return;
+
+    if (accountPrefsSaveTimerRef.current) {
+      window.clearTimeout(accountPrefsSaveTimerRef.current);
+    }
+
+    accountPrefsSaveTimerRef.current = window.setTimeout(() => {
+      void authApi.updateMe({ preferences: nextPreferences })
+        .then((profile) => {
+          lastSavedPreferencesRef.current = serialized;
+          setAccount(profile);
+        })
+        .catch(() => {
+          // Keep local state even if persistence fails; next user change will retry.
+        });
+    }, 700);
+
+    return () => {
+      if (accountPrefsSaveTimerRef.current) {
+        window.clearTimeout(accountPrefsSaveTimerRef.current);
+        accountPrefsSaveTimerRef.current = null;
+      }
+    };
+  }, [account, chartType, moversView, selectedSymbol, tradingMode, universeView, watchlist]);
+
+  useEffect(() => {
     writeObjectCache<TradingViewCache>(TRADING_VIEW_CACHE_KEY, {
       selectedSymbol,
       chartType,
+      moversView,
+      universeView,
       orders,
       analytics,
       strategies,
@@ -736,7 +898,7 @@ export default function CryptoTradingPage() {
       health,
       signalMap,
     });
-  }, [analytics, autoHistory, autoStatus, chartType, health, orders, selectedSymbol, signalMap, strategies]);
+  }, [analytics, autoHistory, autoStatus, chartType, health, moversView, orders, selectedSymbol, signalMap, strategies, universeView]);
 
   const marketBySymbol = useMemo(
     () => new Map(market.map((asset) => [asset.symbol.toUpperCase(), asset])),
@@ -988,6 +1150,66 @@ export default function CryptoTradingPage() {
     });
   }, [market, signalMap, watchlist]);
 
+  const marketUniverseItems = useMemo<MarketUniverseItem[]>(() => {
+    return market
+      .filter((asset) => isScannerEligibleSymbol(asset.symbol))
+      .map((asset) => {
+        const symbol = asset.symbol.toUpperCase();
+        const signal = signalMap[symbol];
+        const price = resolveAssetPrice(symbol, asset);
+        const changePct24h = resolveAssetChangePct(symbol, asset);
+        const volume24h = resolveAssetVolume(symbol, asset);
+        const rank = Number(asset.market_cap_rank ?? asset.rank ?? 0) || null;
+
+        return {
+          symbol,
+          name: asset.name ?? symbol,
+          price,
+          changePct24h,
+          volume24h,
+          rank,
+          discoveryScore: computeDiscoveryScore({ changePct24h, volume24h, rank, signal }),
+          image: asset.image ?? undefined,
+        };
+      });
+  }, [market, resolveAssetChangePct, resolveAssetPrice, resolveAssetVolume, signalMap]);
+
+  const marketUniverseCollections = useMemo(() => {
+    const all = [...marketUniverseItems].sort((left, right) => {
+      const leftRank = left.rank ?? Number.POSITIVE_INFINITY;
+      const rightRank = right.rank ?? Number.POSITIVE_INFINITY;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      return right.volume24h - left.volume24h;
+    });
+
+    const gainers = [...marketUniverseItems].sort((left, right) => {
+      if (right.changePct24h !== left.changePct24h) return right.changePct24h - left.changePct24h;
+      return right.volume24h - left.volume24h;
+    });
+
+    const losers = [...marketUniverseItems].sort((left, right) => {
+      if (left.changePct24h !== right.changePct24h) return left.changePct24h - right.changePct24h;
+      return right.volume24h - left.volume24h;
+    });
+
+    const candidates = [...marketUniverseItems].sort((left, right) => {
+      if (right.discoveryScore !== left.discoveryScore) return right.discoveryScore - left.discoveryScore;
+      return right.volume24h - left.volume24h;
+    });
+
+    return { all, gainers, losers, candidates };
+  }, [marketUniverseItems]);
+
+  const compactMoversItems = useMemo(
+    () => marketUniverseCollections[moversView].slice(0, COMPACT_MOVER_ROWS),
+    [marketUniverseCollections, moversView],
+  );
+
+  const modalUniverseItems = useMemo(
+    () => marketUniverseCollections[universeView],
+    [marketUniverseCollections, universeView],
+  );
+
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toUpperCase().trim();
@@ -1127,6 +1349,11 @@ export default function CryptoTradingPage() {
     [featuredOpportunity, format, selectedSignal, selectedSymbol, walletUnlocked],
   );
 
+  const selectUniverseSymbol = useCallback((symbol: string) => {
+    setSelectedSymbol(symbol.toUpperCase());
+    setUniverseModalOpen(false);
+  }, []);
+
   const handleAutoToggle = useCallback(async () => {
     if (!autoStatus) return;
     setArming(true);
@@ -1162,6 +1389,8 @@ export default function CryptoTradingPage() {
       : market.length > 0
         ? "Snapshot mode"
         : "Offline";
+  const visiblePublicationReasons = selectedSignal?.notrade_reasons.slice(0, VISIBLE_PUBLICATION_FILTERS) ?? [];
+  const hiddenPublicationReasonCount = Math.max((selectedSignal?.notrade_reasons.length ?? 0) - visiblePublicationReasons.length, 0);
 
   if (loading && market.length === 0) {
     return (
@@ -1476,9 +1705,9 @@ export default function CryptoTradingPage() {
           </div>
 
           {selectedSymbol ? (
-            <PriceChart symbol={selectedSymbol} type={chartType} height={320} showIntervals defaultInterval="1H" />
+            <PriceChart symbol={selectedSymbol} type={chartType} height={292} showIntervals defaultInterval="1H" />
           ) : (
-            <div className="flex h-[420px] items-center justify-center text-sm text-[var(--text-muted)]">Select an asset from the scanner below</div>
+            <div className="flex h-[360px] items-center justify-center text-sm text-[var(--text-muted)]">Select an asset from the scanner below</div>
           )}
 
           {/* Signal readout V2 — enriched sub-scores */}
@@ -1508,19 +1737,125 @@ export default function CryptoTradingPage() {
 	          )}
 	          {selectedSignal && selectedSignal.notrade_reasons.length > 0 && (
 	            <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-	              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
-	              {selectedSignal.notrade_reasons.map((reason, index) => (
+	              <div className="flex items-center justify-between gap-3">
+	                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
+	                {hiddenPublicationReasonCount > 0 ? (
+	                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[9px] font-medium text-[var(--text-muted)]">
+	                    +{hiddenPublicationReasonCount}
+	                  </span>
+	                ) : null}
+	              </div>
+	              {visiblePublicationReasons.map((reason, index) => (
 	                <p key={`${reason}-${index}`} className="mt-1 text-[11px] text-[var(--text-secondary)]">
 	                  - {reason}
 	                </p>
 	              ))}
 	            </div>
 	          )}
+            <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Market Movers</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Discovery layer compacte pour alimenter la watchlist.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUniverseView(moversView);
+                    setUniverseModalOpen(true);
+                  }}
+                  className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-[10px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg)]"
+                >
+                  Voir tout
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                {([
+                  ["gainers", "Gains"],
+                  ["losers", "Pertes"],
+                  ["candidates", "Candidats"],
+                ] as const).map(([view, label]) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => setMoversView(view)}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[10px] font-semibold transition-all",
+                      moversView === view
+                        ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]"
+                        : "bg-[var(--glass-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 space-y-1.5">
+                {compactMoversItems.length === 0 ? (
+                  <p className="text-[11px] text-[var(--text-muted)]">Le flux de marche est en cours de chargement.</p>
+                ) : compactMoversItems.map((item) => {
+                  const isWatched = watchlist.includes(item.symbol);
+                  return (
+                    <div
+                      key={`${moversView}-${item.symbol}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedSymbol(item.symbol)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") setSelectedSymbol(item.symbol);
+                      }}
+                      className="grid grid-cols-[minmax(0,1fr)_88px_74px_78px_34px] items-center gap-2 rounded-xl px-2 py-2 transition-colors hover:bg-[var(--glass-bg)]"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <CryptoIcon symbol={item.symbol} imageUrl={item.image} size="xs" />
+                          <span className="truncate text-[12px] font-semibold text-[var(--foreground)]">{item.symbol}</span>
+                        </div>
+                        <p className="truncate text-[10px] text-[var(--text-muted)]">{item.name}</p>
+                      </div>
+                      <span className="text-right text-[11px] font-mono text-[var(--foreground)]">{format(item.price, 2)}</span>
+                      <span className={cn("text-right text-[11px] font-semibold", item.changePct24h >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                        {item.changePct24h >= 0 ? "+" : ""}
+                        {item.changePct24h.toFixed(1)}%
+                      </span>
+                      <span className="text-right text-[10px] text-[var(--text-secondary)]">{compactMetricNumber(item.volume24h)}</span>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleWatch(item.symbol);
+                          }}
+                          className={cn(
+                            "rounded-full p-1.5 transition-colors",
+                            isWatched ? "text-[#c6f135]" : "text-[var(--text-muted)] hover:text-[var(--foreground)]",
+                          )}
+                        >
+                          <Star className="h-3.5 w-3.5" fill={isWatched ? "currentColor" : "none"} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 	          </section>
         </div>
 
 
       </div>
+
+      <MarketUniverseModal
+        open={universeModalOpen}
+        items={modalUniverseItems}
+        activeView={universeView}
+        watchlist={watchlist}
+        onClose={() => setUniverseModalOpen(false)}
+        onSelectSymbol={selectUniverseSymbol}
+        onToggleWatch={toggleWatch}
+        onViewChange={setUniverseView}
+        formatPrice={format}
+      />
 
       {tradeModalOpen && selectedSymbol ? (
         <QuickTradeModal

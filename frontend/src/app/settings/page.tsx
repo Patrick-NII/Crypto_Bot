@@ -160,9 +160,9 @@ export default function SettingsPage() {
     return raw == null ? fallback : raw === "true";
   };
 
-  const [notifEmail, setNotifEmail] = useState(() => readBooleanPref("okamoey-notif-email", true));
-  const [notifPush, setNotifPush] = useState(() => readBooleanPref("okamoey-notif-push", false));
-  const [notifTelegram, setNotifTelegram] = useState(() => readBooleanPref("okamoey-notif-telegram", false));
+  const [notifEmail, setNotifEmail] = useState(() => readBooleanPref("gluetrade-notif-email", true));
+  const [notifPush, setNotifPush] = useState(() => readBooleanPref("gluetrade-notif-push", false));
+  const [notifTelegram, setNotifTelegram] = useState(() => readBooleanPref("gluetrade-notif-telegram", false));
   const [saved, setSaved] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [riskProfile, setRiskProfile] = useState<RiskProfileId>("moderate");
@@ -319,7 +319,7 @@ export default function SettingsPage() {
 
   const toggleNotif = (key: string, current: boolean, setter: (v: boolean) => void) => {
     setter(!current);
-    localStorage.setItem(`okamoey-notif-${key}`, String(!current));
+    localStorage.setItem(`gluetrade-notif-${key}`, String(!current));
     flash();
   };
 

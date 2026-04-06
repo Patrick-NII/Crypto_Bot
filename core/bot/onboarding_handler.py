@@ -1,6 +1,6 @@
 # core/bot/onboarding_handler.py
 """
-Gestionnaire d'onboarding avec formulaire interactif pour Okamoey
+Gestionnaire d'onboarding avec formulaire interactif pour GlueTrade
 """
 
 import os
@@ -29,7 +29,7 @@ class OnboardingHandler:
             self.onboarding_states[user_id] = 'experience_level'
             self.user_data[user_id] = {}
             
-            message = """📋 **ONBOARDING OKAMOEY**
+            message = """📋 **ONBOARDING GLUETRADE**
 
 Bienvenue ! Pour vous offrir des conseils IA pertinents, nous avons besoin de quelques informations.
 

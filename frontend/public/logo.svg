@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none">
+  <!-- GlueTrade full logo: icon + text -->
+  <!-- Icon: two interlocking arrows (buy/sell) forming a "G" shape -->
+  <circle cx="20" cy="20" r="18" fill="url(#gt-grad)" opacity="0.15"/>
+  <path d="M14 26 L20 14 L26 26 Z" fill="url(#gt-grad)" opacity="0.9"/>
+  <path d="M12 22 L20 10 L28 22" stroke="url(#gt-grad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M16 18 h8" stroke="#06d6a0" stroke-width="2" stroke-linecap="round"/>
+  <!-- Text -->
+  <text x="44" y="16" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="white" letter-spacing="0.5">Glue</text>
+  <text x="44" y="33" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#06d6a0" letter-spacing="0.5">Trade</text>
+  <defs>
+    <linearGradient id="gt-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06d6a0"/>
+      <stop offset="100%" stop-color="#0ff0b3"/>
+    </linearGradient>
+  </defs>
+</svg>

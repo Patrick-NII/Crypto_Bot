@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Order execution and trading strategy engine for the Okamoey trading platform",
+    description="Order execution and trading strategy engine for the GlueTrade trading platform",
     lifespan=lifespan,
 )
 

@@ -1,6 +1,6 @@
 # core/database/manager.py
 """
-Gestionnaire de base de données pour la plateforme Okamoey
+Gestionnaire de base de données pour la plateforme GlueTrade
 """
 
 import os
@@ -15,7 +15,7 @@ from .models import User, Wallet, Subscription, Alert
 class DatabaseManager:
     """Gestionnaire de base de données"""
     
-    def __init__(self, db_path: str = "data/okamoey.db"):
+    def __init__(self, db_path: str = "data/gluetrade.db"):
         self.db_path = db_path
         self.ensure_db_directory()
         self.init_database()

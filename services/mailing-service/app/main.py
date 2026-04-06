@@ -1,4 +1,4 @@
-"""Okamoey Mailing Service — FastAPI application."""
+"""GlueTrade Mailing Service — FastAPI application."""
 
 import logging
 from contextlib import asynccontextmanager

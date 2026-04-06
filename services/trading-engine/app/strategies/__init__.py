@@ -1,4 +1,4 @@
-"""Trading strategies for the Okamoey Trading Platform.
+"""Trading strategies for the GlueTrade Trading Platform.
 
 All strategies inherit from :class:`BaseStrategy` and are registered in
 the ``STRATEGIES`` mapping for runtime look-up by name.

@@ -1,5 +1,5 @@
 # =============================================================================
-# Okamoey Trading Platform — Orchestration
+# GlueTrade Trading Platform — Orchestration
 # =============================================================================
 #
 #   make dev           Start dev environment (frontend:3100, gateway:8100)
@@ -16,7 +16,7 @@
 # =============================================================================
 
 COMPOSE       := docker compose
-COMPOSE_DEV   := $(COMPOSE) -p okamoey-dev -f docker-compose.dev.yml
+COMPOSE_DEV   := $(COMPOSE) -p gluetrade-dev -f docker-compose.dev.yml
 REGISTRY      := ghcr.io/patrick-nii
 VERSION       := $(shell git rev-parse --short HEAD 2>/dev/null || echo "latest")
 
@@ -26,7 +26,7 @@ VERSION       := $(shell git rev-parse --short HEAD 2>/dev/null || echo "latest"
 
 help:
 	@echo ""
-	@echo "  Okamoey v$(CURRENT_VERSION) — available commands:"
+	@echo "  GlueTrade v$(CURRENT_VERSION) — available commands:"
 	@echo ""
 	@echo "  Environments:"
 	@echo "    make dev            Start dev env       (frontend:3100)"
@@ -76,7 +76,7 @@ trading: ## Start trading-only environment on 3200 without the staging frontend
 		postgres redis auth-service portfolio-service market-data-service \
 		trading-engine risk-service ml-service notification-service \
 		mailing-service ai-agent-service news-service binance-proxy
-	OKAMOEY_NETWORK_NAME=crypto_bot_okamoey-net docker compose -p okamoey-dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build gateway-dev frontend-trading
+	GLUETRADE_NETWORK_NAME=crypto_bot_gluetrade-net docker compose -p gluetrade-dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build gateway-dev frontend-trading
 	@echo "✓ Trading ready at http://localhost:3200/crypto"
 
 stop: ## Stop all containers (both environments)
@@ -110,12 +110,12 @@ build-gateway: ## Build gateway only
 
 push: build ## Build and push images to GitHub Container Registry
 	@echo "▸ Tagging and pushing images ($(VERSION))..."
-	docker tag practical-swirles-frontend:latest $(REGISTRY)/okamoey-frontend:$(VERSION)
-	docker tag practical-swirles-gateway:latest $(REGISTRY)/okamoey-gateway:$(VERSION)
-	docker tag practical-swirles-auth-service:latest $(REGISTRY)/okamoey-auth:$(VERSION)
-	docker push $(REGISTRY)/okamoey-frontend:$(VERSION)
-	docker push $(REGISTRY)/okamoey-gateway:$(VERSION)
-	docker push $(REGISTRY)/okamoey-auth:$(VERSION)
+	docker tag practical-swirles-frontend:latest $(REGISTRY)/gluetrade-frontend:$(VERSION)
+	docker tag practical-swirles-gateway:latest $(REGISTRY)/gluetrade-gateway:$(VERSION)
+	docker tag practical-swirles-auth-service:latest $(REGISTRY)/gluetrade-auth:$(VERSION)
+	docker push $(REGISTRY)/gluetrade-frontend:$(VERSION)
+	docker push $(REGISTRY)/gluetrade-gateway:$(VERSION)
+	docker push $(REGISTRY)/gluetrade-auth:$(VERSION)
 	@echo "✓ Pushed to $(REGISTRY) with tag $(VERSION)"
 
 # ── Logs ─────────────────────────────────────────────────────────────────────

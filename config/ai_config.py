@@ -16,7 +16,7 @@ class AIConfig:
             "model": "gpt-4-turbo-preview",  # ou gpt-3.5-turbo pour économiser
             "max_tokens": 1000,
             "temperature": 0.7,
-            "system_prompt": """Tu es Okamoey, un assistant portfolio intelligent SPÉCIALISÉ UNIQUEMENT dans l'analyse des cryptomonnaies et des actions.
+            "system_prompt": """Tu es GlueTrade, un assistant portfolio intelligent SPÉCIALISÉ UNIQUEMENT dans l'analyse des cryptomonnaies et des actions.
 
 🚫 ZONE DE COMPÉTENCE STRICTE :
 - CRYPTOMONNAIES (max 20 valeurs les plus rentables)
@@ -92,7 +92,7 @@ FORMAT :
             "api_key": os.getenv("ANTHROPIC_API_KEY"),
             "model": "claude-3-sonnet-20240229",
             "max_tokens": 1000,
-            "system_prompt": """Tu es Okamoey, un assistant portfolio intelligent SPÉCIALISÉ UNIQUEMENT dans l'analyse des cryptomonnaies et des actions.
+            "system_prompt": """Tu es GlueTrade, un assistant portfolio intelligent SPÉCIALISÉ UNIQUEMENT dans l'analyse des cryptomonnaies et des actions.
 
 🚫 ZONE DE COMPÉTENCE STRICTE :
 - CRYPTOMONNAIES (max 20 valeurs les plus rentables)

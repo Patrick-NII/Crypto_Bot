@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Okamoey Portfolio Service configuration.
+    """GlueTrade Portfolio Service configuration.
 
     Values are loaded from environment variables. A .env file in the project
     root is also read when present.
@@ -16,11 +16,11 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    APP_NAME: str = "Okamoey Portfolio Service"
+    APP_NAME: str = "GlueTrade Portfolio Service"
 
     # Database
     DATABASE_URL: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/okamoey_portfolio"
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/gluetrade_portfolio"
     )
 
     # Redis

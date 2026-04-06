@@ -1,4 +1,4 @@
-"""Configuration settings for the Okamoey Market Data Service."""
+"""Configuration settings for the GlueTrade Market Data Service."""
 
 from pydantic_settings import BaseSettings
 from typing import List, Optional
@@ -7,7 +7,7 @@ from typing import List, Optional
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    APP_NAME: str = "Okamoey Market Data Service"
+    APP_NAME: str = "GlueTrade Market Data Service"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 

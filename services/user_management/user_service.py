@@ -1,6 +1,6 @@
 # services/user_management/user_service.py
 """
-Service de gestion des utilisateurs pour la plateforme Okamoey
+Service de gestion des utilisateurs pour la plateforme GlueTrade
 """
 
 import os
@@ -289,7 +289,7 @@ class UserService:
             
             subscription_info = self.get_subscription_info(telegram_id)
             
-            message = f"""🎉 **Bienvenue sur Okamoey, {user.first_name or user.username or 'Investisseur'} !**
+            message = f"""🎉 **Bienvenue sur GlueTrade, {user.first_name or user.username or 'Investisseur'} !**
 
 📊 **Votre profil:**
 • Niveau d'abonnement: {subscription_info['tier_name']}
@@ -312,13 +312,13 @@ class UserService:
 💎 **Upgrade Premium:**
 Accédez à des fonctionnalités exclusives avec `/upgrade`
 
-Bienvenue dans la communauté Okamoey ! 🎯"""
+Bienvenue dans la communauté GlueTrade ! 🎯"""
             
             return message
             
         except Exception as e:
             print(f"Erreur génération message onboarding: {e}")
-            return "Bienvenue sur Okamoey ! Utilisez /help pour commencer."
+            return "Bienvenue sur GlueTrade ! Utilisez /help pour commencer."
 
 # Instance globale
 user_service = UserService() 

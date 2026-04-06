@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Risk Service",
-    description="Portfolio risk management, trade evaluation, and position sizing for the Okamoey Trading Platform.",
+    description="Portfolio risk management, trade evaluation, and position sizing for the GlueTrade Trading Platform.",
     version="2.0.0",
 )
 

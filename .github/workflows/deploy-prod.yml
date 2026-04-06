@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/okamoey
+  IMAGE_PREFIX: ${{ github.repository_owner }}/gluetrade
 
 permissions:
   contents: read

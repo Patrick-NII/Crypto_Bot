@@ -1,4 +1,4 @@
-"""Okamoey Billing Service — Stripe integration."""
+"""GlueTrade Billing Service — Stripe integration."""
 
 import logging
 from contextlib import asynccontextmanager

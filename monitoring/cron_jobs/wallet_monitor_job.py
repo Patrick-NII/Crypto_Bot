@@ -1,6 +1,6 @@
 # monitoring/cron_jobs/wallet_monitor_job.py
 """
-Job de surveillance automatique des wallets pour la plateforme Okamoey
+Job de surveillance automatique des wallets pour la plateforme GlueTrade
 """
 
 import os

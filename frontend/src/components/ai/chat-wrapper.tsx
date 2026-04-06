@@ -17,8 +17,8 @@ export function ChatWrapper() {
   // Listen for custom event from hamburger menu
   useEffect(() => {
     const handler = () => setExternalOpen(true);
-    window.addEventListener("okamoey-open-chat", handler);
-    return () => window.removeEventListener("okamoey-open-chat", handler);
+    window.addEventListener("gluetrade-open-chat", handler);
+    return () => window.removeEventListener("gluetrade-open-chat", handler);
   }, []);
 
   return (
@@ -34,6 +34,6 @@ export function ChatWrapper() {
 /** Call this to open chat from anywhere (e.g., hamburger menu) */
 export function openChatGlobal() {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("okamoey-open-chat"));
+    window.dispatchEvent(new Event("gluetrade-open-chat"));
   }
 }

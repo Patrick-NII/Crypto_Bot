@@ -1,6 +1,6 @@
 # core/database/models.py
 """
-Modèles de base de données pour la plateforme Okamoey
+Modèles de base de données pour la plateforme GlueTrade
 """
 
 from datetime import datetime, timedelta

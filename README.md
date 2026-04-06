@@ -1,4 +1,4 @@
-# Okamoey Trading Platform
+# GlueTrade Trading Platform
 
 > Plateforme de trading autonome, auto-correctrice et auto-optimisante pour crypto-monnaies et actions, avec interface web glassmorphism et alertes Telegram.
 
@@ -35,7 +35,7 @@
 
 ## Vue d'ensemble
 
-Okamoey est une plateforme de trading autonome construite en microservices. Elle combine analyse technique, machine learning et gestion des risques pour executer des trades automatiques sur les marches crypto et actions.
+GlueTrade est une plateforme de trading autonome construite en microservices. Elle combine analyse technique, machine learning et gestion des risques pour executer des trades automatiques sur les marches crypto et actions.
 
 ### Fonctionnalites principales
 
@@ -293,12 +293,12 @@ Une fois les services lances, la documentation Swagger est disponible :
 # 1. Creer un compte
 curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email": "trader@okamoey.com", "username": "trader", "password": "SecurePass123!"}'
+  -d '{"email": "trader@gluetrade.com", "username": "trader", "password": "SecurePass123!"}'
 
 # 2. Se connecter
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "trader@okamoey.com", "password": "SecurePass123!"}' | jq -r '.access_token')
+  -d '{"email": "trader@gluetrade.com", "password": "SecurePass123!"}' | jq -r '.access_token')
 
 # 3. Creer un portefeuille
 curl -X POST http://localhost:8000/api/v1/portfolios \
@@ -466,7 +466,7 @@ Le ML Service ajuste automatiquement :
 ## Structure du projet
 
 ```
-okamoey-trading/
+gluetrade-trading/
 ├── services/
 │   ├── gateway/             # API Gateway (:8000)
 │   ├── auth-service/        # Authentification (:8001)
@@ -497,4 +497,4 @@ okamoey-trading/
 
 ---
 
-**Okamoey Trading Platform** - Built with precision for autonomous trading.
+**GlueTrade Trading Platform** - Built with precision for autonomous trading.

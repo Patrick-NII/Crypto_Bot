@@ -65,7 +65,7 @@ export default function VerifyEmailPage() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(6,214,160,0.06)_0%,transparent_50%)]" />
       <div className="relative w-full max-w-md">
         <div className="mb-8 text-center">
-          <Link href="/" className="text-2xl font-bold glow-text">OKAMOEY</Link>
+          <Link href="/" className="flex items-center justify-center gap-2">GLUETRADE</Link>
         </div>
         <Suspense fallback={<div className="text-center text-[#8888a0]">Loading...</div>}>
           <VerifyEmailContent />

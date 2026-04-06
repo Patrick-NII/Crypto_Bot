@@ -9,7 +9,7 @@ import { ChatWrapper } from "@/components/ai/chat-wrapper";
 
 const PUBLIC_ROUTES = ["/", "/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/pricing", "/terms"];
 
-const SIDEBAR_KEY = "okamoey-sidebar-collapsed";
+const SIDEBAR_KEY = "gluetrade-sidebar-collapsed";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

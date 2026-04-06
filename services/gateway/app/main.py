@@ -6,8 +6,8 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.routes.proxy import router as proxy_router
 
 app = FastAPI(
-    title="Okamoey API Gateway",
-    description="Single entry-point reverse proxy for the Okamoey trading platform.",
+    title="GlueTrade API Gateway",
+    description="Single entry-point reverse proxy for the GlueTrade trading platform.",
     version="1.0.0",
 )
 
@@ -39,7 +39,7 @@ async def health():
 @app.get("/")
 async def root():
     return {
-        "service": "Okamoey API Gateway",
+        "service": "GlueTrade API Gateway",
         "version": "1.0.0",
         "docs": "/docs",
     }

@@ -65,7 +65,8 @@ async def init_db() -> None:
                 ADD COLUMN IF NOT EXISTS terms_version VARCHAR(20) NOT NULL DEFAULT '2026-04',
                 ADD COLUMN IF NOT EXISTS ai_behavior_style VARCHAR(50) NOT NULL DEFAULT 'balanced',
                 ADD COLUMN IF NOT EXISTS ai_assistant_tone VARCHAR(50) NOT NULL DEFAULT 'analytical',
-                ADD COLUMN IF NOT EXISTS wallet_access_enabled BOOLEAN NOT NULL DEFAULT FALSE
+                ADD COLUMN IF NOT EXISTS wallet_access_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb
                 """
             )
         )

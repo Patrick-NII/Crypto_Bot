@@ -19,8 +19,13 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Okamoey | AI-Powered Crypto Trading",
+  title: "GlueTrade | AI-Powered Crypto Trading",
   description: "Autonomous crypto trading with AI agents, real-time analytics, and professional tools.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

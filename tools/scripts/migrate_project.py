@@ -19,12 +19,12 @@ def migrate_project():
     migrations = [
         # Bot principal
         {
-            'source': 'okamoey_hybrid_bot.py',
+            'source': 'gluetrade_hybrid_bot.py',
             'destination': 'core/bot/main.py',
             'description': 'Bot principal'
         },
         {
-            'source': 'okamoey_bot.py',
+            'source': 'gluetrade_bot.py',
             'destination': 'core/bot/legacy.py',
             'description': 'Bot legacy'
         },
@@ -150,7 +150,7 @@ if __name__ == "__main__":
         },
         {
             'path': 'requirements.txt',
-            'content': '''# Okamoey - Plateforme de Gestion d'Actifs
+            'content': '''# GlueTrade - Plateforme de Gestion d'Actifs
 # Dépendances principales
 
 # Bot Telegram
@@ -186,11 +186,11 @@ flake8>=5.0.0
         },
         {
             'path': 'README.md',
-            'content': '''# Okamoey - Plateforme de Gestion d'Actifs Crypto
+            'content': '''# GlueTrade - Plateforme de Gestion d'Actifs Crypto
 
 ## 🚀 Vue d'ensemble
 
-Okamoey est une plateforme professionnelle de gestion d'actifs crypto combinant :
+GlueTrade est une plateforme professionnelle de gestion d'actifs crypto combinant :
 - 🤖 IA avancée pour l'analyse de marché
 - 📊 Surveillance en temps réel
 - 🎯 Détection d'opportunités d'investissement
@@ -200,7 +200,7 @@ Okamoey est une plateforme professionnelle de gestion d'actifs crypto combinant 
 ## 🏗️ Architecture
 
 ```
-okamoey/
+gluetrade/
 ├── core/           # Cœur du système
 ├── services/       # Services métier
 ├── monitoring/     # Surveillance et alertes
@@ -213,7 +213,7 @@ okamoey/
 1. **Cloner le projet**
 ```bash
 git clone <repository>
-cd okamoey
+cd gluetrade
 ```
 
 2. **Installer les dépendances**
@@ -266,7 +266,7 @@ python -m core.bot
 Pour toute question ou support, contactez-nous via le bot Telegram.
 
 ---
-*Okamoey - Votre assistant portfolio intelligent* 🎯
+*GlueTrade - Votre assistant portfolio intelligent* 🎯
 '''
         }
     ]
@@ -282,7 +282,7 @@ Pour toute question ou support, contactez-nous via le bot Telegram.
 
 def main():
     """Fonction principale"""
-    print("🔄 Migration du projet Okamoey")
+    print("🔄 Migration du projet GlueTrade")
     print("=" * 50)
     
     # Migrer les fichiers existants

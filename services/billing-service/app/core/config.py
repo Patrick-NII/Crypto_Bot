@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Okamoey Billing Service"
+    APP_NAME: str = "GlueTrade Billing Service"
     APP_VERSION: str = "1.0.0"
 
     # Stripe
@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     STRIPE_PRICE_ENTERPRISE: str = ""  # Stripe Price ID for Enterprise plan
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://okamoey:okamoey@localhost:5433/okamoey"
+    DATABASE_URL: str = "postgresql+asyncpg://gluetrade:gluetrade@localhost:5433/gluetrade"
 
     # Redis
     REDIS_HOST: str = "localhost"

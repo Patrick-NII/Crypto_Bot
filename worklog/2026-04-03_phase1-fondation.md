@@ -1,7 +1,7 @@
 # 2026-04-03 - Phase 1 : Fondation Microservices
 
 ## Resume
-Refonte totale du projet Crypto Bot (ex okamoey_bot.py) en architecture microservices.
+Refonte totale du projet Crypto Bot (ex gluetrade_bot.py) en architecture microservices.
 Mise en place de 7 services + gateway, base de donnees, cache, et infrastructure Docker.
 
 ## Travail effectue
@@ -32,7 +32,7 @@ Mise en place de 7 services + gateway, base de donnees, cache, et infrastructure
 
 ## Bugs rencontres et corriges
 - Aucun bug majeur (premiere mise en place)
-- Note: l'ancien bot (okamoey_bot.py) avait des erreurs ModuleNotFoundError dans cron.log - corrige par la nouvelle architecture
+- Note: l'ancien bot (gluetrade_bot.py) avait des erreurs ModuleNotFoundError dans cron.log - corrige par la nouvelle architecture
 
 ## Etat du projet
 - **Branche** : nii/practical-swirles

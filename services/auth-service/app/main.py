@@ -1,4 +1,4 @@
-"""Okamoey Auth Service -- FastAPI application entry point."""
+"""GlueTrade Auth Service -- FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
 

@@ -2,17 +2,17 @@
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from typing import Optional
 
 
 class User(Base):
-    """Represents a registered Okamoey platform user."""
+    """Represents a registered GlueTrade platform user."""
 
     __tablename__ = "users"
 
@@ -93,6 +93,11 @@ class User(Base):
     wallet_access_enabled: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
+        nullable=False,
+    )
+    preferences: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(

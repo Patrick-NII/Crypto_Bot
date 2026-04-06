@@ -116,7 +116,7 @@ try:
     opportunities = get_opportunities()
 
     full_message = (
-        "📊 *RAPPORT OKAMOEY - CHALLENGERS DU MARCHÉ*\n\n"
+        "📊 *RAPPORT GLUETRADE - CHALLENGERS DU MARCHÉ*\n\n"
         f"{ai}\n\n"
         f"{opportunities}"
     )

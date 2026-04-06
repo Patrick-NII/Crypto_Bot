@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     MODEL_COMPLEX: str = "claude-sonnet-4-20250514"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://okamoey:okamoey@localhost:5433/okamoey"
+    DATABASE_URL: str = "postgresql+asyncpg://gluetrade:gluetrade@localhost:5433/gluetrade"
 
     # Redis
     REDIS_HOST: str = "localhost"

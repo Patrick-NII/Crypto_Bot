@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script de configuration des cron jobs pour Okamoey
+Script de configuration des cron jobs pour GlueTrade
 """
 
 import os
@@ -41,9 +41,9 @@ def setup_cron_jobs():
     
     try:
         # Créer le fichier temporaire avec les cron jobs
-        temp_cron_file = "/tmp/okamoey_cron"
+        temp_cron_file = "/tmp/gluetrade_cron"
         with open(temp_cron_file, 'w') as f:
-            f.write("# Cron jobs pour Okamoey - Plateforme de Gestion d'Actifs\n")
+            f.write("# Cron jobs pour GlueTrade - Plateforme de Gestion d'Actifs\n")
             f.write("# Généré automatiquement\n\n")
             for command in cron_commands:
                 f.write(command + "\n")
@@ -80,13 +80,13 @@ def check_cron_status():
         
         if result.returncode == 0:
             cron_jobs = result.stdout
-            if 'okamoey' in cron_jobs.lower():
-                print("✅ Cron jobs Okamoey détectés:")
+            if 'gluetrade' in cron_jobs.lower():
+                print("✅ Cron jobs GlueTrade détectés:")
                 for line in cron_jobs.split('\n'):
-                    if 'okamoey' in line.lower() or 'market_monitor' in line:
+                    if 'gluetrade' in line.lower() or 'market_monitor' in line:
                         print(f"  {line}")
             else:
-                print("❌ Aucun cron job Okamoey trouvé")
+                print("❌ Aucun cron job GlueTrade trouvé")
         else:
             print("❌ Erreur lecture cron jobs")
             
@@ -94,7 +94,7 @@ def check_cron_status():
         print(f"❌ Erreur vérification cron: {e}")
 
 def remove_cron_jobs():
-    """Supprime les cron jobs Okamoey"""
+    """Supprime les cron jobs GlueTrade"""
     try:
         # Récupérer les cron jobs actuels
         result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
@@ -102,14 +102,14 @@ def remove_cron_jobs():
         if result.returncode == 0:
             current_jobs = result.stdout.split('\n')
             
-            # Filtrer les jobs Okamoey
+            # Filtrer les jobs GlueTrade
             filtered_jobs = []
             for job in current_jobs:
-                if 'okamoey' not in job.lower() and 'market_monitor' not in job:
+                if 'gluetrade' not in job.lower() and 'market_monitor' not in job:
                     filtered_jobs.append(job)
             
             # Créer le nouveau fichier cron
-            temp_cron_file = "/tmp/okamoey_cron_clean"
+            temp_cron_file = "/tmp/gluetrade_cron_clean"
             with open(temp_cron_file, 'w') as f:
                 for job in filtered_jobs:
                     if job.strip():
@@ -118,7 +118,7 @@ def remove_cron_jobs():
             # Installer les cron jobs filtrés
             subprocess.run(['crontab', temp_cron_file])
             
-            print("✅ Cron jobs Okamoey supprimés")
+            print("✅ Cron jobs GlueTrade supprimés")
             
             # Nettoyer
             os.remove(temp_cron_file)
@@ -143,7 +143,7 @@ def main():
         else:
             print("Usage: python setup_cron.py [install|status|remove]")
     else:
-        print("🔧 Configuration des Cron Jobs Okamoey")
+        print("🔧 Configuration des Cron Jobs GlueTrade")
         print("=" * 50)
         print("1. Installer les cron jobs")
         print("2. Vérifier le statut")

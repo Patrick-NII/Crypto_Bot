@@ -18,7 +18,7 @@ export function Header() {
     >
       <div className="flex h-14 items-center justify-between gap-3 px-3 md:px-5">
         {/* Mobile logo */}
-        <span className="md:hidden glow-text text-base font-bold">OKAMOEY</span>
+        <span className="md:hidden glow-text text-base font-bold">GLUETRADE</span>
 
         <div className="hidden md:block flex-1" />
 

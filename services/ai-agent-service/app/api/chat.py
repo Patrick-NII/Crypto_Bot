@@ -111,7 +111,7 @@ class PerformanceAnalysisRequest(BaseModel):
     metrics: dict = Field(..., description="User performance metrics")
 
 
-PERF_SYSTEM_PROMPT = """Tu es un analyste expert crypto pour la plateforme Okamoey.
+PERF_SYSTEM_PROMPT = """Tu es un analyste expert crypto pour la plateforme GlueTrade.
 Analyse les métriques du portfolio et donne un briefing concis EN FRANÇAIS.
 
 RÈGLES STRICTES :

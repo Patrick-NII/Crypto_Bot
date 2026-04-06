@@ -25,9 +25,9 @@ _jinja = Environment(loader=FileSystemLoader(_template_dir), autoescape=True)
 
 
 TEMPLATE_SUBJECTS = {
-    "verify_email": "Verify your Okamoey account",
-    "password_reset": "Reset your Okamoey password",
-    "welcome": "Welcome to Okamoey!",
+    "verify_email": "Verify your GlueTrade account",
+    "password_reset": "Reset your GlueTrade password",
+    "welcome": "Welcome to GlueTrade!",
     "alert_triggered": "Alert triggered: {symbol}",
     "weekly_report": "Your weekly trading report",
 }
@@ -49,7 +49,7 @@ class SendMailResponse(BaseModel):
 async def send_mail(req: SendMailRequest) -> SendMailResponse:
     """Render a template and send an email."""
     # Resolve subject
-    subject = req.subject or TEMPLATE_SUBJECTS.get(req.template, "Okamoey Notification")
+    subject = req.subject or TEMPLATE_SUBJECTS.get(req.template, "GlueTrade Notification")
     if "{" in subject:
         subject = subject.format(**req.data)
 

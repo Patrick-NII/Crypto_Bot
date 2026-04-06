@@ -1,6 +1,6 @@
 # services/portfolio_management/wallet_monitor.py
 """
-Système de surveillance personnalisée des wallets pour la plateforme Okamoey
+Système de surveillance personnalisée des wallets pour la plateforme GlueTrade
 """
 
 import os
