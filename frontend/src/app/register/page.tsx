@@ -185,9 +185,9 @@ export default function RegisterPage() {
               />
               <span className="text-xs leading-5 text-[#8888a0]">
                 J&apos;accepte les{" "}
-                <Link href="/terms" className="text-[#06d6a0] hover:underline">Conditions d&apos;utilisation</Link>{" "}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-[#06d6a0] hover:underline">Conditions d&apos;utilisation</a>{" "}
                 et la{" "}
-                <Link href="/privacy" className="text-[#06d6a0] hover:underline">Politique de confidentialite</Link>.
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-[#06d6a0] hover:underline">Politique de confidentialite</a>.
                 <span className="text-[#ef4444]"> *</span>
               </span>
             </label>

@@ -28,6 +28,8 @@ interface AuthContextValue {
   authenticated: boolean;
   /** True when user has a token but profile hasn't loaded yet */
   connecting: boolean;
+  /** User has verified their email */
+  isVerified: boolean;
   /** User has accepted the latest CGU */
   termsAccepted: boolean;
   /** User has wallet features unlocked */
@@ -52,6 +54,7 @@ const AuthContext = createContext<AuthContextValue>({
   ready: false,
   authenticated: false,
   connecting: false,
+  isVerified: false,
   termsAccepted: false,
   walletEnabled: false,
   walletReason: "",
@@ -143,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ready,
       authenticated,
       connecting: !ready && loading,
+      isVerified: Boolean(user?.is_verified),
       termsAccepted: Boolean(user?.accepted_terms_at),
       walletEnabled: Boolean(user?.wallet_access_enabled),
       walletReason: user?.wallet_access_reason ?? "",

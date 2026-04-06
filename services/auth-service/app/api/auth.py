@@ -365,6 +365,18 @@ async def login(payload: UserLogin, request: Request, db: AsyncSession = Depends
             detail="Ce compte a ete desactive.",
         )
 
+    # Auto-deactivate if not verified after 72h (RGPD: data minimization)
+    if not user.is_verified and user.created_at:
+        hours_since_creation = (datetime.now(timezone.utc) - user.created_at).total_seconds() / 3600
+        if hours_since_creation > 72:
+            user.is_active = False
+            db.add(user)
+            await db.flush()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Votre compte a ete desactive car l'email n'a pas ete verifie dans les 72h. Contactez support@gluetrade.com pour le reactiver.",
+            )
+
     access_token = create_access_token(str(user.id))
     refresh_token = create_refresh_token(str(user.id))
 

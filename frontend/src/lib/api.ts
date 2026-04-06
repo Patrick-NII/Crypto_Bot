@@ -1864,6 +1864,8 @@ export const authApi = {
   deleteAccount: (password: string) =>
     fetchJson<{ message: string }>("/auth/me", { method: "DELETE", body: JSON.stringify({ password }) }),
   exportData: () => fetchJson<Record<string, unknown>>("/auth/me/data-export"),
+  resendVerification: () =>
+    fetchJson<{ message: string }>("/auth/resend-verification", { method: "POST" }),
 };
 
 // ---- Risk ----
