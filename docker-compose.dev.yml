@@ -70,4 +70,4 @@ services:
 networks:
   okamoey-net:
     external: true
-    name: practical-swirles_okamoey-net
+    name: ${OKAMOEY_NETWORK_NAME:-crypto_bot_okamoey-net}

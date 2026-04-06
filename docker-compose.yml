@@ -122,6 +122,7 @@ services:
       context: ./services/market-data-service
       dockerfile: Dockerfile
     container_name: okamoey-market-data
+    restart: unless-stopped
     environment:
       - REDIS_HOST=redis
       - COINGECKO_API_KEY=${COINGECKO_API_KEY:-}

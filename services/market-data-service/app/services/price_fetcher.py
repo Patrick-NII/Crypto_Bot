@@ -82,27 +82,63 @@ VALID_INTERVALS = {
     "1d", "3d", "1w", "1M",
 }
 
+_exchange: Optional[ccxt.Exchange] = None
+_exchange_lock = asyncio.Lock()
+_markets_loaded = False
+_ohlcv_semaphore = asyncio.Semaphore(4)
+_ticker_semaphore = asyncio.Semaphore(2)
 
-def _get_exchange() -> Optional[ccxt.Exchange]:
-    """Create a CCXT Binance exchange instance if keys are available."""
+
+def _create_exchange() -> ccxt.Exchange:
+    """Create a CCXT Binance exchange instance."""
+    config = {
+        "enableRateLimit": True,
+        "timeout": 10000,
+        "options": {"defaultType": "spot"},
+    }
     if settings.BINANCE_API_KEY and settings.BINANCE_API_SECRET:
-        return ccxt.binance(
-            {
-                "apiKey": settings.BINANCE_API_KEY,
-                "secret": settings.BINANCE_API_SECRET,
-                "enableRateLimit": True,
-            }
-        )
-    # Fall back to public (unauthenticated) Binance
-    return ccxt.binance({"enableRateLimit": True})
+        config["apiKey"] = settings.BINANCE_API_KEY
+        config["secret"] = settings.BINANCE_API_SECRET
+    return ccxt.binance(config)
 
 
-async def _close_exchange(exchange: ccxt.Exchange) -> None:
-    """Safely close an exchange connection."""
+async def _get_exchange(load_markets: bool = False) -> Optional[ccxt.Exchange]:
+    """Get or initialize the shared CCXT exchange instance."""
+    global _exchange, _markets_loaded
+
+    async with _exchange_lock:
+        if _exchange is None:
+            _exchange = _create_exchange()
+            _markets_loaded = False
+
+        if load_markets and not _markets_loaded:
+            await _exchange.load_markets()
+            _markets_loaded = True
+
+        return _exchange
+
+
+async def close_exchange() -> None:
+    """Close the shared CCXT exchange instance."""
+    global _exchange, _markets_loaded
+
+    async with _exchange_lock:
+        exchange = _exchange
+        _exchange = None
+        _markets_loaded = False
+
+    if exchange is None:
+        return
+
     try:
         await exchange.close()
     except Exception:
         pass
+
+
+async def _reset_exchange() -> None:
+    """Reset the shared exchange after transport-level failures."""
+    await close_exchange()
 
 
 async def _fetch_via_ccxt(symbols: List[str]) -> Dict[str, PriceData]:
@@ -114,53 +150,49 @@ async def _fetch_via_ccxt(symbols: List[str]) -> Dict[str, PriceData]:
     Returns:
         Dict mapping symbol -> PriceData for successfully fetched symbols.
     """
-    exchange = _get_exchange()
-    if exchange is None:
-        return {}
-
     results: Dict[str, PriceData] = {}
+    exchange = await _get_exchange(load_markets=True)
+    if exchange is None:
+        return results
     try:
-        await exchange.load_markets()
+        async with _ticker_semaphore:
+            pairs = {s: f"{s}/USDT" for s in symbols if f"{s}/USDT" in exchange.markets}
 
-        # Build CCXT trading pairs (symbol/USDT)
-        pairs = {s: f"{s}/USDT" for s in symbols if f"{s}/USDT" in exchange.markets}
+            if not pairs:
+                return results
 
-        if not pairs:
-            return results
+            tickers = await exchange.fetch_tickers(list(pairs.values()))
 
-        # Fetch tickers in bulk when possible
-        tickers = await exchange.fetch_tickers(list(pairs.values()))
+            for symbol, pair in pairs.items():
+                ticker = tickers.get(pair)
+                if ticker is None:
+                    continue
 
-        for symbol, pair in pairs.items():
-            ticker = tickers.get(pair)
-            if ticker is None:
-                continue
+                price = ticker.get("last") or ticker.get("close") or 0.0
+                open_price = ticker.get("open", price)
+                change_24h = (price - open_price) if open_price else 0.0
+                change_pct = ((change_24h / open_price) * 100) if open_price else 0.0
 
-            price = ticker.get("last") or ticker.get("close") or 0.0
-            open_price = ticker.get("open", price)
-            change_24h = (price - open_price) if open_price else 0.0
-            change_pct = ((change_24h / open_price) * 100) if open_price else 0.0
-
-            results[symbol] = PriceData(
-                symbol=symbol,
-                price=price,
-                change_24h=round(change_24h, 8),
-                change_pct_24h=round(change_pct, 4),
-                volume_24h=ticker.get("quoteVolume", 0.0) or 0.0,
-                high_24h=ticker.get("high", 0.0) or 0.0,
-                low_24h=ticker.get("low", 0.0) or 0.0,
-                market_cap=0.0,  # Not available from exchange ticker
-                last_updated=datetime.now(timezone.utc),
-            )
+                results[symbol] = PriceData(
+                    symbol=symbol,
+                    price=price,
+                    change_24h=round(change_24h, 8),
+                    change_pct_24h=round(change_pct, 4),
+                    volume_24h=ticker.get("quoteVolume", 0.0) or 0.0,
+                    high_24h=ticker.get("high", 0.0) or 0.0,
+                    low_24h=ticker.get("low", 0.0) or 0.0,
+                    market_cap=0.0,
+                    last_updated=datetime.now(timezone.utc),
+                )
 
     except ccxt.RateLimitExceeded:
         logger.warning("CCXT rate limit hit, will retry on next cycle")
     except ccxt.NetworkError as exc:
         logger.warning("CCXT network error: %s", exc)
+        await _reset_exchange()
     except Exception:
         logger.exception("CCXT fetch failed")
-    finally:
-        await _close_exchange(exchange)
+        await _reset_exchange()
 
     return results
 
@@ -327,36 +359,37 @@ async def fetch_ohlcv(
         interval = "1h"
     limit = min(limit, 1000)
 
-    exchange = _get_exchange()
-    if exchange is None:
-        return []
-
     pair = f"{symbol.upper()}/USDT"
     candles: List[OHLCVData] = []
+    exchange = await _get_exchange(load_markets=True)
+    if exchange is None:
+        return candles
 
     try:
-        await exchange.load_markets()
-        if pair not in exchange.markets:
-            return []
+        async with _ohlcv_semaphore:
+            if pair not in exchange.markets:
+                return candles
 
-        raw = await exchange.fetch_ohlcv(pair, timeframe=interval, limit=limit)
-        for entry in raw:
-            candles.append(
-                OHLCVData(
-                    timestamp=entry[0],
-                    open=entry[1],
-                    high=entry[2],
-                    low=entry[3],
-                    close=entry[4],
-                    volume=entry[5],
+            raw = await exchange.fetch_ohlcv(pair, timeframe=interval, limit=limit)
+            for entry in raw:
+                candles.append(
+                    OHLCVData(
+                        timestamp=entry[0],
+                        open=entry[1],
+                        high=entry[2],
+                        low=entry[3],
+                        close=entry[4],
+                        volume=entry[5],
+                    )
                 )
-            )
     except ccxt.RateLimitExceeded:
         logger.warning("CCXT rate limit hit during OHLCV fetch")
+    except ccxt.NetworkError:
+        logger.exception("OHLCV network failure for %s", pair)
+        await _reset_exchange()
     except Exception:
         logger.exception("OHLCV fetch failed for %s", pair)
-    finally:
-        await _close_exchange(exchange)
+        await _reset_exchange()
 
     return candles
 

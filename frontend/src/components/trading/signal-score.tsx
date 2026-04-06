@@ -5,23 +5,23 @@ import { cn } from "@/lib/utils";
 // ── Color helpers ──
 
 function scoreColor(score: number): string {
-  if (score >= 80) return "#22c55e";
-  if (score >= 65) return "#4ade80";
-  if (score >= 55) return "#84cc16";
-  if (score >= 45) return "#8888a0";
-  if (score >= 35) return "#f59e0b";
-  if (score >= 20) return "#fb7185";
-  return "#ef4444";
+  if (score >= 90) return "#16a34a";
+  if (score >= 75) return "#22c55e";
+  if (score >= 65) return "#eab308";
+  if (score >= 50) return "#f59e0b";
+  if (score >= 35) return "#ef4444";
+  if (score >= 20) return "#dc2626";
+  return "#991b1b";
 }
 
 function scoreBg(score: number): string {
-  if (score >= 80) return "rgba(34,197,94,0.12)";
-  if (score >= 65) return "rgba(74,222,128,0.08)";
-  if (score >= 55) return "rgba(132,204,22,0.10)";
-  if (score >= 45) return "rgba(136,136,160,0.06)";
-  if (score >= 35) return "rgba(245,158,11,0.08)";
-  if (score >= 20) return "rgba(251,113,133,0.08)";
-  return "rgba(239,68,68,0.08)";
+  if (score >= 90) return "rgba(22,163,74,0.14)";
+  if (score >= 75) return "rgba(34,197,94,0.12)";
+  if (score >= 65) return "rgba(234,179,8,0.12)";
+  if (score >= 50) return "rgba(245,158,11,0.12)";
+  if (score >= 35) return "rgba(239,68,68,0.10)";
+  if (score >= 20) return "rgba(220,38,38,0.12)";
+  return "rgba(153,27,27,0.14)";
 }
 
 function riskColor(risk: number): string {
@@ -52,10 +52,10 @@ export function ScoreGauge({ score, size = "sm" }: { score: number; label?: stri
 // ── Actionability badge ──
 
 const ACTIONABILITY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  HIGH_CONVICTION: { label: "Forte conviction", color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
+  HIGH_CONVICTION: { label: "Valide", color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
   ACTIONABLE: { label: "Actionnable", color: "#4ade80", bg: "rgba(74,222,128,0.10)" },
-  WATCH: { label: "A surveiller", color: "#f59e0b", bg: "rgba(245,158,11,0.10)" },
-  IGNORE: { label: "Pas de signal", color: "#8888a0", bg: "rgba(136,136,160,0.06)" },
+  WATCH: { label: "Sous surveillance", color: "#f59e0b", bg: "rgba(245,158,11,0.10)" },
+  IGNORE: { label: "Filtre", color: "#8888a0", bg: "rgba(136,136,160,0.06)" },
 };
 
 function ActionabilityBadge({ status }: { status: string }) {
@@ -92,8 +92,13 @@ interface SignalReadoutProps {
   direction: number;
   directionLabel: string;
   confidence: number;
+  reliability?: number;
   risk: number;
   setupQuality: number;
+  regimeFit?: number;
+  confirmationScore?: number;
+  executionRisk?: number;
+  published?: boolean;
   actionability: string;
   action: string;
   marketRegime: string;
@@ -119,7 +124,8 @@ interface SignalReadoutProps {
 }
 
 export function SignalReadout({
-  direction, directionLabel, confidence, risk, setupQuality,
+  direction, directionLabel, confidence, reliability = 50, risk, setupQuality,
+  executionRisk = risk, published = true,
   actionability, marketRegime, signalContext,
   subScores, keyReasons, contradictions, tradePlan,
 }: SignalReadoutProps) {
@@ -144,8 +150,9 @@ export function SignalReadout({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Dim label="Conf" value={confidence} />
-          <Dim label="Risque" value={risk} />
+          <Dim label="Indice" value={confidence} />
+          <Dim label="Fiab" value={reliability} />
+          <Dim label={published ? "Risque" : "Exec"} value={published ? risk : executionRisk} />
           <Dim label="Setup" value={setupQuality} />
           <ActionabilityBadge status={actionability} />
         </div>

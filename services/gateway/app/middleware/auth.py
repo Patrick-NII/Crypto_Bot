@@ -25,6 +25,7 @@ PUBLIC_ROUTES = [
     "/api/v1/alerts",
     "/api/v1/notifications",
     "/api/v1/ml",
+    "/api/v1/scanner",
 ]
 
 

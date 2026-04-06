@@ -4,6 +4,7 @@ from fastapi.responses import Response
 
 from app.core.config import settings
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ ROUTE_TABLE: List[tuple[str, str]] = [
     ("/api/v1/markets", settings.MARKET_DATA_SERVICE_URL),
     ("/api/v1/trades", settings.TRADING_ENGINE_URL),
     ("/api/v1/orders", settings.TRADING_ENGINE_URL),
+    ("/api/v1/strategies", settings.TRADING_ENGINE_URL),
     ("/api/v1/risk", settings.RISK_SERVICE_URL),
     ("/api/v1/ml", settings.ML_SERVICE_URL),
     ("/api/v1/scanner", settings.ML_SERVICE_URL),
@@ -42,6 +44,16 @@ def _forwarded_headers(request: Request) -> Dict[str, str]:
         for k, v in request.headers.items()
         if k.lower() not in skip
     }
+
+
+def _rewrite_location(location: str, upstream_base: str) -> str:
+    """Rewrite absolute upstream redirects to gateway-relative URLs."""
+    if not location:
+        return location
+    if location.startswith(upstream_base):
+        parsed = urlsplit(location)
+        return urlunsplit(("", "", parsed.path, parsed.query, parsed.fragment))
+    return location
 
 
 @router.api_route(
@@ -81,9 +93,9 @@ async def proxy(request: Request, path: str):
         raise HTTPException(status_code=502, detail=f"Bad gateway: {exc}")
 
     # Filter out hop-by-hop response headers
-    skip_response = {"transfer-encoding", "connection", "keep-alive"}
+    skip_response = {"transfer-encoding", "connection", "keep-alive", "date", "server"}
     response_headers = {
-        k: v
+        k: _rewrite_location(v, upstream_base) if k.lower() == "location" else v
         for k, v in upstream_response.headers.items()
         if k.lower() not in skip_response
     }

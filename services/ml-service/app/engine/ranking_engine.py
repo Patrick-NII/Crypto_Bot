@@ -31,6 +31,8 @@ def _build_tf_config(settings: UserSignalSettings) -> dict[str, int]:
         tf_config[tf] = 90
     if settings.anchor_timeframe:
         tf_config.setdefault(settings.anchor_timeframe, 90)
+    for tf in settings.context_timeframes:
+        tf_config.setdefault(tf, 80)
     return tf_config
 
 
@@ -55,8 +57,15 @@ def _status_from_result(
     settings: UserSignalSettings,
 ) -> str:
     if not opportunity.notrade_reasons:
-        return "high_conviction" if opportunity.confidence >= 0.75 else "actionable"
-    if abs(opportunity.global_score) >= settings.min_watch_score or opportunity.regime_fit >= 60:
+        if opportunity.meta_score >= 78 and opportunity.reliability_score >= 70:
+            return "high_conviction"
+        return "actionable"
+    if (
+        opportunity.meta_score >= 58
+        or opportunity.reliability_score >= settings.min_reliability_score
+        or opportunity.trend_context_score >= 65
+        or opportunity.regime_fit >= 60
+    ):
         return "watch"
     return "ignore"
 
@@ -124,6 +133,10 @@ async def _evaluate_symbol(
         primary_scenario = select_primary_scenario(scenarios)
         confirmation_candles = _confirmation_candles(candles_by_tf, settings)
         anchor_candles = candles_by_tf.get(settings.anchor_timeframe, [])
+        context_candles_by_tf = {
+            tf: candles_by_tf.get(tf, [])
+            for tf in settings.context_timeframes
+        }
 
         enhanced = compute_enhanced_scores(
             best_result.indicators,
@@ -141,6 +154,7 @@ async def _evaluate_symbol(
             primary_candles=primary_candles,
             confirmation_candles=confirmation_candles,
             anchor_candles=anchor_candles,
+            context_candles_by_tf=context_candles_by_tf,
             btc_closes=btc_closes,
             settings=settings,
             now_ms=now_ms,
@@ -163,6 +177,10 @@ async def _evaluate_symbol(
             regime=context.regime,
             regime_fit=context.regime_fit,
             confirmation_score=context.confirmation_score,
+            composite_score=context.composite_score,
+            reliability_score=context.reliability_score,
+            trend_context_score=context.trend_context_score,
+            trend_reliability_score=context.trend_reliability_score,
             execution_risk=context.execution_risk,
             liquidity_score=context.liquidity_score,
             expected_holding_window=context.expected_holding_window,

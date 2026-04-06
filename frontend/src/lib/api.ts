@@ -539,7 +539,7 @@ let _marketCache: { data: AllCryptosResponse; ts: number } | null = null;
 let _meCache: { data: UserProfile; ts: number } | null = null;
 let _fearGreedCache: { data: { value: number; label: string }; ts: number } | null = null;
 let _snapshotCache: { scope: string; data: PortfolioSnapshot; ts: number } | null = null;
-const CLIENT_CACHE_PREFIX = "okamoey-cache:v1:";
+const CLIENT_CACHE_PREFIX = "okamoey-cache:v4:";
 
 function currentCacheScope() {
   const token = getAccessToken();
@@ -1189,7 +1189,7 @@ export const tradingApi = {
   placeOrder: async (data: {
     symbol: string; side: OrderSide; order_type: OrderType; quantity: number; price?: number;
   }): Promise<TradeResult> => {
-    const result = await fetchJson<BackendOrderResponse>("/orders", {
+    const result = await fetchJson<BackendOrderResponse>("/orders/", {
       method: "POST",
       body: JSON.stringify({
         symbol: data.symbol,
@@ -1211,7 +1211,7 @@ export const tradingApi = {
 
   getOrders: async (): Promise<Order[]> => {
     try {
-      const response = await fetchJson<BackendOrderListResponse>("/orders");
+      const response = await fetchJson<BackendOrderListResponse>("/orders/");
       return response.orders.map(normalizeOrder);
     } catch {
       return [];
@@ -1235,6 +1235,9 @@ interface SignalData {
   action: string;
   confidence: number;
   score: number;
+  publication_score?: number;
+  composite_score?: number;
+  reliability_score?: number;
   reasoning: string;
   indicators: Array<{ name: string; value: number; signal: number; description: string }>;
   timestamp: string;
@@ -1254,6 +1257,8 @@ interface SignalData {
   actionability: string;
   market_regime: string;
   signal_context: string;
+  trend_context_score?: number;
+  trend_reliability_score?: number;
   contradictions: Array<{ description: string; severity: string }>;
   signal_trade_plan: { side: string; entry_zone: string; invalidation_zone: string; target_zone: string; risk_reward: string; validity: string; execution_style: string } | null;
   horizon: string;
@@ -1291,6 +1296,10 @@ interface ScannerSignalPayload {
   confidence_score: number;
   regime_fit: number;
   confirmation_score: number;
+  composite_score?: number;
+  reliability_score?: number;
+  trend_context_score?: number;
+  trend_reliability_score?: number;
   execution_risk: number;
   liquidity_score: number;
   risk: number;
@@ -1309,6 +1318,7 @@ interface ScannerSignalPayload {
   scenario?: string | null;
   scenario_probability?: number | null;
   global_score: number;
+  publication_score?: number;
   score_100: number;
   status: string;
   action_label: string;
@@ -1329,28 +1339,72 @@ interface ScannerSnapshotPayload {
   timestamp: string;
 }
 
+function uniqueTextList(items: string[] | undefined): string[] {
+  if (!items?.length) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of items) {
+    const normalized = item.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function normalizedPublicationStatus(status?: string, actionability?: string): "high_conviction" | "actionable" | "watch" | "ignore" {
+  const raw = (status ?? actionability ?? "ignore").toString().toLowerCase();
+  if (raw === "high_conviction") return "high_conviction";
+  if (raw === "actionable") return "actionable";
+  if (raw === "watch") return "watch";
+  return "ignore";
+}
+
+function actionabilityFromStatus(status: string): SignalData["actionability"] {
+  if (status === "high_conviction") return "HIGH_CONVICTION";
+  if (status === "actionable") return "ACTIONABLE";
+  if (status === "watch") return "WATCH";
+  return "IGNORE";
+}
+
 function normalizeScannerSignal(payload: ScannerSignalPayload): SignalData {
   const confidenceScore = toNumber(payload.confidence_score ?? payload.confidence);
   const confidence =
     payload.confidence <= 1
       ? toNumber(payload.confidence)
       : Math.max(0, Math.min(1, confidenceScore / 100));
+  const status = normalizedPublicationStatus(payload.status, payload.actionability);
+  const published = status === "actionable" || status === "high_conviction";
+  const actionLabel = published
+    ? (payload.action_label ?? payload.direction_label)
+    : (status === "watch" ? "A surveiller" : "Neutre / attente");
+  const score100 = toNumber(payload.score_100 ?? payload.direction);
+  const direction = toNumber(payload.direction ?? payload.score_100);
+  const directionLabel = payload.direction_label ?? "Neutre / attente";
+  const action = published ? payload.action : "HOLD";
 
   const indicators =
     payload.indicators?.length
       ? payload.indicators
       : payload.best_strategy?.indicators ?? [];
+  const keyReasons = uniqueTextList(payload.key_reasons);
+  const notradeReasons = uniqueTextList(payload.notrade_reasons);
 
   return {
     symbol: payload.symbol.toUpperCase(),
-    action: payload.action,
+    action,
     confidence,
     score: toNumber(payload.global_score),
+    publication_score: toNumber(payload.publication_score ?? payload.composite_score),
+    composite_score: toNumber(payload.composite_score ?? payload.publication_score),
+    reliability_score: toNumber(payload.reliability_score ?? payload.trend_reliability_score),
     reasoning:
       payload.reasoning ||
       payload.best_strategy?.reasoning ||
-      payload.key_reasons.join(". ") ||
-      payload.action_label,
+      keyReasons.join(". ") ||
+      actionLabel,
     indicators: indicators.map((indicator) => ({
       name: indicator.name,
       value: toNumber(indicator.value),
@@ -1358,22 +1412,24 @@ function normalizeScannerSignal(payload: ScannerSignalPayload): SignalData {
       description: indicator.description,
     })),
     timestamp: payload.timestamp,
-    score_100: payload.score_100 ?? payload.direction,
-    action_label: payload.action_label ?? payload.direction_label,
+    score_100: score100,
+    action_label: actionLabel,
     confidence_level: payload.confidence_level ?? "moyen",
-    status: payload.status ?? payload.actionability.toLowerCase(),
+    status,
     sub_scores: payload.sub_scores ?? [],
-    key_reasons: payload.key_reasons ?? [],
-    direction: payload.direction,
-    direction_label: payload.direction_label,
+    key_reasons: keyReasons,
+    direction,
+    direction_label: directionLabel,
     confidence_score: confidenceScore,
     risk: payload.risk ?? payload.execution_risk,
     setup_quality: payload.setup_quality,
-    actionability: payload.actionability,
+    actionability: actionabilityFromStatus(status),
     market_regime: payload.market_regime,
     signal_context: payload.signal_context,
+    trend_context_score: toNumber(payload.trend_context_score),
+    trend_reliability_score: toNumber(payload.trend_reliability_score),
     contradictions: payload.contradictions ?? [],
-    signal_trade_plan: payload.signal_trade_plan ?? null,
+    signal_trade_plan: published ? (payload.signal_trade_plan ?? null) : null,
     horizon: payload.horizon ?? "Scalp 1m/5m/15m/1h",
     setup_type: payload.setup_type || payload.scenario || payload.best_strategy?.strategy_name || "contextual_setup",
     regime: payload.regime ?? "RANGE",
@@ -1381,11 +1437,71 @@ function normalizeScannerSignal(payload: ScannerSignalPayload): SignalData {
     confirmation_score: payload.confirmation_score ?? 0,
     execution_risk: payload.execution_risk ?? payload.risk ?? 50,
     liquidity_score: payload.liquidity_score ?? 50,
-    notrade_reasons: payload.notrade_reasons ?? [],
+    notrade_reasons: notradeReasons,
     expected_holding_window: payload.expected_holding_window ?? "",
     freshness_ms: payload.freshness_ms ?? 0,
     scenario: payload.scenario ?? null,
     scenario_probability: payload.scenario_probability ?? null,
+  };
+}
+
+function scannerFallbackReason(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 404) {
+      return "Scanner backend indisponible pour ce symbole";
+    }
+    if (error.status === 504) {
+      return "Scanner backend trop lent, resultat degrade";
+    }
+    if (error.detail) {
+      return `Scanner backend indisponible (${error.detail})`;
+    }
+  }
+
+  return "Scanner backend indisponible — contexte multi-timeframe manquant";
+}
+
+function buildUnavailableSignal(symbol: string, reason: string): SignalData {
+  const timestamp = new Date().toISOString();
+  return {
+    symbol: symbol.toUpperCase(),
+    action: "HOLD",
+    confidence: 0,
+    score: 0,
+    publication_score: 0,
+    composite_score: 0,
+    reliability_score: 0,
+    reasoning: reason,
+    indicators: [],
+    timestamp,
+    score_100: 50,
+    action_label: "Neutre / attente",
+    confidence_level: "faible",
+    status: "ignore",
+    sub_scores: [],
+    key_reasons: [reason],
+    direction: 50,
+    direction_label: "Neutre / attente",
+    confidence_score: 0,
+    risk: 50,
+    setup_quality: 0,
+    actionability: "IGNORE",
+    market_regime: "UNKNOWN",
+    signal_context: "scanner_unavailable",
+    contradictions: [],
+    signal_trade_plan: null,
+    horizon: "Scalp 1m/5m/15m/1h",
+    setup_type: "scanner_unavailable",
+    regime: "UNKNOWN",
+    regime_fit: 0,
+    confirmation_score: 0,
+    execution_risk: 50,
+    liquidity_score: 0,
+    notrade_reasons: [reason],
+    expected_holding_window: "",
+    freshness_ms: 0,
+    scenario: null,
+    scenario_probability: null,
   };
 }
 
@@ -1402,6 +1518,9 @@ async function computeSignal(symbol: string): Promise<SignalData> {
       action: "HOLD",
       confidence: 0,
       score: 0,
+      publication_score: 0,
+      composite_score: 0,
+      reliability_score: 0,
       reasoning: "Insufficient data",
       indicators: [],
       timestamp: new Date().toISOString(),
@@ -1499,6 +1618,9 @@ async function computeSignal(symbol: string): Promise<SignalData> {
     action,
     confidence: Math.min(Math.abs(score), 1),
     score: Math.round(score * 1000) / 1000,
+    publication_score: Math.max(0, Math.min(100, Math.round(agreement * 100))),
+    composite_score: Math.max(0, Math.min(100, Math.round(agreement * 100))),
+    reliability_score: Math.max(0, Math.min(100, Math.round(agreement * 100))),
     reasoning: `RSI=${rsi.toFixed(0)}, EMA${ed>0?"+":"-"}, BB${pos<0.3?"low":pos>0.7?"high":"mid"}`,
     indicators,
     timestamp: new Date().toISOString(),
@@ -1585,14 +1707,8 @@ export const signalsApi = {
     const request = (async () => {
       try {
         return rememberSignal(key, await fetchScannerSignal(key, mode));
-      } catch {
-        try {
-          return rememberSignal(key, await computeSignal(key));
-        } catch (error) {
-          const stale = signalsApi.peekSignal(key);
-          if (stale) return stale;
-          throw error;
-        }
+      } catch (error) {
+        return rememberSignal(key, buildUnavailableSignal(key, scannerFallbackReason(error)));
       }
     })();
 
@@ -1632,16 +1748,22 @@ export const signalsApi = {
     if (missing.length > 0) {
       try {
         const fetched = await fetchScannerSignals(missing, mode);
+        const fetchedSymbols = new Set<string>();
         for (const signal of fetched) {
           const key = signal.symbol.toUpperCase();
+          fetchedSymbols.add(key);
           results.set(key, rememberSignal(key, signal));
         }
-      } catch {
-        const fallbacks = await Promise.allSettled(missing.map((symbol) => signalsApi.getSignal(symbol, mode)));
-        for (const fallback of fallbacks) {
-          if (fallback.status === "fulfilled") {
-            results.set(fallback.value.symbol.toUpperCase(), fallback.value);
-          }
+        for (const symbol of missing) {
+          const key = symbol.toUpperCase();
+          if (fetchedSymbols.has(key)) continue;
+          results.set(key, rememberSignal(key, buildUnavailableSignal(key, "Scanner backend indisponible pour ce symbole")));
+        }
+      } catch (error) {
+        const reason = scannerFallbackReason(error);
+        for (const symbol of missing) {
+          const key = symbol.toUpperCase();
+          results.set(key, rememberSignal(key, buildUnavailableSignal(key, reason)));
         }
       }
     }
@@ -1659,7 +1781,7 @@ export const signalsApi = {
 // ---- Strategies ----
 
 export const strategiesApi = {
-  list: () => fetchJson<Strategy[]>("/strategies"),
+  list: () => fetchJson<Strategy[]>("/strategies/"),
   get: (id: string) => fetchJson<Strategy>(`/strategies/${id}`),
   generateSignal: (strategyId: string, symbol: string) =>
     fetchJson<Signal>(`/strategies/${strategyId}/signal`, { method: "POST", body: JSON.stringify({ symbol }) }),
@@ -1810,7 +1932,7 @@ export const aiApi = {
 // ---- Analytics ----
 
 export const analyticsApi = {
-  getMetrics: () => fetchJson<AnalyticsMetrics>("/risk/analytics/metrics"),
+  getMetrics: () => fetchJson<AnalyticsMetrics>("/risk/metrics"),
   getEquityCurve: () => fetchJson<EquityPoint[]>("/risk/analytics/equity"),
   getStrategyComparison: () => fetchJson<StrategyComparison[]>("/risk/analytics/strategies"),
   getTradingActivity: () => fetchJson<TradingActivity[]>("/risk/analytics/activity"),

@@ -72,11 +72,11 @@ staging: ## Start staging environment
 
 trading: ## Start trading-only environment on 3200 without the staging frontend
 	@echo "▸ Starting TRADING environment (frontend:3200, gateway:8100)..."
-	docker compose -p practical-swirles -f docker-compose.yml up -d \
+	$(COMPOSE) up -d \
 		postgres redis auth-service portfolio-service market-data-service \
 		trading-engine risk-service ml-service notification-service \
 		mailing-service ai-agent-service news-service binance-proxy
-	docker compose -p okamoey-dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build gateway-dev frontend-trading
+	OKAMOEY_NETWORK_NAME=crypto_bot_okamoey-net docker compose -p okamoey-dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build gateway-dev frontend-trading
 	@echo "✓ Trading ready at http://localhost:3200/crypto"
 
 stop: ## Stop all containers (both environments)

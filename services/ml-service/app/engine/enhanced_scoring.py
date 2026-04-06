@@ -288,25 +288,45 @@ def _compute_setup_quality(
     risk: int,
     contradictions: list[Contradiction],
     volume_score: int,
+    direction: int,
+    trend_score: int,
+    momentum_score: int,
 ) -> int:
-    quality = confidence  # start from confidence
+    direction_strength = min(abs(direction - 50) * 2, 100)
+    bullish = direction >= 50
+    trend_alignment = trend_score if bullish else 100 - trend_score
+    momentum_alignment = momentum_score if bullish else 100 - momentum_score
+    structure_alignment = (trend_alignment + momentum_alignment) / 2
 
-    # Risk penalty
+    quality = (
+        confidence * 0.34
+        + (100 - risk) * 0.18
+        + volume_score * 0.16
+        + direction_strength * 0.18
+        + structure_alignment * 0.14
+    )
+
+    strong_contradictions = sum(1 for item in contradictions if item.severity == "strong")
+    moderate_contradictions = sum(1 for item in contradictions if item.severity == "moderate")
+    quality -= strong_contradictions * 14
+    quality -= moderate_contradictions * 7
+
+    if volume_score < 35:
+        quality -= 8
+    elif volume_score >= 70:
+        quality += 4
+
+    if direction_strength < 14:
+        quality -= 10
+    elif direction_strength >= 28:
+        quality += 5
+
     if risk >= 70:
-        quality -= 25
-    elif risk >= 50:
-        quality -= 10
+        quality -= 12
+    elif risk >= 55:
+        quality -= 6
 
-    # Contradiction penalty
-    quality -= len(contradictions) * 10
-
-    # Volume bonus
-    if volume_score >= 65:
-        quality += 10
-    elif volume_score <= 30:
-        quality -= 10
-
-    return max(0, min(100, quality))
+    return max(0, min(100, round(quality)))
 
 
 # ── Actionability ──
@@ -466,7 +486,15 @@ def compute_enhanced_scores(
     risk = _regime_adjusted_risk(risk, regime)
 
     # 6. Setup quality
-    setup_quality = _compute_setup_quality(confidence, risk, contradictions, sub_score_map.get("volume", 50))
+    setup_quality = _compute_setup_quality(
+        confidence,
+        risk,
+        contradictions,
+        sub_score_map.get("volume", 50),
+        direction,
+        sub_score_map.get("trend", 50),
+        sub_score_map.get("momentum", 50),
+    )
 
     # 7. Actionability (scenario-aware)
     actionability = _compute_actionability(direction, confidence, risk, setup_quality, contradictions)

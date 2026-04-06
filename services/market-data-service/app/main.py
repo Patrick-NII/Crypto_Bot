@@ -14,6 +14,7 @@ from app.api.markets import router as markets_router
 from app.api.prices import router as prices_router
 from app.core.config import settings
 from app.core.redis_client import close_redis
+from app.services.price_fetcher import close_exchange
 from app.services.price_updater import is_running, start_updater, stop_updater
 from app.services.websocket_manager import manager
 
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down %s", settings.APP_NAME)
     await stop_updater()
+    await close_exchange()
     await close_redis()
     logger.info("Shutdown complete")
 

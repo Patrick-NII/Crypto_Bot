@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     REDIS_PRICE_CHANNEL: str = "price_updates"
     REDIS_PRICE_KEY_PREFIX: str = "market:price:"
 
-    model_config = {"env_prefix": "MARKET_", "env_file": ".env", "extra": "ignore"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

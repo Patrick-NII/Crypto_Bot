@@ -154,6 +154,10 @@ class RankedOpportunity:
     regime: str = "RANGE"
     regime_fit: int = 0
     confirmation_score: int = 0
+    composite_score: int = 50
+    reliability_score: int = 50
+    trend_context_score: int = 50
+    trend_reliability_score: int = 50
     execution_risk: int = 50
     liquidity_score: int = 50
     expected_holding_window: str = ""

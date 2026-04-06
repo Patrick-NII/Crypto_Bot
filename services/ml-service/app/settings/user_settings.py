@@ -23,6 +23,7 @@ class UserSignalSettings:
     primary_timeframe: str = "1m"
     confirmation_timeframes: list[str] = field(default_factory=lambda: ["5m", "15m"])
     anchor_timeframe: str = "1h"
+    context_timeframes: list[str] = field(default_factory=lambda: ["2h", "4h", "6h"])
 
     # ── Strategies enabled ──
     enabled_strategies: list[str] = field(
@@ -70,6 +71,7 @@ class UserSignalSettings:
     min_regime_fit_score: int = 70
     min_setup_quality_score: int = 65
     min_confirmation_score: int = 60
+    min_reliability_score: int = 58
     max_execution_risk_score: int = 55
 
     # ── Execution ──
@@ -84,6 +86,7 @@ def scalping_preset() -> UserSignalSettings:
         primary_timeframe="1m",
         confirmation_timeframes=["5m", "15m"],
         anchor_timeframe="1h",
+        context_timeframes=["2h", "4h", "6h"],
         enabled_strategies=["breakout", "momentum_burst", "micro_pullback"],
         default_stop_loss_pct=0.8,
         default_take_profit_pct=1.6,
@@ -100,6 +103,7 @@ def intraday_preset() -> UserSignalSettings:
         primary_timeframe="15m",
         confirmation_timeframes=["1h", "4h"],
         anchor_timeframe="1d",
+        context_timeframes=["6h", "12h", "1d"],
         enabled_strategies=["momentum_rsi_macd", "mean_reversion"],
         default_stop_loss_pct=2.0,
         default_take_profit_pct=4.0,
@@ -116,6 +120,7 @@ def swing_preset() -> UserSignalSettings:
         primary_timeframe="4h",
         confirmation_timeframes=["1d"],
         anchor_timeframe="1w",
+        context_timeframes=["1d", "3d", "1w"],
         enabled_strategies=["sma_crossover", "trend_following"],
         default_stop_loss_pct=5.0,
         default_take_profit_pct=12.0,
