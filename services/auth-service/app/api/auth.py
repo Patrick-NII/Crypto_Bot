@@ -8,6 +8,8 @@ import secrets
 from datetime import datetime, timezone
 from uuid import UUID
 
+from pydantic import BaseModel, Field
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -499,6 +501,95 @@ async def accept_terms(
     await db.flush()
     await db.refresh(current_user)
     return await _user_response(current_user, db)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /me  (RGPD: droit a l'effacement)
+# ---------------------------------------------------------------------------
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(..., description="Mot de passe pour confirmer la suppression")
+
+
+@router.delete("/me", response_model=MessageResponse)
+async def delete_account(
+    payload: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """Suppression definitive du compte et de toutes les donnees associees (RGPD Art. 17).
+
+    Supprime : profil, exchange connections, preferences, tokens.
+    Cette action est irreversible.
+    """
+    # Verify password
+    if not verify_password(payload.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mot de passe incorrect. Suppression refusee.",
+        )
+
+    # Invalidate all tokens in Redis
+    try:
+        r = await get_redis()
+        # We can't enumerate all tokens, but blacklist current refresh
+        await r.setex(f"deleted_user:{current_user.id}", 86400 * 30, "1")
+    except Exception:
+        pass
+
+    # Delete user (cascade deletes exchange_connections via relationship)
+    await db.delete(current_user)
+    await db.flush()
+
+    return MessageResponse(message="Votre compte et toutes vos donnees ont ete supprimes definitivement.")
+
+
+# ---------------------------------------------------------------------------
+# GET /me/data-export  (RGPD: droit a la portabilite)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/me/data-export")
+async def export_user_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Exporte toutes les donnees personnelles de l'utilisateur (RGPD Art. 20).
+
+    Retourne un JSON contenant profil, preferences, et connexions.
+    """
+    connections = await _list_connections_for_user(db, current_user.id)
+
+    return {
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "user": {
+            "id": str(current_user.id),
+            "email": current_user.email,
+            "username": current_user.username,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "is_verified": current_user.is_verified,
+            "risk_profile": current_user.risk_profile,
+            "subscription_plan": current_user.subscription_plan,
+            "subscription_status": current_user.subscription_status,
+            "billing_cycle": current_user.billing_cycle,
+            "accepted_terms_at": current_user.accepted_terms_at.isoformat() if current_user.accepted_terms_at else None,
+            "terms_version": current_user.terms_version,
+            "ai_behavior_style": current_user.ai_behavior_style,
+            "ai_assistant_tone": current_user.ai_assistant_tone,
+        },
+        "exchange_connections": [
+            {
+                "provider": c.provider,
+                "label": c.label,
+                "sandbox_mode": c.sandbox_mode,
+                "can_trade": c.can_trade,
+                "is_active": c.is_active,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in connections
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

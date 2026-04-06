@@ -24,6 +24,8 @@ export default function RegisterPage() {
   const [plan, setPlan] = useState<(typeof PLANS)[number]["id"]>("starter");
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptData, setAcceptData] = useState(false);
+  const [acceptMarketing, setAcceptMarketing] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -160,7 +162,7 @@ export default function RegisterPage() {
                 minLength={8}
                 autoComplete="new-password"
                 className="w-full rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3 pr-10 text-sm text-white placeholder-[#55556a] outline-none focus:border-[#06d6a0]/40"
-                placeholder="Min. 8 characters"
+                placeholder="Min. 8 caracteres, 1 chiffre, 1 majuscule"
               />
               <button
                 type="button"
@@ -172,26 +174,57 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <label className="mb-6 flex items-start gap-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3">
-            <input
-              type="checkbox"
-              checked={acceptTerms}
-              onChange={(e) => setAcceptTerms(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-[#06d6a0]/40 bg-transparent text-[#06d6a0]"
-            />
-            <span className="text-xs leading-5 text-[#8888a0]">
-              I accept the{" "}
-              <Link href="/terms" className="text-[#06d6a0] hover:underline">
-                Terms & Conditions
-              </Link>{" "}
-              and understand that wallet features are unlocked only after connecting my own exchange
-              API keys.
-            </span>
-          </label>
+          {/* RGPD — Consentements obligatoires */}
+          <div className="mb-4 space-y-2.5">
+            <label className="flex items-start gap-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3">
+              <input
+                type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#06d6a0]/40 bg-transparent text-[#06d6a0]"
+              />
+              <span className="text-xs leading-5 text-[#8888a0]">
+                J&apos;accepte les{" "}
+                <Link href="/terms" className="text-[#06d6a0] hover:underline">Conditions d&apos;utilisation</Link>{" "}
+                et la{" "}
+                <Link href="/privacy" className="text-[#06d6a0] hover:underline">Politique de confidentialite</Link>.
+                <span className="text-[#ef4444]"> *</span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3">
+              <input
+                type="checkbox"
+                checked={acceptData}
+                onChange={(e) => setAcceptData(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#06d6a0]/40 bg-transparent text-[#06d6a0]"
+              />
+              <span className="text-xs leading-5 text-[#8888a0]">
+                J&apos;accepte le traitement de mes donnees personnelles (email, preferences de trading) pour le fonctionnement du service, conformement au RGPD.
+                <span className="text-[#ef4444]"> *</span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3">
+              <input
+                type="checkbox"
+                checked={acceptMarketing}
+                onChange={(e) => setAcceptMarketing(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[#06d6a0]/40 bg-transparent text-[#06d6a0]"
+              />
+              <span className="text-xs leading-5 text-[#8888a0]">
+                J&apos;accepte de recevoir des communications marketing et des alertes trading par email (facultatif, desactivable a tout moment dans les reglages).
+              </span>
+            </label>
+          </div>
+
+          <p className="mb-4 text-[10px] text-[#55556a] leading-4">
+            Vos donnees sont stockees de maniere securisee en Europe. Vous pouvez exercer vos droits (acces, rectification, suppression, portabilite) a tout moment depuis les Reglages ou en contactant support@gluetrade.com.
+          </p>
 
           <button
             type="submit"
-            disabled={loading || !acceptTerms}
+            disabled={loading || !acceptTerms || !acceptData}
             className="w-full rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] py-3 text-sm font-semibold text-[#0d0d12] transition-transform hover:scale-[1.01] disabled:opacity-50"
           >
             {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Creer mon compte"}

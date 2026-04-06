@@ -179,6 +179,9 @@ export default function SettingsPage() {
   const [passphrase, setPassphrase] = useState("");
   const [sandboxMode, setSandboxMode] = useState(false);
   const [canTrade, setCanTrade] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
   const flash = () => {
     setSaved(true);
@@ -737,14 +740,84 @@ export default function SettingsPage() {
       <div className="liquid-glass-card p-5 border-[#ef4444]/20">
         <div className="flex items-center gap-2.5 mb-3">
           <Trash2 className="h-4.5 w-4.5 text-[#ef4444]" />
-          <h2 className="text-sm font-semibold text-[#ef4444]">Danger Zone</h2>
+          <h2 className="text-sm font-semibold text-[#ef4444]">Zone de danger</h2>
         </div>
-        <p className="text-[13px] text-[var(--text-muted)] mb-3">
-          Permanently delete your account and all associated exchange connection metadata.
+
+        {/* Data export (RGPD Art. 20) */}
+        <div className="mb-4">
+          <p className="text-[13px] text-[var(--text-muted)] mb-2">
+            Exporter toutes vos donnees personnelles (RGPD Art. 20 — droit a la portabilite).
+          </p>
+          <button
+            onClick={async () => {
+              try {
+                const data = await authApi.exportData();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `gluetrade-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch { /* ignore */ }
+            }}
+            className="rounded-xl px-4 py-2 text-[13px] font-medium text-[var(--text-secondary)] border border-[var(--glass-border)] hover:bg-[var(--glass-bg)] transition-all"
+          >
+            Telecharger mes donnees
+          </button>
+        </div>
+
+        {/* Account deletion (RGPD Art. 17) */}
+        <p className="text-[13px] text-[var(--text-muted)] mb-2">
+          Supprimer definitivement votre compte et toutes les donnees associees. Cette action est irreversible.
         </p>
-        <button className="rounded-xl px-4 py-2 text-[14px] font-medium text-[#ef4444] border border-[#ef4444]/20 hover:bg-[#ef4444]/8 transition-all">
-          Delete Account
-        </button>
+        {!deleteConfirm ? (
+          <button
+            onClick={() => setDeleteConfirm(true)}
+            className="rounded-xl px-4 py-2 text-[14px] font-medium text-[#ef4444] border border-[#ef4444]/20 hover:bg-[#ef4444]/8 transition-all"
+          >
+            Supprimer mon compte
+          </button>
+        ) : (
+          <div className="rounded-xl border border-[#ef4444]/30 bg-[#ef4444]/5 p-4 space-y-3">
+            <p className="text-[13px] font-semibold text-[#ef4444]">
+              Confirmez la suppression en saisissant votre mot de passe :
+            </p>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              placeholder="Votre mot de passe"
+              className="w-full rounded-lg border border-[#ef4444]/20 bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none"
+            />
+            {deleteError && <p className="text-[12px] text-[#ef4444]">{deleteError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  if (!deletePassword) return;
+                  setDeleteError("");
+                  try {
+                    await authApi.deleteAccount(deletePassword);
+                    localStorage.clear();
+                    window.location.href = "/login";
+                  } catch (err: unknown) {
+                    setDeleteError(err instanceof Error ? err.message : "Echec de la suppression.");
+                  }
+                }}
+                disabled={!deletePassword}
+                className="rounded-lg px-4 py-2 text-[13px] font-semibold bg-[#ef4444] text-white hover:bg-[#dc2626] transition-all disabled:opacity-40"
+              >
+                Confirmer la suppression
+              </button>
+              <button
+                onClick={() => { setDeleteConfirm(false); setDeletePassword(""); setDeleteError(""); }}
+                className="rounded-lg px-4 py-2 text-[13px] text-[var(--text-muted)] hover:bg-[var(--glass-bg)] transition-all"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && (
