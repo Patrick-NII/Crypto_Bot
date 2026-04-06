@@ -5,16 +5,24 @@ class Settings(BaseSettings):
     APP_NAME: str = "GlueTrade Mailing Service"
     APP_VERSION: str = "1.0.0"
 
-    # SMTP
-    SMTP_HOST: str = "smtp.resend.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""  # Resend API key or SMTP password
-    SMTP_USE_TLS: bool = True
-    MAIL_FROM: str = "noreply@gluetrade.com"
-    MAIL_FROM_NAME: str = "GlueTrade"
+    # SMTP (Hostinger)
+    SMTP_HOST: str = "smtp.hostinger.com"
+    SMTP_PORT: int = 465
+    SMTP_USE_SSL: bool = True  # SSL on port 465 (not STARTTLS)
 
-    # Redis (for async queue)
+    # ── Mailbox: hello@ (communication: welcome, alerts, newsletters) ──
+    SMTP_HELLO_USER: str = ""
+    SMTP_HELLO_PASSWORD: str = ""
+    MAIL_FROM_HELLO: str = "hello@gluetrade.com"
+    MAIL_FROM_HELLO_NAME: str = "GlueTrade"
+
+    # ── Mailbox: support@ (transactional: verify, reset, security) ──
+    SMTP_SUPPORT_USER: str = ""
+    SMTP_SUPPORT_PASSWORD: str = ""
+    MAIL_FROM_SUPPORT: str = "support@gluetrade.com"
+    MAIL_FROM_SUPPORT_NAME: str = "GlueTrade Security"
+
+    # Redis (for future async queue)
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
