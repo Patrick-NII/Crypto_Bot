@@ -407,6 +407,147 @@ def _build_reasons(indicators: list[IndicatorSnapshot], sub_scores: dict[str, in
     return reasons or ["Signaux mixtes, pas de direction claire"]
 
 
+# ── Improved confidence: strength-weighted + correlation penalty ──
+
+# Indicators that measure similar things (correlated pairs)
+_CORRELATED_PAIRS = [
+    {"RSI", "Bollinger"},       # both measure mean-reversion / extremes
+    {"MACD", "EMA Cross"},      # both measure trend / momentum crossovers
+]
+
+
+def _compute_confidence(indicators: list[IndicatorSnapshot]) -> int:
+    """Confidence based on strength-weighted agreement with correlation penalty.
+
+    - Each indicator votes with abs(signal) * weight, not just +1/-1
+    - Correlated indicators count as 1.3 votes instead of 2
+    - Strong convergence (3+ agree strongly) gets a bonus
+    """
+    if not indicators:
+        return 50
+
+    bullish_strength = 0.0
+    bearish_strength = 0.0
+    total_weight = 0.0
+    active_names: set[str] = set()
+
+    for ind in indicators:
+        if abs(ind.signal) < 0.05:
+            continue
+        active_names.add(ind.name)
+
+        # Weight by signal strength (not just direction)
+        vote = abs(ind.signal) * ind.weight
+
+        # Check if this indicator is correlated with one already counted
+        corr_discount = 1.0
+        for pair in _CORRELATED_PAIRS:
+            if ind.name in pair and (pair - {ind.name}) & active_names:
+                corr_discount = 0.65  # correlated pair → 65% weight instead of 100%
+                break
+
+        effective_vote = vote * corr_discount
+        total_weight += effective_vote
+
+        if ind.signal > 0:
+            bullish_strength += effective_vote
+        else:
+            bearish_strength += effective_vote
+
+    if total_weight <= 0:
+        return 50
+
+    # Agreement = dominant side / total
+    dominant = max(bullish_strength, bearish_strength)
+    agreement = dominant / total_weight
+
+    # Convergence bonus: if 3+ indicators agree strongly
+    strong_bull = sum(1 for i in indicators if i.signal > 0.4)
+    strong_bear = sum(1 for i in indicators if i.signal < -0.4)
+    convergence_bonus = 0
+    if max(strong_bull, strong_bear) >= 3:
+        convergence_bonus = 12  # strong convergence
+    elif max(strong_bull, strong_bear) >= 2:
+        convergence_bonus = 5
+
+    raw = round(agreement * 100) + convergence_bonus
+    return max(0, min(100, raw))
+
+
+# ── Improved direction: non-linear scoring ──
+
+def _compute_direction_nonlinear(indicators: list[IndicatorSnapshot], raw_score: float) -> int:
+    """Direction with convergence multiplier.
+
+    When 3+ indicators strongly agree, boost the signal beyond linear average.
+    """
+    base = _signal_to_100(raw_score)
+
+    strong_bull = sum(1 for i in indicators if i.signal > 0.4)
+    strong_bear = sum(1 for i in indicators if i.signal < -0.4)
+    max_strong = max(strong_bull, strong_bear)
+
+    if max_strong >= 3:
+        # Push direction further from neutral (amplify conviction)
+        distance = base - 50
+        amplified = 50 + distance * 1.20  # 20% boost
+        return max(0, min(100, round(amplified)))
+    elif max_strong >= 2:
+        distance = base - 50
+        amplified = 50 + distance * 1.08  # 8% boost
+        return max(0, min(100, round(amplified)))
+
+    return base
+
+
+# ── Improved risk: ATR-relative instead of fixed bonuses ──
+
+def _compute_risk_v2(
+    vol_score: int,
+    contradictions: list[Contradiction],
+    direction: int,
+    ctx: MarketContext | None,
+    indicators: list[IndicatorSnapshot],
+) -> int:
+    """Risk scoring using relative ATR + proportional contradiction penalty."""
+    risk = 25  # lower baseline than before
+
+    # Volatility: use ATR-relative if available
+    if ctx and ctx.atr > 0:
+        # Normalize ATR as % of typical crypto price movement
+        atr_pct = ctx.atr * 100  # rough normalization
+        if atr_pct > 3.0:
+            risk += 25  # very high volatility
+        elif atr_pct > 1.5:
+            risk += 15
+        elif atr_pct > 0.5:
+            risk += 5
+    else:
+        # Fallback to vol_score
+        if vol_score >= 80:
+            risk += 25
+        elif vol_score >= 60:
+            risk += 12
+
+    # Contradictions: proportional to severity count
+    strong_count = sum(1 for c in contradictions if c.severity == "strong")
+    moderate_count = sum(1 for c in contradictions if c.severity == "moderate")
+    risk += strong_count * 12 + moderate_count * 6
+
+    # Extreme direction = extended move risk (diminishing)
+    dist = abs(direction - 50)
+    if dist >= 35:
+        risk += 10
+    elif dist >= 25:
+        risk += 5
+
+    # Counter-trend (only if clear trend detected)
+    if ctx and ((direction >= 55 and ctx.regime == "trend_down") or (direction <= 45 and ctx.regime == "trend_up")):
+        risk += 10
+
+    return max(0, min(100, risk))
+
+
 # ── Regime-aware risk adjustment ──
 
 _REGIME_RISK_BONUS: dict[str, int] = {
@@ -452,8 +593,8 @@ def compute_enhanced_scores(
     scenario: Scenario | None = None,
 ) -> EnhancedScore:
 
-    # 1. Direction
-    direction = _signal_to_100(raw_score)
+    # 1. Direction (non-linear with convergence boost)
+    direction = _compute_direction_nonlinear(indicators, raw_score)
 
     # 2. Sub-scores
     sub_score_map: dict[str, int] = {}
@@ -463,13 +604,8 @@ def compute_enhanced_scores(
         sub_score_map[cat] = s
         sub_scores.append(SubScore(cat, s, _interpret(cat, s), cnt))
 
-    # 3. Confidence (indicator agreement)
-    signals = [i.signal for i in indicators]
-    pos = sum(1 for s in signals if s > 0.15)
-    neg = sum(1 for s in signals if s < -0.15)
-    total = max(len(signals), 1)
-    agreement = max(pos, neg) / total
-    confidence = max(0, min(100, round(agreement * 100)))
+    # 3. Confidence (strength-weighted agreement + correlation penalty)
+    confidence = _compute_confidence(indicators)
 
     # 4. Contradictions
     contradictions = _detect_contradictions(indicators, direction, sub_score_map, market_context)
@@ -481,8 +617,8 @@ def compute_enhanced_scores(
         elif c.severity == "moderate":
             confidence = max(0, confidence - 8)
 
-    # 5. Risk (regime-aware)
-    risk = _compute_risk(sub_score_map.get("volatility", 50), contradictions, direction, market_context)
+    # 5. Risk (ATR-relative + regime-aware)
+    risk = _compute_risk_v2(sub_score_map.get("volatility", 50), contradictions, direction, market_context, indicators)
     risk = _regime_adjusted_risk(risk, regime)
 
     # 6. Setup quality
