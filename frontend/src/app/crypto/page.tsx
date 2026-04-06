@@ -20,6 +20,7 @@ import {
   Star,
 } from "lucide-react";
 import { WalletAccessPanel } from "@/components/account/wallet-access-panel";
+import { CryptoIcon } from "@/components/ui/crypto-icon";
 import { usePageAccent, PAGE_ACCENTS, useTheme } from "@/components/providers/theme-provider";
 import { useCurrency } from "@/components/providers/currency-provider";
 import { PriceChart } from "@/components/charts/price-chart";
@@ -1221,50 +1222,103 @@ export default function CryptoTradingPage() {
         )}
 
         {/* ============ MY WALLET — always visible ============ */}
-        <section className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 md:p-5 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Wallet className="h-4 w-4 accent-text" />
-              <h2 className="text-sm font-semibold text-[var(--foreground)]">My Wallet</h2>
-              <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
-                Binance
-              </span>
-            </div>
-            {walletPreviewLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--text-muted)]" />}
-          </div>
+        {(() => {
+          // ── Compute wallet totals ──
+          const FIAT_SYMBOLS: Record<string, string> = { EUR: "\u20ac", USD: "$", GBP: "\u00a3", CHF: "CHF", JPY: "\u00a5" };
+          const isFiat = (s: string) => s in FIAT_SYMBOLS;
+          const fiatSymbol = (s: string) => FIAT_SYMBOLS[s] ?? "";
+          const walletItems = walletPreview.map((b) => {
+            const sym = b.currency.toUpperCase();
+            const fiat = isFiat(sym);
+            const stable = fiat || WALLET_STABLES.has(sym);
+            const mktAsset = marketBySymbol.get(sym);
+            const price = stable ? 1 : livePrices[sym] ?? Number(mktAsset?.current_price ?? mktAsset?.price ?? 0);
+            const value = fiat ? b.total : stable ? b.total : b.total * price;
+            const changePct = stable ? 0 : Number(mktAsset?.price_change_percentage_24h ?? mktAsset?.change_pct_24h ?? 0);
+            return { sym, fiat, stable, total: b.total, price, value, changePct, fiatSym: fiatSymbol(sym) };
+          }).filter((i) => i.total > 0).sort((a, b) => b.value - a.value);
 
-          {walletPreviewError ? (
-            <div className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/5 px-3 py-2.5">
-              <p className="text-[12px] text-[var(--danger)]">{walletPreviewError}</p>
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">
-                Check your API keys in Settings and ensure wallet access is unlocked.
-              </p>
-            </div>
-          ) : walletPreview.length === 0 && !walletPreviewLoading ? (
-            <p className="text-[12px] text-[var(--text-muted)]">No balances found. Add your Binance API keys in Settings.</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {walletPreview.map((balance) => {
-                const stable = WALLET_STABLES.has(balance.currency.toUpperCase());
-                const mktAsset = marketBySymbol.get(balance.currency.toUpperCase());
-                const price = stable ? 1 : livePrices[balance.currency.toUpperCase()] ?? Number(mktAsset?.current_price ?? mktAsset?.price ?? 0);
-                const value = balance.total * price;
-                return (
-                  <div key={balance.currency} className="flex items-center justify-between rounded-xl border border-[var(--glass-border)] bg-[var(--background)]/30 px-3 py-2.5">
-                    <div>
-                      <p className="text-[13px] font-semibold text-[var(--foreground)]">{balance.currency}</p>
-                      <p className="text-[11px] text-[var(--text-muted)]">{balance.total.toFixed(price >= 1000 ? 4 : balance.total < 1 ? 8 : 2)}</p>
-                    </div>
+          const totalValue = walletItems.reduce((s, i) => s + (i.fiat ? 0 : i.value), 0);
+          const totalPnl24h = walletItems.reduce((s, i) => {
+            if (i.stable || i.changePct === 0 || i.value <= 0) return s;
+            return s + (i.value - i.value / (1 + i.changePct / 100));
+          }, 0);
+          const pnlPct = totalValue > 0 ? (totalPnl24h / (totalValue - totalPnl24h)) * 100 : 0;
+          const pnlPositive = totalPnl24h >= 0;
+          const cryptoCount = walletItems.filter((i) => !i.fiat).length;
+          const fiatItems = walletItems.filter((i) => i.fiat);
+
+          return (
+            <section className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 md:p-5 mb-6">
+              {/* Header row: title + total + P&L */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5 accent-text" />
+                  <h2 className="text-base font-bold text-[var(--foreground)]">My Wallet</h2>
+                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">Binance</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  {walletPreviewLoading && <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />}
+                  {!walletPreviewLoading && walletItems.length > 0 && (
                     <div className="text-right">
-                      <p className="text-[13px] font-semibold text-[var(--foreground)]">{price > 0 ? format(value) : "--"}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">{stable ? "Stablecoin" : price > 0 ? `@ ${format(price, 2)}` : "No price"}</p>
+                      <p className="text-lg font-bold font-mono text-[var(--foreground)]">{format(totalValue)}</p>
+                      <div className={cn("flex items-center gap-1 justify-end text-[12px] font-semibold", pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                        {pnlPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        <span>{pnlPositive ? "+" : ""}{format(totalPnl24h)}</span>
+                        <span className="text-[var(--text-muted)] font-normal">({pnlPositive ? "+" : ""}{pnlPct.toFixed(2)}%)</span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                  )}
+                </div>
+              </div>
+
+              {/* Error state */}
+              {walletPreviewError ? (
+                <div className="px-1 py-1">
+                  <p className="text-[13px] text-[var(--danger)]">{walletPreviewError}</p>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Verifiez vos cles API dans Settings.</p>
+                </div>
+              ) : walletPreview.length === 0 && !walletPreviewLoading ? (
+                <p className="text-[13px] text-[var(--text-muted)]">Aucun solde. Ajoutez vos cles Binance dans Settings.</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {/* Fiat inline */}
+                  {fiatItems.map((item) => (
+                    <span key={item.sym} className="text-[14px] font-semibold text-[var(--text-secondary)]">
+                      {item.fiatSym}{item.total.toFixed(2)} <span className="text-[11px] text-[var(--text-muted)]">{item.sym}</span>
+                    </span>
+                  ))}
+                  {fiatItems.length > 0 && cryptoCount > 0 && <span className="text-[var(--glass-border)]"> |</span>}
+                  {/* Crypto inline — clickable, with icons + separators */}
+                  {walletItems.filter((i) => !i.fiat).map((item, idx, arr) => (
+                    <span key={item.sym} className="flex items-center gap-0">
+                      <button
+                        onClick={() => setSelectedSymbol(item.sym)}
+                        className={cn(
+                          "flex items-center gap-1.5 py-0.5 transition-colors hover:text-[var(--page-accent)]",
+                          selectedSymbol === item.sym ? "text-[var(--page-accent)]" : "text-[var(--foreground)]",
+                        )}
+                      >
+                        <CryptoIcon symbol={item.sym} imageUrl={marketBySymbol.get(item.sym)?.image} size="xs" />
+                        <span className="text-[14px] font-bold">{item.sym}</span>
+                        <span className="text-[12px] text-[var(--text-muted)] font-mono">
+                          {item.total.toLocaleString(undefined, { maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2 })}
+                        </span>
+                        <span className="text-[13px] font-semibold font-mono">{item.price > 0 ? format(item.value) : "--"}</span>
+                        {item.changePct !== 0 && (
+                          <span className={cn("text-[11px] font-semibold", item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                            {item.changePct >= 0 ? "+" : ""}{item.changePct.toFixed(1)}%
+                          </span>
+                        )}
+                      </button>
+                      {idx < arr.length - 1 && <span className="text-[var(--glass-border)] mx-2">|</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })()}
 
         {/* ============ MAIN LAYOUT: Scanner (left) + Chart (right) ============ */}
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
@@ -1272,7 +1326,7 @@ export default function CryptoTradingPage() {
           {/* LEFT: Scanner with search + watchlist */}
           <aside className="lg:order-first order-last">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold text-[var(--foreground)]">Scanner <span className="text-[10px] text-[var(--text-muted)] font-normal ml-1">{scannerAssets.length}</span></h2>
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">Watchlist <span className="text-[10px] text-[var(--text-muted)] font-normal ml-1">{scannerAssets.length}</span></h2>
               <LocalClock />
             </div>
 
@@ -1305,7 +1359,7 @@ export default function CryptoTradingPage() {
                           onClick={() => { setSelectedSymbol(asset.symbol); setSearchQuery(""); }}
                           className="flex-1 text-left min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+                            <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
                             <span className="text-[10px] font-mono text-[var(--text-muted)]">{format(lp, 2)}</span>
                             <span className={cn("text-[9px] font-semibold", cp >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{cp >= 0 ? "+" : ""}{cp.toFixed(1)}%</span>
                           </div>
@@ -1340,31 +1394,31 @@ export default function CryptoTradingPage() {
 	                      selectedSymbol === asset.symbol
 	                        ? "bg-[var(--glass-bg-strong)] shadow-sm"
 	                        : "hover:bg-[var(--glass-bg)]")}>
-	                    <div className="min-w-0 flex-1">
+																				<div className="min-w-0 flex-1">
 	                      <div className="flex items-center gap-1.5">
-	                        <span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
-	                        <span className={cn("text-[9px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
+	                        <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[12px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+	                        <span className={cn("text-[10px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
 	                      </div>
 	                      <div className="flex items-center gap-1.5 mt-0.5">
 	                        <span className="text-[10px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, 2)}</span>
-	                        {signal && <span className="text-[9px] font-medium truncate" style={{ color: signalTone(signal.display_score) }}>{signal.action_label}</span>}
+	                        {signal && <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: signalTone(signal.display_score) }}>{signal.action_label}</span>}
 	                      </div>
 	                      {signal && (
 	                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-	                          <span className="text-[8px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
-	                          <span className="text-[8px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
-	                          <span className="text-[8px] text-[var(--text-muted)]">Indice {signal.composite_score}</span>
-	                          <span className="text-[8px] text-[var(--text-muted)]">Fiab {signal.reliability_score}</span>
-	                          <span className={cn("text-[8px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
-	                          <span className="text-[8px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
+	                          <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
+	                          <span className="text-[9px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
+	                          <span className="text-[9px] text-[var(--text-muted)]">Indice {signal.composite_score}</span>
+	                          <span className="text-[9px] text-[var(--text-muted)]">Fiab {signal.reliability_score}</span>
+	                          <span className={cn("text-[9px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
+	                          <span className="text-[9px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
 	                        </div>
 	                      )}
 	                      {primaryReason && (
-	                        <p className="mt-1 truncate text-[9px] text-[var(--text-muted)]">{primaryReason}</p>
+	                        <p className="mt-1 text-[9px] leading-snug text-[var(--text-muted)]">{primaryReason}</p>
 	                      )}
 	                    </div>
 	                    <LiveSparkline symbol={asset.symbol} price={livePrice} width={50} height={20} maxPoints={60} positive={liveChangePct >= 0} />
-	                    {signal ? <ScoreGauge score={signal.display_score} size="sm" /> : <span className="text-[8px] text-[var(--text-muted)]">...</span>}
+	                    {signal ? <ScoreGauge score={signal.display_score} size="sm" /> : <span className="text-[9px] text-[var(--text-muted)]">...</span>}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleWatch(asset.symbol); }}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[#ef4444] p-0.5">
@@ -1380,15 +1434,14 @@ export default function CryptoTradingPage() {
           <section className="min-w-0">
 	          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
 	            <div className="flex items-center gap-3">
-	              <div>
+	              <div className="flex items-center gap-2">
+								{selectedSymbol && <CryptoIcon symbol={selectedSymbol} imageUrl={selectedAsset?.image} size="lg" />}
 	                <h2 className="text-lg font-semibold text-[var(--foreground)]">{selectedAsset?.symbol ?? selectedSymbol ?? "Select an asset"}</h2>
 	                {selectedSignal && (
 	                  <div className="mt-1 flex flex-wrap items-center gap-2">
 	                    <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{selectedSignal.horizon}</span>
 	                    <span className="text-[10px] text-[var(--text-secondary)]">{formatSetupType(selectedSignal.setup_type)}</span>
-	                    <span className="text-[10px] text-[var(--text-muted)]">Indice {selectedSignal.composite_score}</span>
-	                    <span className="text-[10px] text-[var(--text-muted)]">Fiab {selectedSignal.reliability_score}</span>
-	                    <span className={cn("text-[10px]", executionRiskTone(selectedSignal.execution_risk))}>Exec {selectedSignal.execution_risk}</span>
+	                    
 	                  </div>
 	                )}
 	              </div>

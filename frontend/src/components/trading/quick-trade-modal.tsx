@@ -8,6 +8,44 @@ import { cn } from "@/lib/utils";
 const FEE_RATE = 0.001;
 const PRESETS = [10, 25, 50, 100, 500];
 
+function getTradeErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+
+  // Montant trop petit
+  if (lower.includes("notional") || lower.includes("trop petit") || lower.includes("too small"))
+    return "Montant trop petit. Minimum ~5$ par ordre.";
+
+  // Solde insuffisant
+  if (lower.includes("insufficient") || lower.includes("insuffisant") || lower.includes("solde"))
+    return "Solde insuffisant pour cet ordre.";
+
+  // Paire non autorisee
+  if (lower.includes("not permitted") || lower.includes("non autoris"))
+    return "Cette paire n'est pas autorisee pour votre compte Binance.";
+
+  // Cle API
+  if (lower.includes("api") && (lower.includes("invalid") || lower.includes("invalide") || lower.includes("permission")))
+    return "Cle API invalide ou permissions manquantes. Verifiez dans Settings.";
+
+  // Precision
+  if (lower.includes("precision") || lower.includes("lot_size") || lower.includes("step"))
+    return "Quantite invalide (precision non respectee).";
+
+  // Timeout / sync
+  if (lower.includes("timeout") || lower.includes("synchronisation"))
+    return "Binance n'a pas repondu a temps. Reessayez.";
+
+  // Rate limit
+  if (lower.includes("rate") || lower.includes("trop de requete") || lower.includes("ddos"))
+    return "Trop de requetes. Attendez quelques secondes.";
+
+  // Si le message backend est deja clair et court, l'afficher tel quel
+  if (raw.length <= 100 && !raw.includes("{"))
+    return raw;
+
+  return "Erreur lors de l'execution. Reessayez.";
+}
+
 interface QuickTradeModalProps {
   symbol: string;
   price: number;
@@ -55,8 +93,9 @@ export function QuickTradeModal({
       await tradingApi.placeOrder({ symbol, side, order_type: "market", quantity: cryptoAmount });
       setResult({ ok: true, msg: `${side === "buy" ? "Bought" : "Sold"} ${cryptoAmount.toFixed(6)} ${symbol}` });
       onSuccess?.();
-    } catch {
-      setResult({ ok: false, msg: "Order failed. Try again." });
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : "Order failed";
+      setResult({ ok: false, msg: getTradeErrorMessage(detail) });
     } finally {
       setLoading(false);
     }

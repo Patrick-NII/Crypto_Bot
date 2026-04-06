@@ -148,9 +148,13 @@ class OrderManager:
             if user_client is not None:
                 try:
                     order = await self._execute_live(order_create, exchange_client=user_client)
+                except ValueError as exc:
+                    # User-facing error (translated by parse_exchange_error)
+                    await user_client.close()
+                    raise ValueError(str(exc)) from exc
                 except Exception as exc:
                     await user_client.close()
-                    raise RuntimeError(f"Live order failed: {exc}")
+                    raise RuntimeError(f"Erreur technique: {exc}")
                 finally:
                     await user_client.close()
             elif settings.TRADING_MODE == "live" and self._exchange_client:
