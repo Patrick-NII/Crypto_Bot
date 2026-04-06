@@ -1,6 +1,9 @@
-# Okamoey Trading Platform
+# Okamoey Trading Platform — v1.0.0 (Stable)
 
-> Plateforme de trading autonome, auto-correctrice et auto-optimisante pour crypto-monnaies et actions, avec interface web glassmorphism et alertes Telegram.
+> **Cette branche (`stable-v1.0.0`) est une version figee. Ne pas modifier.**
+> Pour le developpement, utiliser la branche `Trading`.
+
+> Plateforme de trading autonome, auto-correctrice et auto-optimisante pour crypto-monnaies, avec interface web glassmorphism et alertes Telegram.
 
 ```
  ██████╗ ██╗  ██╗ █████╗ ███╗   ███╗ ██████╗ ███████╗██╗   ██╗
@@ -9,8 +12,33 @@
 ██║   ██║██╔═██╗ ██╔══██║██║╚██╔╝██║██║   ██║██╔══╝    ╚██╔╝
 ╚██████╔╝██║  ██╗██║  ██║██║ ╚═╝ ██║╚██████╔╝███████╗   ██║
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝ ╚══════╝   ╚═╝
-          AUTONOMOUS TRADING PLATFORM v2.0
+            STABLE RELEASE v1.0.0 — 2026-04-06
 ```
+
+---
+
+## Release v1.0.0
+
+| Fonctionnalite | Statut |
+|----------------|--------|
+| Wallet live (soldes Binance reels) | OK |
+| Trading live (Buy/Sell via cles API per-user) | OK |
+| Moteur de signaux contextuel (regime, scenarios, scoring adaptatif) | OK |
+| Gestion d'erreurs Binance (messages clairs en francais) | OK |
+| Filtres Binance automatiques (LOT_SIZE, MIN_NOTIONAL) | OK |
+| Icones crypto (NiceHash/CryptoIcons CDN + fallback) | OK |
+| Wallet UX (fiat correct EUR/USD, P&L 24h, layout compact) | OK |
+| Charts temps reel (5M a 6H, granularite max 1h) | OK |
+| Scanner V4 multi-dimensionnel | OK |
+| 14 microservices Docker | OK |
+
+### Branches
+
+| Branche | Role |
+|---------|------|
+| `stable-v1.0.0` | Version figee — ne pas toucher |
+| `Trading` | Developpement actif |
+| `main` | Branche principale |
 
 ---
 
