@@ -1,11 +1,11 @@
 /** App version injected at build time via Docker ARG / NEXT_PUBLIC env vars */
 
 export const APP_VERSION =
-  process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0-dev";
+  process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0";
 
 export const APP_ENV =
   (process.env.NEXT_PUBLIC_APP_ENV as "development" | "staging" | "production") ||
-  "development";
+  "production";
 
 export const BUILD_SHA =
   process.env.NEXT_PUBLIC_BUILD_SHA || "local";
