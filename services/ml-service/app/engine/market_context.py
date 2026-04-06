@@ -8,7 +8,8 @@ from __future__ import annotations
 import logging
 import math
 
-from app.core.models import Candle, MarketContext
+from app.core.models import Candle, MarketContext, RegimeInfo
+from app.engine.regime_detector import detect_regime
 from app.indicators.atr import atr_raw
 from app.indicators.volume import volume_ratio
 
@@ -79,24 +80,42 @@ def compute_volatility_percentile(closes: list[float], lookback: int = 100) -> f
     return round(rank / len(vols) * 100, 1)
 
 
+# ── Regime-to-legacy mapping ──
+_REGIME_MAP = {
+    "RANGE": "range",
+    "BREAKOUT": "high_volatility",
+    "TREND_UP": "trend_up",
+    "TREND_DOWN": "trend_down",
+    "EXHAUSTION": "high_volatility",
+}
+
+
 def build_market_context(
     candles: list[Candle],
     btc_closes: list[float] | None = None,
-) -> MarketContext:
-    """Build a full MarketContext from candle data."""
+) -> tuple[MarketContext, RegimeInfo]:
+    """Build a full MarketContext + rich RegimeInfo from candle data.
+
+    Returns a tuple for backward compatibility: callers that only
+    need the old shape can ignore the second element.
+    """
     closes = [c.close for c in candles]
     volumes = [c.volume for c in candles]
 
-    regime = classify_regime(closes)
+    regime_info = detect_regime(candles)
+    legacy_regime = _REGIME_MAP.get(regime_info.regime, "range")
+
     btc_trend = classify_btc_trend(btc_closes) if btc_closes else "neutral"
     vol_percentile = compute_volatility_percentile(closes)
-    vol_ratio = volume_ratio(volumes)
+    vol_ratio_val = volume_ratio(volumes)
     atr_val = atr_raw(candles)
 
-    return MarketContext(
-        regime=regime,
+    ctx = MarketContext(
+        regime=legacy_regime,
         btc_trend=btc_trend,
         volatility_percentile=vol_percentile,
-        volume_ratio=round(vol_ratio, 2),
+        volume_ratio=round(vol_ratio_val, 2),
         atr=round(atr_val, 6),
     )
+
+    return ctx, regime_info

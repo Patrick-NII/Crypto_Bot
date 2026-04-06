@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.core.models import (
-    Candle, MarketContext, RankedOpportunity, StrategyResult, TradePlan,
+    Candle, MarketContext, RankedOpportunity, RegimeInfo, Scenario, StrategyResult, TradePlan,
     MODE_TIMEFRAMES,
 )
 from app.engine.signal_engine import compute_signal
@@ -55,7 +55,7 @@ async def scan_opportunities(
     async def _process_symbol(symbol: str) -> RankedOpportunity | None:
         try:
             candles_by_tf = await fetch_multi_timeframe(symbol, tf_config)
-            best_result, market_ctx = compute_signal(
+            best_result, market_ctx, regime_info, scenarios = compute_signal(
                 symbol, candles_by_tf, settings, btc_closes,
             )
 
@@ -90,7 +90,7 @@ async def scan_opportunities(
                     risk_usd=round(risk_usd, 2),
                 )
 
-            return RankedOpportunity(
+            opp = RankedOpportunity(
                 rank=0,  # assigned after sorting
                 symbol=symbol.upper(),
                 global_score=round(best_result.score, 3),
@@ -101,6 +101,10 @@ async def scan_opportunities(
                 trade_plan=trade_plan,
                 timestamp=now,
             )
+            # Attach regime + scenarios as private attrs for the scanner API
+            opp._regime_info = regime_info  # type: ignore[attr-defined]
+            opp._scenarios = scenarios  # type: ignore[attr-defined]
+            return opp
         except Exception:
             logger.exception("Failed to scan %s", symbol)
             return None

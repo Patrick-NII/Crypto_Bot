@@ -269,7 +269,7 @@ async def get_signal(
             except Exception:
                 pass
 
-        result, ctx = engine_compute(symbol.upper(), candles_by_tf, settings, btc_closes)
+        result, ctx, _regime, _scenarios = engine_compute(symbol.upper(), candles_by_tf, settings, btc_closes)
         primary_candles = candles_by_tf.get(settings.primary_timeframe, [])
         price = primary_candles[-1].close if primary_candles else None
 

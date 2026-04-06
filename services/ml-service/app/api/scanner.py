@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.engine.ranking_engine import scan_opportunities
 from app.engine.signal_engine import compute_all_strategies
 from app.engine.enhanced_scoring import compute_enhanced_scores
+from app.engine.scenario_engine import select_primary_scenario
 from app.services.data_fetcher import fetch_multi_timeframe, fetch_closes_and_volumes
 from app.engine.market_context import build_market_context
 from app.settings.user_settings import get_settings
@@ -42,6 +43,13 @@ class TradePlanResponse(BaseModel):
     execution_style: str
 
 
+class ScenarioResponse(BaseModel):
+    name: str
+    direction: str
+    probability: float
+    reasoning: str = ""
+
+
 class OpportunityResponse(BaseModel):
     rank: int
     symbol: str
@@ -61,6 +69,10 @@ class OpportunityResponse(BaseModel):
     key_reasons: list[str] = []
     contradictions: list[ContradictionResponse] = []
     signal_trade_plan: TradePlanResponse | None = None
+    # Scenario context (new)
+    scenario: str | None = None
+    scenario_probability: float | None = None
+    alternative_scenarios: list[ScenarioResponse] = []
     # Legacy compat
     global_score: float = 0
     score_100: int = 50
@@ -117,9 +129,24 @@ async def get_opportunities(
 
     enriched: list[OpportunityResponse] = []
     for opp in opportunities:
-        # Compute enhanced scores from best strategy indicators
+        # Compute enhanced scores from best strategy indicators (regime + scenario aware)
         indicators = opp.best_strategy.indicators if opp.best_strategy else []
-        enhanced = compute_enhanced_scores(indicators, opp.global_score, opp.market_context)
+
+        # Extract regime and scenarios from the ranked opportunity metadata
+        regime_info = getattr(opp, "_regime_info", None)
+        scenarios = getattr(opp, "_scenarios", None) or []
+        primary_scenario = select_primary_scenario(scenarios)
+
+        enhanced = compute_enhanced_scores(
+            indicators, opp.global_score, opp.market_context,
+            regime=regime_info, scenario=primary_scenario,
+        )
+
+        # Build alternative scenarios for response
+        alt_scenarios = [
+            ScenarioResponse(name=s.name, direction=s.direction, probability=s.probability, reasoning=s.reasoning)
+            for s in scenarios
+        ]
 
         enriched.append(OpportunityResponse(
             rank=opp.rank,
@@ -151,6 +178,10 @@ async def get_opportunities(
                 "validity": enhanced.trade_plan.validity,
                 "execution_style": enhanced.trade_plan.execution_style,
             }) if enhanced.trade_plan else None,
+            # Scenario context
+            scenario=enhanced.scenario_name or None,
+            scenario_probability=enhanced.scenario_probability or None,
+            alternative_scenarios=alt_scenarios,
             # Legacy compat
             global_score=opp.global_score,
             score_100=enhanced.score_100,
@@ -196,7 +227,7 @@ async def get_symbol_detail(
         except Exception:
             pass
 
-    results, market_ctx = compute_all_strategies(
+    results, market_ctx, regime_info, scenarios = compute_all_strategies(
         symbol.upper(), candles_by_tf, settings, btc_closes,
     )
 

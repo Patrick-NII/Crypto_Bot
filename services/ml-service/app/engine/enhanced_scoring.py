@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.core.models import IndicatorSnapshot, MarketContext
+from app.core.models import IndicatorSnapshot, MarketContext, RegimeInfo, Scenario
 
 
 # ── Direction labels ──
@@ -173,6 +173,11 @@ class EnhancedScore:
     key_reasons: list[str] = field(default_factory=list)
     contradictions: list[Contradiction] = field(default_factory=list)
     trade_plan: TradePlanStub | None = None
+
+    # Scenario context (new)
+    scenario_name: str = ""
+    scenario_probability: float = 0.0
+    alternative_scenarios: list[dict] = field(default_factory=list)
 
     # Legacy compat
     score_100: int = 50
@@ -382,12 +387,49 @@ def _build_reasons(indicators: list[IndicatorSnapshot], sub_scores: dict[str, in
     return reasons or ["Signaux mixtes, pas de direction claire"]
 
 
+# ── Regime-aware risk adjustment ──
+
+_REGIME_RISK_BONUS: dict[str, int] = {
+    "EXHAUSTION": 15,
+    "BREAKOUT": 5,
+    "RANGE": -5,
+}
+
+
+def _regime_adjusted_risk(base_risk: int, regime: RegimeInfo | None) -> int:
+    if not regime:
+        return base_risk
+    return max(0, min(100, base_risk + _REGIME_RISK_BONUS.get(regime.regime, 0)))
+
+
+# ── Scenario-aware actionability ──
+
+def _scenario_adjusted_actionability(
+    base: str,
+    scenario: Scenario | None,
+    direction: int,
+    confidence: int,
+    risk: int,
+    setup_quality: int,
+) -> str:
+    if not scenario:
+        return base
+    if scenario.probability < 0.30 and base in ("ACTIONABLE", "HIGH_CONVICTION"):
+        return "WATCH"
+    if scenario.probability > 0.60 and base == "ACTIONABLE":
+        if abs(direction - 50) >= 20 and confidence >= 55 and risk <= 55:
+            return "HIGH_CONVICTION"
+    return base
+
+
 # ── Main entry point ──
 
 def compute_enhanced_scores(
     indicators: list[IndicatorSnapshot],
     raw_score: float = 0.0,
     market_context: MarketContext | None = None,
+    regime: RegimeInfo | None = None,
+    scenario: Scenario | None = None,
 ) -> EnhancedScore:
 
     # 1. Direction
@@ -419,17 +461,19 @@ def compute_enhanced_scores(
         elif c.severity == "moderate":
             confidence = max(0, confidence - 8)
 
-    # 5. Risk
+    # 5. Risk (regime-aware)
     risk = _compute_risk(sub_score_map.get("volatility", 50), contradictions, direction, market_context)
+    risk = _regime_adjusted_risk(risk, regime)
 
     # 6. Setup quality
     setup_quality = _compute_setup_quality(confidence, risk, contradictions, sub_score_map.get("volume", 50))
 
-    # 7. Actionability
+    # 7. Actionability (scenario-aware)
     actionability = _compute_actionability(direction, confidence, risk, setup_quality, contradictions)
+    actionability = _scenario_adjusted_actionability(actionability, scenario, direction, confidence, risk, setup_quality)
 
     # 8. Context
-    regime = _regime_label(market_context)
+    regime_label = _regime_label(market_context)
     sig_ctx = _signal_context(direction, market_context)
 
     # 9. Trade plan
@@ -446,6 +490,12 @@ def compute_enhanced_scores(
     # Confidence level label
     conf_level = "tres eleve" if confidence >= 80 else "eleve" if confidence >= 60 else "moyen" if confidence >= 40 else "faible"
 
+    # Scenario metadata
+    scenario_name = scenario.name if scenario else ""
+    scenario_prob = scenario.probability if scenario else 0.0
+    alt_scenarios: list[dict] = []
+    # (populated by caller when multiple scenarios exist)
+
     return EnhancedScore(
         direction=direction,
         direction_label=_direction_label(direction),
@@ -454,12 +504,15 @@ def compute_enhanced_scores(
         setup_quality=setup_quality,
         actionability=actionability,
         action=_action_from_direction(direction),
-        market_regime=regime,
+        market_regime=regime_label,
         signal_context=sig_ctx,
         sub_scores=sub_scores,
         key_reasons=key_reasons[:4],
         contradictions=contradictions,
         trade_plan=trade_plan,
+        scenario_name=scenario_name,
+        scenario_probability=scenario_prob,
+        alternative_scenarios=alt_scenarios,
         # Legacy compat
         score_100=direction,
         label=_direction_label(direction),

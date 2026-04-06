@@ -62,6 +62,35 @@ class MarketContext:
     atr: float = 0.0
 
 
+# ── Regime detection ──
+
+@dataclass
+class RegimeInfo:
+    """Rich market regime classification with confidence."""
+
+    regime: str                    # RANGE, BREAKOUT, TREND_UP, TREND_DOWN, EXHAUSTION
+    confidence: float = 0.0        # 0.0-1.0 — strength of the classification
+    evidence: dict[str, float] = field(default_factory=dict)   # per-regime evidence scores
+    structure: str = "NONE"        # HH_HL, LH_LL, NONE, MIXED
+    volatility_state: str = "normal"   # compressed, expanding, normal, extreme
+    momentum_state: str = "neutral"    # accelerating, decelerating, neutral
+
+
+# ── Scenario ──
+
+@dataclass
+class Scenario:
+    """A plausible market outcome with its probability."""
+
+    name: str                      # CONTINUATION, MEAN_REVERSION, FAKEOUT, REVERSAL, etc.
+    direction: str                 # bullish, bearish
+    probability: float = 0.0       # 0.0-1.0
+    reasoning: str = ""
+    conditions_met: list[str] = field(default_factory=list)
+    conditions_unmet: list[str] = field(default_factory=list)
+    weight_profile: dict[str, float] = field(default_factory=dict)
+
+
 # ── Strategy result ──
 
 @dataclass
