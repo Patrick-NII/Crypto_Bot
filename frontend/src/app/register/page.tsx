@@ -47,15 +47,15 @@ export default function RegisterPage() {
         }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ detail: "Registration failed" }));
-        throw new Error(data.detail || "Registration failed");
+        const data = await res.json().catch(() => ({ detail: "Echec de l'inscription" }));
+        throw new Error(data.detail || "Echec de l'inscription");
       }
       const data = await res.json();
       // Store tokens and fetch profile via AuthProvider
       await loginWithTokens(data.access_token, data.refresh_token);
       router.push("/crypto");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(err instanceof Error ? err.message : "Echec de l'inscription");
     } finally {
       setLoading(false);
     }
@@ -90,12 +90,12 @@ export default function RegisterPage() {
               required
               autoComplete="off"
               className="w-full rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3 text-sm text-white placeholder-[#55556a] outline-none focus:border-[#06d6a0]/40"
-              placeholder="you@example.com"
+              placeholder="votre@email.com"
             />
           </div>
 
           <div className="mb-4">
-            <label className="mb-1.5 block text-xs font-medium text-[#8888a0]">Username</label>
+            <label className="mb-1.5 block text-xs font-medium text-[#8888a0]">Nom d'utilisateur</label>
             <input
               type="text"
               value={username}
@@ -104,7 +104,7 @@ export default function RegisterPage() {
               minLength={3}
               autoComplete="off"
               className="w-full rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3 text-sm text-white placeholder-[#55556a] outline-none focus:border-[#06d6a0]/40"
-              placeholder="Choose a username"
+              placeholder="Nom d'utilisateur"
             />
           </div>
 
@@ -150,7 +150,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="mb-6">
-            <label className="mb-1.5 block text-xs font-medium text-[#8888a0]">Password</label>
+            <label className="mb-1.5 block text-xs font-medium text-[#8888a0]">Mot de passe</label>
             <div className="relative">
               <input
                 type={showPass ? "text" : "password"}
@@ -194,7 +194,7 @@ export default function RegisterPage() {
             disabled={loading || !acceptTerms}
             className="w-full rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] py-3 text-sm font-semibold text-[#0d0d12] transition-transform hover:scale-[1.01] disabled:opacity-50"
           >
-            {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Create Account"}
+            {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Creer mon compte"}
           </button>
 
           <p className="mt-4 text-center text-xs text-[#8888a0]">

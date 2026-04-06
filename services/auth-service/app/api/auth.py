@@ -125,7 +125,7 @@ async def _check_rate_limit(key: str, limit: int, window: int) -> None:
     if current > limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many attempts. Please try again later.",
+            detail="Trop de tentatives. Reessayez dans quelques minutes.",
         )
 
 
@@ -245,15 +245,30 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     if not payload.accept_terms:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You must accept the terms to create an account",
+            detail="Vous devez accepter les conditions pour creer un compte.",
         )
+
+    # Validate password strength
+    pwd = payload.password
+    if len(pwd) < 8:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 8 caracteres.")
+    if not any(c.isdigit() for c in pwd):
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins un chiffre.")
+    if not any(c.isupper() for c in pwd):
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins une majuscule.")
+
+    # Validate username
+    if len(payload.username) < 3:
+        raise HTTPException(status_code=400, detail="Le nom d'utilisateur doit contenir au moins 3 caracteres.")
+    if not payload.username.replace("_", "").replace("-", "").isalnum():
+        raise HTTPException(status_code=400, detail="Le nom d'utilisateur ne peut contenir que des lettres, chiffres, _ et -.")
 
     # Check for existing email
     result = await db.execute(select(User).where(User.email == payload.email))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail="Cette adresse email est deja utilisee.",
         )
 
     # Check for existing username
@@ -261,7 +276,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already taken",
+            detail="Ce nom d'utilisateur est deja pris.",
         )
 
     user = User(
@@ -338,14 +353,14 @@ async def login(payload: UserLogin, request: Request, db: AsyncSession = Depends
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Email ou mot de passe incorrect.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is deactivated",
+            detail="Ce compte a ete desactive.",
         )
 
     access_token = create_access_token(str(user.id))
@@ -371,7 +386,7 @@ async def refresh(payload: TokenRefresh, db: AsyncSession = Depends(get_db)):
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
+            detail="Session expiree. Veuillez vous reconnecter.",
         )
 
     from uuid import UUID
@@ -382,7 +397,7 @@ async def refresh(payload: TokenRefresh, db: AsyncSession = Depends(get_db)):
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
+            detail="Compte introuvable ou desactive.",
         )
 
     access_token = create_access_token(str(user.id))
@@ -434,7 +449,7 @@ async def update_me(
         if result.scalar_one_or_none() is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Username already taken",
+                detail="Ce nom d'utilisateur est deja pris.",
             )
         current_user.username = payload.username
 
@@ -585,7 +600,7 @@ async def create_exchange_connection(
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A connection with this provider and label already exists",
+            detail="Une connexion avec ce fournisseur existe deja.",
         )
 
     connection = ExchangeConnection(
@@ -629,7 +644,7 @@ async def delete_exchange_connection(
     )
     connection = result.scalar_one_or_none()
     if connection is None:
-        raise HTTPException(status_code=404, detail="Exchange connection not found")
+        raise HTTPException(status_code=404, detail="Connexion exchange introuvable.")
 
     await db.delete(connection)
     await db.flush()
@@ -651,20 +666,20 @@ async def verify_email(payload: VerifyEmailRequest, db: AsyncSession = Depends(g
     r = await get_redis()
     user_id = await r.get(f"verify:{payload.token}")
     if not user_id:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+        raise HTTPException(status_code=400, detail="Lien de verification invalide ou expire.")
 
     from uuid import UUID
     result = await db.execute(select(User).where(User.id == UUID(user_id)))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Compte introuvable.")
 
     user.is_verified = True
     db.add(user)
     await db.flush()
     await r.delete(f"verify:{payload.token}")
 
-    return MessageResponse(message="Email verified successfully")
+    return MessageResponse(message="Email verifie avec succes !")
 
 
 # ---------------------------------------------------------------------------
@@ -676,7 +691,7 @@ async def verify_email(payload: VerifyEmailRequest, db: AsyncSession = Depends(g
 async def resend_verification(current_user: User = Depends(get_current_user)):
     """Resend the email verification link."""
     if current_user.is_verified:
-        return MessageResponse(message="Email already verified")
+        return MessageResponse(message="Votre email est deja verifie.")
 
     token = secrets.token_urlsafe(32)
     r = await get_redis()
@@ -745,7 +760,7 @@ async def password_reset_request(
         except Exception:
             pass
 
-    return MessageResponse(message="If the email exists, a reset link has been sent")
+    return MessageResponse(message="Si cette adresse existe, un lien de reinitialisation a ete envoye.")
 
 
 # ---------------------------------------------------------------------------
@@ -759,20 +774,20 @@ async def password_reset(payload: PasswordReset, db: AsyncSession = Depends(get_
     r = await get_redis()
     user_id = await r.get(f"reset:{payload.token}")
     if not user_id:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        raise HTTPException(status_code=400, detail="Lien de reinitialisation invalide ou expire.")
 
     from uuid import UUID
     result = await db.execute(select(User).where(User.id == UUID(user_id)))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Compte introuvable.")
 
     user.hashed_password = hash_password(payload.new_password)
     db.add(user)
     await db.flush()
     await r.delete(f"reset:{payload.token}")
 
-    return MessageResponse(message="Password reset successfully")
+    return MessageResponse(message="Mot de passe reinitialise avec succes !")
 
 
 # ---------------------------------------------------------------------------

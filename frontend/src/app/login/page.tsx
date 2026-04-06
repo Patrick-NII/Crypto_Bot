@@ -56,15 +56,15 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ detail: "Login failed" }));
-        throw new Error(data.detail || "Login failed");
+        const data = await res.json().catch(() => ({ detail: "Echec de connexion" }));
+        throw new Error(data.detail || "Echec de connexion");
       }
       const data = await res.json();
       // Store tokens and fetch profile via AuthProvider
       await loginWithTokens(data.access_token, data.refresh_token);
       router.push("/crypto");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Echec de connexion");
     } finally {
       setLoading(false);
     }
@@ -101,12 +101,12 @@ export default function LoginPage() {
               required
               autoComplete="off"
               className="w-full rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3 text-sm text-white placeholder-[#55556a] outline-none focus:border-[#06d6a0]/40"
-              placeholder="you@example.com"
+              placeholder="votre@email.com"
             />
           </div>
 
           <div className="mb-6">
-            <label className="mb-1.5 block text-xs font-medium text-[#8888a0]">Password</label>
+            <label className="mb-1.5 block text-xs font-medium text-[#8888a0]">Mot de passe</label>
             <div className="relative">
               <input
                 type={showPass ? "text" : "password"}
@@ -115,7 +115,7 @@ export default function LoginPage() {
                 required
                 autoComplete="new-password"
                 className="w-full rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d12] px-4 py-3 pr-10 text-sm text-white placeholder-[#55556a] outline-none focus:border-[#06d6a0]/40"
-                placeholder="Enter password"
+                placeholder="Votre mot de passe"
               />
               <button
                 type="button"
@@ -132,7 +132,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] py-3 text-sm font-semibold text-[#0d0d12] transition-transform hover:scale-[1.01] disabled:opacity-50"
           >
-            {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Sign In"}
+            {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Se connecter"}
           </button>
 
           <div className="mt-4 flex items-center justify-between text-xs">

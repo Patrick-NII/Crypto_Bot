@@ -84,7 +84,7 @@ function ResetPasswordContent() {
         </div>
       </div>
       <button type="submit" disabled={loading} className="w-full rounded-xl bg-gradient-to-r from-[#06d6a0] to-[#0ff0b3] py-3 text-sm font-semibold text-[#0d0d12] disabled:opacity-50">
-        {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Reset Password"}
+        {loading ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Reinitialiser"}
       </button>
     </form>
   );
