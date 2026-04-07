@@ -435,7 +435,7 @@ function LocalClock() {
   }, []);
 
   return (
-    <span className="text-[11px] font-mono text-[var(--text-muted)] tabular-nums" suppressHydrationWarning>
+    <span className="text-[13px] font-mono text-[var(--text-muted)] tabular-nums" suppressHydrationWarning>
       {time}
     </span>
   );
@@ -569,10 +569,10 @@ function DeskMetric({
     <div className="min-w-0">
       <div className="flex items-center gap-1.5 mb-1">
         <Icon className="h-3 w-3 accent-text opacity-50" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+        <span className="text-[13px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
       </div>
       <div className={cn("text-xl font-bold font-mono text-[var(--foreground)]", tone)}>{value}</div>
-      {sublabel ? <p className="text-[12px] text-[var(--text-muted)] mt-0.5">{sublabel}</p> : null}
+      {sublabel ? <p className="text-[14px] text-[var(--text-muted)] mt-0.5">{sublabel}</p> : null}
     </div>
   );
 }
@@ -1423,29 +1423,29 @@ export default function CryptoTradingPage() {
           <div>
             <h1 className="text-xl md:text-2xl font-bold glow-text">Crypto</h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className={cn("text-[12px] font-medium", health?.connected ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>{feedLabel}</span>
-              <span className="text-[12px] text-[var(--text-muted)]">&middot; {portfolioHeadline}</span>
+              <span className={cn("text-[14px] font-medium", health?.connected ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>{feedLabel}</span>
+              <span className="text-[14px] text-[var(--text-muted)]">&middot; {portfolioHeadline}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Mode toggle */}
             <div className="flex rounded-lg p-0.5" style={{ background: "var(--glass-bg)" }}>
               <button onClick={() => setTradingMode("manual")}
-                className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all",
+                className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[14px] font-semibold transition-all",
                   tradingMode === "manual" ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]" : "text-[var(--text-muted)]")}>
                 <CandlestickChart className="h-3.5 w-3.5" /> Manual
               </button>
               <button onClick={() => setTradingMode("auto")}
-                className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-all",
+                className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[14px] font-semibold transition-all",
                   tradingMode === "auto" ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]" : "text-[var(--text-muted)]")}>
                 <Bot className="h-3.5 w-3.5" /> Auto
               </button>
             </div>
-            <button onClick={() => void refreshDesk()} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all">
+            <button onClick={() => void refreshDesk()} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[14px] font-medium text-[var(--text-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--glass-bg)] transition-all">
               <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh
             </button>
             <button onClick={() => void handleAutoToggle()} disabled={!autoStatus || arming}
-              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-all disabled:opacity-40",
+              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[14px] font-semibold transition-all disabled:opacity-40",
                 autoStatus?.enabled ? "bg-[var(--danger)]/12 text-[var(--danger)]" : "bg-[var(--success)]/12 text-[var(--success)]")}>
               {arming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
               {walletUnlocked ? (autoStatus?.enabled ? "Disarm" : "Arm AI") : "Wallet locked"}
@@ -1495,14 +1495,14 @@ export default function CryptoTradingPage() {
                 <div className="flex items-center gap-2">
                   <Wallet className="h-5 w-5 accent-text" />
                   <h2 className="text-base font-bold text-[var(--foreground)]">My Wallet</h2>
-                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">Binance</span>
+                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]">Binance</span>
                 </div>
                 <div className="flex items-center gap-3">
                   {walletPreviewLoading && <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />}
                   {!walletPreviewLoading && walletItems.length > 0 && (
                     <div className="text-right">
                       <p className="text-lg font-bold font-mono text-[var(--foreground)]">{format(totalValue)}</p>
-                      <div className={cn("flex items-center gap-1 justify-end text-[12px] font-semibold", pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                      <div className={cn("flex items-center gap-1 justify-end text-[14px] font-semibold", pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]")}>
                         {pnlPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                         <span>{pnlPositive ? "+" : ""}{format(totalPnl24h)}</span>
                         <span className="text-[var(--text-muted)] font-normal">({pnlPositive ? "+" : ""}{pnlPct.toFixed(2)}%)</span>
@@ -1515,17 +1515,17 @@ export default function CryptoTradingPage() {
               {/* Error state */}
               {walletPreviewError ? (
                 <div className="px-1 py-1">
-                  <p className="text-[13px] text-[var(--danger)]">{walletPreviewError}</p>
-                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Verifiez vos cles API dans Settings.</p>
+                  <p className="text-[15px] text-[var(--danger)]">{walletPreviewError}</p>
+                  <p className="text-[13px] text-[var(--text-muted)] mt-0.5">Verifiez vos cles API dans Settings.</p>
                 </div>
               ) : walletPreview.length === 0 && !walletPreviewLoading ? (
-                <p className="text-[13px] text-[var(--text-muted)]">Aucun solde. Ajoutez vos cles Binance dans Settings.</p>
+                <p className="text-[15px] text-[var(--text-muted)]">Aucun solde. Ajoutez vos cles Binance dans Settings.</p>
               ) : (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                   {/* Fiat inline */}
                   {fiatItems.map((item) => (
-                    <span key={item.sym} className="text-[14px] font-semibold text-[var(--text-secondary)]">
-                      {item.fiatSym}{item.total.toFixed(2)} <span className="text-[11px] text-[var(--text-muted)]">{item.sym}</span>
+                    <span key={item.sym} className="text-[16px] font-semibold text-[var(--text-secondary)]">
+                      {item.fiatSym}{item.total.toFixed(2)} <span className="text-[13px] text-[var(--text-muted)]">{item.sym}</span>
                     </span>
                   ))}
                   {fiatItems.length > 0 && cryptoCount > 0 && <span className="text-[var(--glass-border)]"> |</span>}
@@ -1540,13 +1540,13 @@ export default function CryptoTradingPage() {
                         )}
                       >
                         <CryptoIcon symbol={item.sym} imageUrl={marketBySymbol.get(item.sym)?.image} size="xs" />
-                        <span className="text-[14px] font-bold">{item.sym}</span>
-                        <span className="text-[12px] text-[var(--text-muted)] font-mono">
+                        <span className="text-[16px] font-bold">{item.sym}</span>
+                        <span className="text-[14px] text-[var(--text-muted)] font-mono">
                           {item.total.toLocaleString(undefined, { maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2 })}
                         </span>
-                        <span className="text-[13px] font-semibold font-mono">{item.price > 0 ? format(item.value) : "--"}</span>
+                        <span className="text-[15px] font-semibold font-mono">{item.price > 0 ? format(item.value) : "--"}</span>
                         {item.changePct !== 0 && (
-                          <span className={cn("text-[11px] font-semibold", item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                          <span className={cn("text-[13px] font-semibold", item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
                             {item.changePct >= 0 ? "+" : ""}{item.changePct.toFixed(1)}%
                           </span>
                         )}
@@ -1566,7 +1566,7 @@ export default function CryptoTradingPage() {
           {/* LEFT: Scanner with search + watchlist */}
           <aside className="lg:order-first order-last">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold text-[var(--foreground)]">Watchlist <span className="text-[10px] text-[var(--text-muted)] font-normal ml-1">{scannerAssets.length}</span></h2>
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">Watchlist <span className="text-[12px] text-[var(--text-muted)] font-normal ml-1">{scannerAssets.length}</span></h2>
               <LocalClock />
             </div>
 
@@ -1579,10 +1579,10 @@ export default function CryptoTradingPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Rechercher..."
-                  className="flex-1 bg-transparent text-[12px] text-[var(--foreground)] placeholder-[var(--text-muted)] outline-none"
+                  className="flex-1 bg-transparent text-[14px] text-[var(--foreground)] placeholder-[var(--text-muted)] outline-none"
                 />
                 {searchQuery && (
-                  <button onClick={() => setSearchQuery("")} className="text-[var(--text-muted)] hover:text-[var(--foreground)] text-[10px]">x</button>
+                  <button onClick={() => setSearchQuery("")} className="text-[var(--text-muted)] hover:text-[var(--foreground)] text-[12px]">x</button>
                 )}
               </div>
 
@@ -1599,9 +1599,9 @@ export default function CryptoTradingPage() {
                           onClick={() => { setSelectedSymbol(asset.symbol); setSearchQuery(""); }}
                           className="flex-1 text-left min-w-0">
                           <div className="flex items-center gap-2">
-                            <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[13px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
-                            <span className="text-[10px] font-mono text-[var(--text-muted)]">{format(lp, lp < 1 ? 6 : 2)}</span>
-                            <span className={cn("text-[10px] font-semibold", cp >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{cp >= 0 ? "+" : ""}{cp.toFixed(1)}%</span>
+                            <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[15px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+                            <span className="text-[12px] font-mono text-[var(--text-muted)]">{format(lp, lp < 1 ? 6 : 2)}</span>
+                            <span className={cn("text-[12px] font-semibold", cp >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{cp >= 0 ? "+" : ""}{cp.toFixed(1)}%</span>
                           </div>
                         </button>
                         <button
@@ -1619,7 +1619,7 @@ export default function CryptoTradingPage() {
             {/* Watchlist */}
             <div className="space-y-0.5 max-h-[calc(100vh-260px)] overflow-y-auto custom-scrollbar pr-1">
               {scannerAssets.length === 0 && (
-                <p className="text-[11px] text-[var(--text-muted)] text-center py-4">Recherchez et suivez des cryptos</p>
+                <p className="text-[13px] text-[var(--text-muted)] text-center py-4">Recherchez et suivez des cryptos</p>
               )}
 	              {scannerAssets.map((asset) => {
 	                const signal = signalMap[asset.symbol.toUpperCase()];
@@ -1636,29 +1636,29 @@ export default function CryptoTradingPage() {
 	                        : "hover:bg-[var(--glass-bg)]")}>
 																				<div className="min-w-0 flex-1">
 	                      <div className="flex items-center gap-1.5">
-	                        <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[13px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
-	                        <span className={cn("text-[10px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
+	                        <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[15px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
+	                        <span className={cn("text-[12px] font-semibold", liveChangePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>{liveChangePct >= 0 ? "+" : ""}{liveChangePct.toFixed(1)}%</span>
 	                      </div>
 	                      <div className="flex items-center gap-1.5 mt-0.5">
-	                        <span className="text-[11px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, livePrice < 1 ? 6 : 2)}</span>
-	                        {signal && <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: signalTone(signal.display_score) }}>{signal.action_label}</span>}
+	                        <span className="text-[13px] font-mono text-[var(--text-muted)] tabular-nums">{format(livePrice, livePrice < 1 ? 6 : 2)}</span>
+	                        {signal && <span className="text-[12px] font-medium whitespace-nowrap" style={{ color: signalTone(signal.display_score) }}>{signal.action_label}</span>}
 	                      </div>
 	                      {signal && (
 	                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-	                          <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
-	                          <span className="text-[10px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
-	                          <span className="text-[10px] text-[var(--text-muted)]">Indice {signal.composite_score}</span>
-	                          <span className="text-[10px] text-[var(--text-muted)]">Fiab {signal.reliability_score}</span>
-	                          <span className={cn("text-[10px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
-	                          <span className="text-[10px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
+	                          <span className="text-[12px] uppercase tracking-wider text-[var(--text-muted)]">{signal.horizon}</span>
+	                          <span className="text-[12px] text-[var(--text-secondary)]">{formatSetupType(signal.setup_type)}</span>
+	                          <span className="text-[12px] text-[var(--text-muted)]">Indice {signal.composite_score}</span>
+	                          <span className="text-[12px] text-[var(--text-muted)]">Fiab {signal.reliability_score}</span>
+	                          <span className={cn("text-[12px]", executionRiskTone(signal.execution_risk))}>Exec {signal.execution_risk}</span>
+	                          <span className="text-[12px] text-[var(--text-muted)]">Fresh {formatFreshness(signal.freshness_ms)}</span>
 	                        </div>
 	                      )}
 	                      {primaryReason && (
-	                        <p className="mt-1 text-[10px] leading-snug text-[var(--text-muted)]">{primaryReason}</p>
+	                        <p className="mt-1 text-[12px] leading-snug text-[var(--text-muted)]">{primaryReason}</p>
 	                      )}
 	                    </div>
 	                    <LiveSparkline symbol={asset.symbol} price={livePrice} width={50} height={20} maxPoints={60} positive={liveChangePct >= 0} />
-	                    {signal ? <ScoreGauge score={signal.display_score} size="sm" /> : <span className="text-[10px] text-[var(--text-muted)]">...</span>}
+	                    {signal ? <ScoreGauge score={signal.display_score} size="sm" /> : <span className="text-[12px] text-[var(--text-muted)]">...</span>}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleWatch(asset.symbol); }}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[#ef4444] p-0.5">
@@ -1679,8 +1679,8 @@ export default function CryptoTradingPage() {
 	                <h2 className="text-lg font-semibold text-[var(--foreground)]">{selectedAsset?.symbol ?? selectedSymbol ?? "Select an asset"}</h2>
 	                {selectedSignal && (
 	                  <div className="mt-1 flex flex-wrap items-center gap-2">
-	                    <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{selectedSignal.horizon}</span>
-	                    <span className="text-[10px] text-[var(--text-secondary)]">{formatSetupType(selectedSignal.setup_type)}</span>
+	                    <span className="text-[12px] uppercase tracking-wider text-[var(--text-muted)]">{selectedSignal.horizon}</span>
+	                    <span className="text-[12px] text-[var(--text-secondary)]">{formatSetupType(selectedSignal.setup_type)}</span>
 	                    
 	                  </div>
 	                )}
@@ -1697,19 +1697,19 @@ export default function CryptoTradingPage() {
               </span>
               {/* Chart type toggle */}
               <div className="flex rounded-md p-0.5" style={{ background: "var(--glass-bg)" }}>
-                <button onClick={() => setChartType("candlestick")} className={cn("px-2 py-1 rounded text-[11px] font-medium transition", chartType === "candlestick" ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]" : "text-[var(--text-muted)]")}>
+                <button onClick={() => setChartType("candlestick")} className={cn("px-2 py-1 rounded text-[13px] font-medium transition", chartType === "candlestick" ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]" : "text-[var(--text-muted)]")}>
                   <CandlestickChart className="h-3.5 w-3.5" />
                 </button>
-              <button onClick={() => setChartType("line")} className={cn("px-2 py-1 rounded text-[11px] font-medium transition", chartType === "line" ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]" : "text-[var(--text-muted)]")}>
+              <button onClick={() => setChartType("line")} className={cn("px-2 py-1 rounded text-[13px] font-medium transition", chartType === "line" ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]" : "text-[var(--text-muted)]")}>
                   <Activity className="h-3.5 w-3.5" />
                 </button>
               </div>
               <button onClick={() => openTradeModal("buy")} disabled={!selectedSymbol}
-                className="rounded-lg px-3 py-1.5 text-[12px] font-semibold bg-[var(--success)]/12 text-[var(--success)] hover:bg-[var(--success)]/20 transition disabled:opacity-40">
+                className="rounded-lg px-3 py-1.5 text-[14px] font-semibold bg-[var(--success)]/12 text-[var(--success)] hover:bg-[var(--success)]/20 transition disabled:opacity-40">
                 <ArrowUpRight className="inline h-3.5 w-3.5 mr-1" />Buy
               </button>
               <button onClick={() => openTradeModal("sell")} disabled={!selectedSymbol}
-                className="rounded-lg px-3 py-1.5 text-[12px] font-semibold bg-[var(--danger)]/12 text-[var(--danger)] hover:bg-[var(--danger)]/20 transition disabled:opacity-40">
+                className="rounded-lg px-3 py-1.5 text-[14px] font-semibold bg-[var(--danger)]/12 text-[var(--danger)] hover:bg-[var(--danger)]/20 transition disabled:opacity-40">
                 <ArrowDownRight className="inline h-3.5 w-3.5 mr-1" />Sell
               </button>
             </div>
@@ -1753,15 +1753,15 @@ export default function CryptoTradingPage() {
 	          {selectedSignal && selectedSignal.notrade_reasons.length > 0 && (
 	            <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
 	              <div className="flex items-center justify-between gap-3">
-	                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
+	                <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
 	                {hiddenPublicationReasonCount > 0 ? (
-	                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+	                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]">
 	                    +{hiddenPublicationReasonCount}
 	                  </span>
 	                ) : null}
 	              </div>
 	              {visiblePublicationReasons.map((reason, index) => (
-	                <p key={`${reason}-${index}`} className="mt-1 text-[11px] text-[var(--text-secondary)]">
+	                <p key={`${reason}-${index}`} className="mt-1 text-[13px] text-[var(--text-secondary)]">
 	                  - {reason}
 	                </p>
 	              ))}
@@ -1770,8 +1770,8 @@ export default function CryptoTradingPage() {
             <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Market Movers</p>
-                  <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Discovery layer compacte pour alimenter la watchlist.</p>
+                  <p className="text-[14px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Market Movers</p>
+                  <p className="mt-0.5 text-[14px] text-[var(--text-muted)]">Discovery layer compacte pour alimenter la watchlist.</p>
                 </div>
                 <button
                   type="button"
@@ -1779,7 +1779,7 @@ export default function CryptoTradingPage() {
                     setUniverseView(moversView);
                     setUniverseModalOpen(true);
                   }}
-                  className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-[10px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg)]"
+                  className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-[12px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg)]"
                 >
                   Voir tout
                 </button>
@@ -1795,7 +1795,7 @@ export default function CryptoTradingPage() {
                     type="button"
                     onClick={() => setMoversView(view)}
                     className={cn(
-                      "rounded-full px-3 py-1 text-[11px] font-semibold transition-all",
+                      "rounded-full px-3 py-1 text-[13px] font-semibold transition-all",
                       moversView === view
                         ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]"
                         : "bg-[var(--glass-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]",
@@ -1807,23 +1807,23 @@ export default function CryptoTradingPage() {
               </div>
               {/* Sortable column headers */}
               <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px_74px_78px_34px] items-center gap-2 px-2 pb-1 border-b border-white/[0.04]">
-                <button type="button" onClick={() => { setMoversSortBy("default"); setMoversSortAsc(false); }} className={cn("text-left text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "default" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                <button type="button" onClick={() => { setMoversSortBy("default"); setMoversSortAsc(false); }} className={cn("text-left text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "default" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
                   Asset
                 </button>
-                <button type="button" onClick={() => { if (moversSortBy === "price") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("price"); setMoversSortAsc(false); } }} className={cn("text-right text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "price" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                <button type="button" onClick={() => { if (moversSortBy === "price") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("price"); setMoversSortAsc(false); } }} className={cn("text-right text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "price" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
                   Prix {moversSortBy === "price" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
                 </button>
-                <button type="button" onClick={() => { if (moversSortBy === "change") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("change"); setMoversSortAsc(false); } }} className={cn("text-right text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "change" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                <button type="button" onClick={() => { if (moversSortBy === "change") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("change"); setMoversSortAsc(false); } }} className={cn("text-right text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "change" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
                   24h {moversSortBy === "change" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
                 </button>
-                <button type="button" onClick={() => { if (moversSortBy === "volume") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("volume"); setMoversSortAsc(false); } }} className={cn("text-right text-[10px] uppercase tracking-wider transition-colors", moversSortBy === "volume" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
+                <button type="button" onClick={() => { if (moversSortBy === "volume") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("volume"); setMoversSortAsc(false); } }} className={cn("text-right text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "volume" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
                   Vol {moversSortBy === "volume" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
                 </button>
                 <span />
               </div>
               <div className="mt-1 space-y-1">
                 {compactMoversItems.length === 0 ? (
-                  <p className="text-[12px] text-[var(--text-muted)] py-2">Le flux de marche est en cours de chargement.</p>
+                  <p className="text-[14px] text-[var(--text-muted)] py-2">Le flux de marche est en cours de chargement.</p>
                 ) : compactMoversItems.map((item) => {
                   const isWatched = watchlist.includes(item.symbol);
                   return (
@@ -1840,16 +1840,16 @@ export default function CryptoTradingPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <CryptoIcon symbol={item.symbol} imageUrl={item.image} size="sm" />
-                          <span className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.symbol}</span>
+                          <span className="truncate text-[15px] font-bold text-[var(--foreground)]">{item.symbol}</span>
                         </div>
-                        <p className="truncate text-[11px] text-[var(--text-muted)]">{item.name}</p>
+                        <p className="truncate text-[13px] text-[var(--text-muted)]">{item.name}</p>
                       </div>
-                      <span className="text-right text-[12px] font-mono text-[var(--foreground)]">{format(item.price, item.price < 1 ? 6 : 2)}</span>
-                      <span className={cn("text-right text-[12px] font-semibold", item.changePct24h >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+                      <span className="text-right text-[14px] font-mono text-[var(--foreground)]">{format(item.price, item.price < 1 ? 6 : 2)}</span>
+                      <span className={cn("text-right text-[14px] font-semibold", item.changePct24h >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
                         {item.changePct24h >= 0 ? "+" : ""}
                         {item.changePct24h.toFixed(1)}%
                       </span>
-                      <span className="text-right text-[11px] text-[var(--text-secondary)]">{compactMetricNumber(item.volume24h)}</span>
+                      <span className="text-right text-[13px] text-[var(--text-secondary)]">{compactMetricNumber(item.volume24h)}</span>
                       <div className="flex justify-end">
                         <button
                           type="button"

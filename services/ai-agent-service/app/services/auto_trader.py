@@ -311,22 +311,58 @@ async def _execute_trade(
     strategy: str,
     auth_header: Optional[str],
 ) -> bool:
+    """Execute a trade with mandatory preflight + retry + auto-conversion.
+
+    Uses /orders/execute-with-conversion which:
+    - Preflights the order
+    - Handles conversion chains (e.g. EUR → USDT → BTC)
+    - Retries with exponential backoff on rate limit / timeout
+    """
     if quantity <= 0:
         return False
 
     payload = {
         "symbol": symbol,
         "side": side,
-        "order_type": "market",
         "quantity": float(quantity),
-        "strategy": strategy,
+        "max_retries": 3,
     }
     response = await _post_json(
-        f"{settings.TRADING_URL}/api/v1/orders",
+        f"{settings.TRADING_URL}/api/v1/orders/execute-with-conversion",
         payload,
         auth_header=auth_header,
     )
-    return response is not None
+
+    if response is None:
+        logger.error(
+            "Auto-trade failed: %s %s qty=%s strategy=%s — no response",
+            side, symbol, quantity, strategy,
+        )
+        return False
+
+    status = response.get("status")
+    steps = response.get("steps", [])
+
+    if status == "filled":
+        conversion_count = sum(1 for s in steps if s.get("note") == "conversion step")
+        if conversion_count > 0:
+            logger.info(
+                "Auto-trade filled with %d conversion step(s): %s %s qty=%s",
+                conversion_count, side, symbol, quantity,
+            )
+        else:
+            logger.info("Auto-trade filled: %s %s qty=%s", side, symbol, quantity)
+        return True
+
+    error = response.get("error", {})
+    logger.error(
+        "Auto-trade failed: %s %s qty=%s strategy=%s code=%s reason=%s steps=%d",
+        side, symbol, quantity, strategy,
+        error.get("code", "UNKNOWN"),
+        error.get("user_message", "unknown error"),
+        len(steps),
+    )
+    return False
 
 
 def _rank_signals(signals: list[dict]) -> list[dict]:

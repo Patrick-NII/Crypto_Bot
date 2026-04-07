@@ -22,6 +22,7 @@ from app.models.order import (
     Order,
     OrderCreate,
     OrderPreflightResponse,
+    OrderSide,
     OrderStatus,
     OrderType,
 )
@@ -388,6 +389,165 @@ class OrderManager:
 
         # Last resort: paper balances
         return await self._paper_trader.get_balance(user_id)
+
+    # ------------------------------------------------------------------
+    # Execute chain (multi-step orders for conversion flows)
+    # ------------------------------------------------------------------
+
+    async def execute_chain(
+        self,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        user_id: str,
+        auth_header: Optional[str] = None,
+        max_retries: int = 3,
+    ) -> Dict[str, Any]:
+        """Execute an order with automatic conversion chain if needed.
+
+        Flow:
+          1. Preflight the order
+          2. If can_execute → place order directly
+          3. If conversion needed → execute conversion step first, then retry
+          4. Exponential backoff on rate limit / timeout
+
+        Returns:
+          {
+            "status": "filled" | "failed",
+            "steps": [{symbol, side, qty, result}, ...],
+            "error": ErrorDetail | None,
+          }
+        """
+        import asyncio
+
+        steps: List[Dict[str, Any]] = []
+        current_symbol = symbol
+        current_qty = quantity
+
+        for step_num in range(3):  # max 3 conversion steps
+            # Preflight
+            try:
+                preview = await self.preview_order(
+                    symbol=current_symbol,
+                    side=side,
+                    quantity=current_qty,
+                    user_id=user_id,
+                    auth_header=auth_header,
+                )
+            except Exception as exc:
+                from app.services.error_catalog import classify_error
+                detail = classify_error(exc)
+                return {
+                    "status": "failed",
+                    "steps": steps,
+                    "error": detail.to_dict(),
+                }
+
+            # If preflight says we can execute, try to place
+            if preview.can_execute:
+                for attempt in range(max_retries):
+                    try:
+                        order_create = OrderCreate(
+                            symbol=current_symbol,
+                            side=OrderSide(side),
+                            order_type=OrderType.MARKET,
+                            quantity=current_qty,
+                        )
+                        order = await self.create_order(
+                            order_create,
+                            user_id=user_id,
+                            auth_header=auth_header,
+                        )
+                        steps.append({
+                            "symbol": current_symbol,
+                            "side": side,
+                            "quantity": str(current_qty),
+                            "status": order.status.value if hasattr(order.status, "value") else str(order.status),
+                            "order_id": str(order.id) if order.id else None,
+                        })
+                        return {"status": "filled", "steps": steps, "error": None}
+                    except (RuntimeError, ValueError) as exc:
+                        from app.services.error_catalog import classify_error
+                        detail = classify_error(exc)
+                        # Retry only on exponential_backoff strategy
+                        if detail.retry_strategy == "exponential_backoff" and attempt < max_retries - 1:
+                            await asyncio.sleep(0.5 * (2 ** attempt))
+                            continue
+                        # Final failure
+                        steps.append({
+                            "symbol": current_symbol,
+                            "side": side,
+                            "quantity": str(current_qty),
+                            "status": "failed",
+                            "error": detail.to_dict(),
+                        })
+                        return {"status": "failed", "steps": steps, "error": detail.to_dict()}
+
+            # Preflight blocked but suggests a conversion → execute it first
+            if preview.conversion_symbol and preview.conversion_side and preview.conversion_required_quantity:
+                conv_symbol = preview.conversion_symbol
+                conv_side = preview.conversion_side
+                conv_qty = Decimal(str(preview.conversion_required_quantity))
+
+                try:
+                    conv_order_create = OrderCreate(
+                        symbol=conv_symbol,
+                        side=OrderSide(conv_side if isinstance(conv_side, str) else conv_side.value),
+                        order_type=OrderType.MARKET,
+                        quantity=conv_qty,
+                    )
+                    conv_order = await self.create_order(
+                        conv_order_create,
+                        user_id=user_id,
+                        auth_header=auth_header,
+                    )
+                    steps.append({
+                        "symbol": conv_symbol,
+                        "side": conv_side if isinstance(conv_side, str) else conv_side.value,
+                        "quantity": str(conv_qty),
+                        "status": conv_order.status.value if hasattr(conv_order.status, "value") else str(conv_order.status),
+                        "order_id": str(conv_order.id) if conv_order.id else None,
+                        "note": "conversion step",
+                    })
+                    # Wait a bit for balance to update
+                    await asyncio.sleep(0.5)
+                    # Loop back and retry the original order
+                    continue
+                except Exception as exc:
+                    from app.services.error_catalog import classify_error
+                    detail = classify_error(exc)
+                    steps.append({
+                        "symbol": conv_symbol,
+                        "side": conv_side if isinstance(conv_side, str) else str(conv_side),
+                        "status": "failed",
+                        "error": detail.to_dict(),
+                        "note": "conversion step failed",
+                    })
+                    return {"status": "failed", "steps": steps, "error": detail.to_dict()}
+
+            # Blocked with no conversion possible
+            from app.services.error_catalog import ErrorDetail
+            blocking_reason = preview.blocking_reason or "Ordre non executable"
+            error = ErrorDetail(
+                code="APP_PREFLIGHT_BLOCKED",
+                category="validation",
+                severity="error",
+                user_message=blocking_reason,
+                retry_strategy="none",
+                technical_message=blocking_reason,
+            ).to_dict()
+            return {"status": "failed", "steps": steps, "error": error}
+
+        # Max conversion steps exceeded
+        from app.services.error_catalog import ErrorDetail
+        return {
+            "status": "failed",
+            "steps": steps,
+            "error": ErrorDetail(
+                "APP_CHAIN_TOO_LONG", "validation", "error",
+                "Chaine de conversion trop longue. Ordre annule.",
+            ).to_dict(),
+        }
 
     async def check_pending_orders(self, user_id: Optional[str] = None) -> List[Order]:
         """Fetch current prices and check all pending paper orders."""

@@ -17,62 +17,40 @@ logger = logging.getLogger(__name__)
 
 # Minimum notional fallback (USDT) when market info unavailable
 _DEFAULT_MIN_NOTIONAL = 5.0
+
+
+def _precision_to_step(precision: Any) -> float:
+    """Convert CCXT precision to step size.
+
+    CCXT returns precision as:
+    - a step size (float like 0.00001) — newer format
+    - a decimal places count (int like 5) — older format
+    """
+    if precision is None:
+        return 0.0
+    try:
+        val = float(precision)
+    except (TypeError, ValueError):
+        return 0.0
+    if val <= 0:
+        return 0.0
+    # If > 1, treat as decimal places count (e.g. 5 → 0.00001)
+    if val >= 1:
+        return 10 ** (-int(val))
+    # Otherwise, it's already a step size (e.g. 0.00001)
+    return val
 _ESTIMATED_FEE_RATE = 0.001
 
-# ── Binance error code → user-friendly message ──
-_BINANCE_ERRORS: dict[int, str] = {
-    -1013: "Montant trop petit (minimum ~5 USDT par ordre).",
-    -2010: "Solde insuffisant ou paire non autorisee pour ce compte.",
-    -2015: "Cle API invalide ou permissions insuffisantes.",
-    -1021: "Erreur de synchronisation avec Binance — reessayez.",
-    -1111: "Precision du montant incorrecte.",
-    -4010: "Quantite invalide (precision non respectee).",
-    -1102: "Parametre obligatoire manquant.",
-    -1100: "Requete invalide.",
-}
-
-# ── CCXT exception type → user-friendly message ──
-_CCXT_ERROR_MAP: dict[type, str] = {}  # populated after import
-
-
-def _init_ccxt_error_map() -> None:
-    """Build mapping after ccxt is imported."""
-    _CCXT_ERROR_MAP.update({
-        ccxt.InsufficientFunds: "Solde insuffisant pour cet ordre.",
-        ccxt.InvalidOrder: "Ordre invalide — verifiez le montant et la paire.",
-        ccxt.AuthenticationError: "Cle API invalide ou permissions manquantes.",
-        ccxt.ExchangeNotAvailable: "Binance temporairement indisponible — reessayez.",
-        ccxt.DDoSProtection: "Trop de requetes — attendez quelques secondes.",
-        ccxt.RequestTimeout: "Timeout — Binance n'a pas repondu a temps.",
-        ccxt.BadRequest: "Requete incorrecte — verifiez les parametres.",
-    })
-
-
-_init_ccxt_error_map()
+# Error handling now delegates to the structured error catalog.
+from app.services.error_catalog import classify_error, ErrorDetail
 
 
 def parse_exchange_error(exc: Exception) -> str:
-    """Extract a clear user-facing message from a CCXT/Binance exception."""
-    msg = str(exc)
+    """Return a user-friendly French message for a CCXT/Binance exception.
 
-    # Try to extract Binance error code from the message
-    # Format: binance {"code":-XXXX,"msg":"..."}
-    import re
-    code_match = re.search(r'"code"\s*:\s*(-?\d+)', msg)
-    if code_match:
-        code = int(code_match.group(1))
-        if code in _BINANCE_ERRORS:
-            return _BINANCE_ERRORS[code]
-
-    # Fallback: match by CCXT exception type
-    for exc_type, user_msg in _CCXT_ERROR_MAP.items():
-        if isinstance(exc, exc_type):
-            return user_msg
-
-    # Last resort: clean up the raw message
-    if len(msg) > 150:
-        return "Erreur lors de l'execution de l'ordre."
-    return msg
+    Backward compat: still returns a string. For structured info use classify_error().
+    """
+    return classify_error(exc).user_message
 
 
 class ExchangeClient:
@@ -156,11 +134,12 @@ class ExchangeClient:
         if not self._exchange.markets:
             await self._exchange.load_markets()
 
-    async def adjust_quantity(self, symbol: str, quantity: float, price: float) -> float:
+    async def adjust_quantity(self, symbol: str, quantity: float, price: float, side: str = "buy") -> float:
         """Adjust quantity to respect Binance LOT_SIZE and MIN_NOTIONAL filters.
 
         - Rounds quantity down to the allowed step size
-        - Ensures notional (qty * price) >= minNotional
+        - For buy: ensures notional (qty * price) >= minNotional (bumps up)
+        - For sell: does NOT bump up (user can't sell more than they have)
         - Returns 0 if the order is too small to be valid
         """
         symbol = self.normalize_symbol(symbol)
@@ -181,10 +160,14 @@ class ExchangeClient:
         amount_min = limits.get("amount", {}).get("min")
         amount_precision = precision.get("amount")
 
-        if amount_precision is not None:
-            # Round down to allowed decimal places
-            factor = 10 ** int(amount_precision)
-            quantity = math.floor(quantity * factor) / factor
+        # CCXT returns precision as either:
+        # - a step size (float like 0.00001) — newer format
+        # - a decimal places count (int like 5) — older format
+        step = _precision_to_step(amount_precision)
+
+        if step and step > 0:
+            # Round down to nearest step
+            quantity = math.floor(quantity / step) * step
 
         if amount_min and quantity < amount_min:
             logger.warning("Quantity %s below minimum %s for %s", quantity, amount_min, symbol)
@@ -195,14 +178,13 @@ class ExchangeClient:
         min_notional = cost_min if cost_min else _DEFAULT_MIN_NOTIONAL
         notional = quantity * price
 
-        if notional < min_notional:
-            # Try to bump quantity up to meet minimum
+        if notional < min_notional and side == "buy":
+            # Only bump up for buys (sell can't exceed available balance)
             adjusted = min_notional / price
-            if amount_precision is not None:
-                factor = 10 ** int(amount_precision)
-                adjusted = math.ceil(adjusted * factor) / factor
+            if step and step > 0:
+                adjusted = math.ceil(adjusted / step) * step
             logger.info(
-                "Notional %.4f < min %.2f for %s — adjusting qty from %.8f to %.8f",
+                "Notional %.4f < min %.2f for %s (buy) — adjusting qty from %.8f to %.8f",
                 notional, min_notional, symbol, quantity, adjusted,
             )
             quantity = adjusted
@@ -294,9 +276,11 @@ class ExchangeClient:
         available_base = float(free.get(base_for_order, 0) or 0)
 
         estimated_price = reference_price if reference_price > 0 else 0.0
+        volume_24h_quote: float = 0.0
         try:
             ticker = await self._exchange.fetch_ticker(symbol_to_use)
             estimated_price = float(ticker.get("last", 0) or ticker.get("close", 0) or estimated_price or 0)
+            volume_24h_quote = float(ticker.get("quoteVolume", 0) or 0)
         except Exception:
             estimated_price = float(estimated_price or 0)
 
@@ -310,7 +294,7 @@ class ExchangeClient:
 
         min_notional = self._market_min_notional(symbol_to_use)
         if estimated_price > 0:
-            adjusted_quantity = await self.adjust_quantity(symbol_to_use, adjusted_quantity, estimated_price)
+            adjusted_quantity = await self.adjust_quantity(symbol_to_use, adjusted_quantity, estimated_price, side=side)
 
         estimated_notional = adjusted_quantity * estimated_price if estimated_price > 0 else 0.0
         estimated_fee = estimated_notional * _ESTIMATED_FEE_RATE if estimated_notional > 0 else 0.0
@@ -416,11 +400,29 @@ class ExchangeClient:
                     f"Quantite {base_for_order} insuffisante: {available_base:.6f} disponible, "
                     f"{adjusted_quantity:.6f} requis."
                 )
+            elif min_notional > 0 and estimated_notional > 0 and estimated_notional < min_notional:
+                can_execute = False
+                blocking_reason = (
+                    f"Valeur de vente trop faible: {estimated_notional:.4f} {quote_asset} (minimum {min_notional} {quote_asset}). "
+                    f"Il faut au moins {(min_notional / estimated_price):.6f} {base_for_order} pour atteindre le minimum."
+                )
 
         if normalized != symbol_to_use and preferred_quote != quote_asset and not any(
             pair == f"{base_asset}/{preferred_quote}" for pair in (self._exchange.markets or {})
         ):
             notes.append(f"La paire {base_asset}/{preferred_quote} n'existe pas sur Binance.")
+
+        # Slippage warning: if order > 0.5% of 24h quote volume
+        if volume_24h_quote > 0 and estimated_notional > 0:
+            volume_pct = (estimated_notional / volume_24h_quote) * 100
+            if volume_pct > 0.5:
+                notes.append(
+                    f"Slippage possible: cet ordre represente {volume_pct:.2f}% du volume 24h ({symbol_to_use})."
+                )
+
+        # Warn when symbol was rerouted (different quote currency than requested)
+        if normalized != symbol_to_use:
+            notes.append(f"Paire reroute de {normalized} vers {symbol_to_use}.")
 
         return {
             "requested_symbol": normalized,
@@ -483,7 +485,7 @@ class ExchangeClient:
         symbol = self.normalize_symbol(symbol)
 
         # Adjust quantity for Binance filters
-        quantity = await self.adjust_quantity(symbol, quantity, price)
+        quantity = await self.adjust_quantity(symbol, quantity, price, side=side)
         if quantity <= 0:
             raise ValueError(f"Order too small for {symbol} after filter adjustment")
 

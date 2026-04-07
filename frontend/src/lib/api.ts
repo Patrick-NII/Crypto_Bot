@@ -1211,6 +1211,27 @@ export const tradingApi = {
     };
   },
 
+  getErrorCatalog: async (): Promise<{ version: string; entries: Array<Record<string, unknown>> }> => {
+    return fetchJson("/orders/error-catalog");
+  },
+
+  executeWithConversion: async (data: {
+    symbol: string;
+    side: OrderSide;
+    quantity: number;
+    max_retries?: number;
+  }): Promise<{ status: string; steps: Array<Record<string, unknown>>; error: Record<string, unknown> | null }> => {
+    return fetchJson("/orders/execute-with-conversion", {
+      method: "POST",
+      body: JSON.stringify({
+        symbol: data.symbol,
+        side: data.side,
+        quantity: data.quantity,
+        max_retries: data.max_retries ?? 3,
+      }),
+    });
+  },
+
   preflightOrder: (params: {
     symbol: string;
     side: OrderSide;

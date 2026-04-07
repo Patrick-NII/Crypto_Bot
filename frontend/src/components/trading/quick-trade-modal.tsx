@@ -91,6 +91,7 @@ export function QuickTradeModal({
   const [preflight, setPreflight] = useState<OrderPreflight | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [preflightRefreshKey, setPreflightRefreshKey] = useState(0);
   const [tradeSymbol, setTradeSymbol] = useState(symbol);
   const [inputMode, setInputMode] = useState<"quote" | "base">("quote");
 
@@ -182,7 +183,7 @@ export function QuickTradeModal({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [previewQuantity, price, side, tradeSymbol]);
+  }, [previewQuantity, price, side, tradeSymbol, preflightRefreshKey]);
 
   const handlePrepareConversion = () => {
     if (!preflight?.conversion_symbol || !preflight?.conversion_side || !preflight?.conversion_required_quantity) return;
@@ -393,29 +394,76 @@ export function QuickTradeModal({
           </div>
         )}
 
-        {/* Amount input */}
+        {/* Amount input with dynamic max */}
         <div className="mb-4">
-          <div className="flex items-center rounded-xl px-5 py-4 border border-[var(--glass-border)]" style={{ background: "var(--glass-bg)" }}>
-            <span className="mr-2 text-2xl font-bold text-[var(--text-muted)]">{inputMode === "base" ? baseAsset : quoteAsset}</span>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                if (inputMode === "quote") setSavedQuoteAmount(e.target.value);
-              }}
-              placeholder="0.00"
-              className="flex-1 bg-transparent text-3xl font-bold text-[var(--foreground)] outline-none placeholder-[var(--text-muted)]/30"
-              autoFocus
-            />
-          </div>
-          {numericAmount > 0 && (
-            <p className="mt-1.5 text-right text-xs text-[var(--text-muted)]">
-              {inputMode === "quote"
-                ? `≈ ${requestedQuantity.toFixed(6)} ${baseAsset}`
-                : `≈ ${(side === "buy" ? preflightNotional + preflightFee : Math.max(preflightNotional - preflightFee, 0)).toFixed(2)} ${quoteAsset}`}
-            </p>
-          )}
+          {(() => {
+            // Compute max allowed input based on preflight balance
+            let maxAllowed: number | undefined;
+            if (side === "sell" && inputMode === "base" && preflightBase > 0) {
+              maxAllowed = preflightBase;
+            } else if (side === "buy" && inputMode === "quote" && preflightQuote > 0) {
+              maxAllowed = preflightQuote / (1 + FEE_RATE);
+            } else if (side === "buy" && inputMode === "base" && preflightQuote > 0 && effectivePrice > 0) {
+              maxAllowed = preflightQuote / effectivePrice / (1 + FEE_RATE);
+            }
+            const exceeds = maxAllowed != null && numericAmount > maxAllowed;
+            return (
+              <>
+                <div
+                  className={cn(
+                    "flex items-center rounded-xl px-5 py-4 border",
+                    exceeds ? "border-[var(--danger)]/40" : "border-[var(--glass-border)]",
+                  )}
+                  style={{ background: "var(--glass-bg)" }}
+                >
+                  <span className="mr-2 text-2xl font-bold text-[var(--text-muted)]">
+                    {inputMode === "base" ? baseAsset : quoteAsset}
+                  </span>
+                  <input
+                    type="number"
+                    value={amount}
+                    max={maxAllowed}
+                    onChange={(e) => {
+                      setAmount(e.target.value);
+                      if (inputMode === "quote") setSavedQuoteAmount(e.target.value);
+                    }}
+                    placeholder="0.00"
+                    className="flex-1 bg-transparent text-3xl font-bold text-[var(--foreground)] outline-none placeholder-[var(--text-muted)]/30"
+                    autoFocus
+                  />
+                  {maxAllowed != null && maxAllowed > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const capped = maxAllowed!.toFixed(inputMode === "base" ? 6 : 2);
+                        setAmount(capped);
+                        if (inputMode === "quote") setSavedQuoteAmount(capped);
+                      }}
+                      className="ml-2 rounded-md bg-[var(--page-accent)]/12 px-2 py-1 text-[10px] font-semibold text-[var(--page-accent)] hover:bg-[var(--page-accent)]/20"
+                    >
+                      MAX
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1.5 flex items-center justify-between text-xs">
+                  {numericAmount > 0 ? (
+                    <span className="text-[var(--text-muted)]">
+                      {inputMode === "quote"
+                        ? `\u2248 ${requestedQuantity.toFixed(6)} ${baseAsset}`
+                        : `\u2248 ${(side === "buy" ? preflightNotional + preflightFee : Math.max(preflightNotional - preflightFee, 0)).toFixed(2)} ${quoteAsset}`}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  {maxAllowed != null && (
+                    <span className={cn("text-[10px]", exceeds ? "text-[var(--danger)]" : "text-[var(--text-muted)]")}>
+                      Max {maxAllowed.toFixed(inputMode === "base" ? 6 : 2)} {inputMode === "base" ? baseAsset : quoteAsset}
+                    </span>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* Presets */}
@@ -470,9 +518,26 @@ export function QuickTradeModal({
           </div>
         )}
 
+        {/* Reroute warning when backend changed the pair */}
+        {preflight && preflight.resolved_symbol && preflight.resolved_symbol !== (tradeSymbol.includes("/") ? tradeSymbol : `${tradeSymbol}/USDT`) && (
+          <div className="mb-3 rounded-xl border border-[var(--warning)]/30 bg-[var(--warning)]/8 px-3 py-2 text-xs text-[var(--warning)]">
+            <Info className="inline h-3 w-3 mr-1" />
+            Paire reroute automatiquement: {preflight.resolved_symbol}
+          </div>
+        )}
+
         {tradeBlockingReason && (
-          <div className="mb-4 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)]">
-            {tradeBlockingReason}
+          <div className="mb-4 rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)] flex items-start justify-between gap-2">
+            <span className="flex-1">{tradeBlockingReason}</span>
+            {preflightError && (
+              <button
+                type="button"
+                onClick={() => setPreflightRefreshKey((k) => k + 1)}
+                className="shrink-0 rounded-md bg-[var(--danger)]/20 px-2 py-1 text-[11px] font-semibold hover:bg-[var(--danger)]/30"
+              >
+                Reessayer
+              </button>
+            )}
           </div>
         )}
 
@@ -483,17 +548,35 @@ export function QuickTradeModal({
           </div>
         )}
 
-        {/* Submit */}
-        <button
-          onClick={handleTrade}
-          disabled={numericAmount <= 0 || loading || preflightLoading || Boolean(tradeBlockingReason) || (preflight == null && numericAmount > 0)}
-          className={cn(
-            "w-full rounded-xl py-4 text-base font-bold transition-all disabled:opacity-40",
-            side === "buy" ? "bg-[var(--success)] text-white hover:brightness-110" : "bg-[var(--danger)] text-white hover:brightness-110",
-          )}
-        >
-          {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : submitLabel}
-        </button>
+        {/* Submit with explanatory tooltip when disabled */}
+        {(() => {
+          const disabledReason: string | null =
+            numericAmount <= 0
+              ? "Entrez un montant"
+              : loading
+                ? "Ordre en cours..."
+                : preflightLoading
+                  ? "Verification en cours..."
+                  : tradeBlockingReason
+                    ? String(tradeBlockingReason)
+                    : preflight == null && numericAmount > 0
+                      ? "En attente de la verification"
+                      : null;
+          const isDisabled = disabledReason !== null;
+          return (
+            <button
+              onClick={handleTrade}
+              disabled={isDisabled}
+              title={disabledReason ?? `Executer l'ordre ${side === "buy" ? "d'achat" : "de vente"}`}
+              className={cn(
+                "w-full rounded-xl py-4 text-base font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed",
+                side === "buy" ? "bg-[var(--success)] text-white hover:brightness-110" : "bg-[var(--danger)] text-white hover:brightness-110",
+              )}
+            >
+              {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : submitLabel}
+            </button>
+          );
+        })()}
       </div>
     </div>
   );

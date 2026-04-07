@@ -25,9 +25,21 @@ from app.models.order import (
     OrderStatus,
 )
 
+from app.services.error_catalog import get_full_catalog, classify_error
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
+
+
+@router.get("/error-catalog")
+async def error_catalog() -> dict:
+    """Return the full structured error catalog (public, no auth required).
+
+    Frontend fetches this at startup to display consistent error messages.
+    Cached for 1 hour client-side.
+    """
+    return {"version": "1.0", "entries": get_full_catalog()}
 
 
 def _get_order_manager():
@@ -161,6 +173,45 @@ async def preflight_order(
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+from pydantic import BaseModel, Field
+
+
+class ExecuteWithConversionRequest(BaseModel):
+    symbol: str = Field(..., description="Asset or pair to trade (BTC, ETH, BTC/USDT...)")
+    side: OrderSide
+    quantity: float = Field(..., gt=0)
+    max_retries: int = Field(3, ge=1, le=5)
+
+
+@router.post("/execute-with-conversion")
+async def execute_with_conversion(
+    request: Request,
+    payload: ExecuteWithConversionRequest,
+) -> Dict:
+    """Execute an order with automatic conversion chain if needed.
+
+    Used by auto-trader: if EUR balance but order is BTC/USDT,
+    the engine will first convert EUR→USDT then place BTC/USDT order.
+    """
+    mgr = _get_order_manager()
+    auth_header = request.headers.get("Authorization")
+    await _ensure_wallet_access(auth_header)
+
+    try:
+        result = await mgr.execute_chain(
+            symbol=payload.symbol,
+            side=payload.side.value,
+            quantity=Decimal(str(payload.quantity)),
+            user_id=resolve_request_user_id(request),
+            auth_header=auth_header,
+            max_retries=payload.max_retries,
+        )
+        return result
+    except Exception as exc:
+        detail = classify_error(exc)
+        raise HTTPException(status_code=500, detail=detail.to_dict())
 
 
 @router.post("/check-pending")

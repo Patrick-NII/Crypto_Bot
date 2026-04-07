@@ -37,7 +37,7 @@ export function ScoreGauge({ score, size = "sm" }: { score: number; label?: stri
   if (size === "sm") {
     return (
       <div className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5" style={{ background: scoreBg(score) }}>
-        <span className="text-[12px] font-bold font-mono tabular-nums leading-none" style={{ color }}>{score}</span>
+        <span className="text-[14px] font-bold font-mono tabular-nums leading-none" style={{ color }}>{score}</span>
         <div className="w-[24px] h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
           <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
         </div>
@@ -60,7 +60,7 @@ function ActionabilityBadge({ status }: { status: string }) {
   const config = ACTIONABILITY_CONFIG[status] ?? ACTIONABILITY_CONFIG.IGNORE;
   return (
     <span
-      className="inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-bold uppercase tracking-wider"
       style={{ color: config.color, background: config.bg }}
     >
       {config.label}
@@ -74,8 +74,8 @@ function Dim({ label, value }: { label: string; value: number }) {
   const color = label === "Risque" ? riskColor(value) : scoreColor(value);
   return (
     <div className="flex items-center gap-1">
-      <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-tight">{label}</span>
-      <span className="text-[11px] font-bold font-mono tabular-nums" style={{ color }}>{value}</span>
+      <span className="text-[12px] text-[var(--text-muted)] uppercase tracking-tight">{label}</span>
+      <span className="text-[13px] font-bold font-mono tabular-nums" style={{ color }}>{value}</span>
     </div>
   );
 }
@@ -143,18 +143,18 @@ export function SignalReadout({
       {/* Row 1: Direction + dimensions + actionability */}
       <div className="px-4 py-2 flex items-center justify-between gap-3 border-b border-white/[0.04]">
         <div className="flex items-center gap-3">
-            <span className="text-[22px] font-bold font-mono tabular-nums leading-none" style={{ color: dirColor }}>
+            <span className="text-[24px] font-bold font-mono tabular-nums leading-none" style={{ color: dirColor }}>
               {direction}
             </span>
             <div className="leading-tight">
-              <span className="text-[12px] font-semibold" style={{ color: dirColor }}>{directionLabel}</span>
+              <span className="text-[14px] font-semibold" style={{ color: dirColor }}>{directionLabel}</span>
             <div className="flex items-center gap-1.5 mt-px">
-                <span className="text-[8px] text-[var(--text-muted)] uppercase tracking-wider">{marketRegime}</span>
+                <span className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider">{marketRegime}</span>
                 {signalContext !== "mixed" && (
-                  <span className="text-[8px] text-[var(--text-muted)]">{signalContext.replace(/_/g, " ")}</span>
+                  <span className="text-[11px] text-[var(--text-muted)]">{signalContext.replace(/_/g, " ")}</span>
                 )}
-                {horizon ? <span className="text-[8px] text-[var(--text-muted)]">{horizon}</span> : null}
-                {setupType ? <span className="text-[8px] text-[var(--text-muted)]">{setupType}</span> : null}
+                {horizon ? <span className="text-[11px] text-[var(--text-muted)]">{horizon}</span> : null}
+                {setupType ? <span className="text-[11px] text-[var(--text-muted)]">{setupType}</span> : null}
               </div>
             </div>
           </div>
@@ -170,20 +170,20 @@ export function SignalReadout({
       <div className="px-4 py-2 border-b border-white/[0.04]">
         <div className="grid gap-2 md:grid-cols-4">
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
-            <p className="text-[8px] uppercase tracking-wider text-[var(--text-muted)]">Contexte</p>
-            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{marketRegime.toLowerCase().replace(/_/g, " ")}</p>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Contexte</p>
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{marketRegime.toLowerCase().replace(/_/g, " ")}</p>
           </div>
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
-            <p className="text-[8px] uppercase tracking-wider text-[var(--text-muted)]">Trigger</p>
-            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{setupType ?? "Contexte mixte"}</p>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Trigger</p>
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{setupType ?? "Contexte mixte"}</p>
           </div>
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
-            <p className="text-[8px] uppercase tracking-wider text-[var(--text-muted)]">Risque d'execution</p>
-            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{executionRisk}/100</p>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Risque d'execution</p>
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{executionRisk}/100</p>
           </div>
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
-            <p className="text-[8px] uppercase tracking-wider text-[var(--text-muted)]">Fenetre</p>
-            <p className="mt-1 text-[11px] text-[var(--text-secondary)]">{expectedHoldingWindow ?? "Scalp court terme"}</p>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Fenetre</p>
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{expectedHoldingWindow ?? "Scalp court terme"}</p>
           </div>
         </div>
       </div>
@@ -191,43 +191,43 @@ export function SignalReadout({
       {/* Row 2: Sub-scores + Why/Why not + Trade plan */}
       <div className="px-4 py-3 grid gap-3 md:grid-cols-[1.1fr_1fr_auto]">
         <div>
-          <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Pourquoi cette opportunite</p>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Pourquoi cette opportunite</p>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
           {subScores.map((ss) => {
             const c = scoreColor(ss.score);
             return (
               <div key={ss.category} className="flex items-center gap-1">
-                <span className="text-[7px] font-bold rounded px-1 py-px" style={{ background: `${c}18`, color: c }}>
+                <span className="text-[11px] font-bold rounded px-1 py-px" style={{ background: `${c}18`, color: c }}>
                   {CAT_ICONS[ss.category] ?? "?"}
                 </span>
-                <span className="text-[10px] text-[var(--text-muted)]">{ss.label}</span>
+                <span className="text-[12px] text-[var(--text-muted)]">{ss.label}</span>
               </div>
             );
           })}
           </div>
           {keyReasons.slice(0, 3).map((r, i) => (
-            <p key={i} className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+            <p key={i} className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
               <span className="text-[var(--text-muted)]">-</span> {r}
             </p>
           ))}
         </div>
 
         <div className="min-w-[200px]">
-          <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Pourquoi pas</p>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Pourquoi pas</p>
           {blockers.length > 0 ? blockers.map((reason) => (
-            <p key={reason} className="text-[10px] text-[#f59e0b] leading-relaxed">
+            <p key={reason} className="text-[12px] text-[#f59e0b] leading-relaxed">
               ! {reason}
             </p>
           )) : (
-            <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
+            <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
               - Aucun blocage majeur remonte dans le contexte actuel.
             </p>
           )}
         </div>
 
         {tradePlan && tradePlan.side !== "none" && (
-          <div className="min-w-[160px] rounded-lg px-2.5 py-1.5 text-[9px]" style={{ background: "rgba(255,255,255,0.02)" }}>
-            <p className="text-[8px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Plan {tradePlan.side}</p>
+          <div className="min-w-[160px] rounded-lg px-2.5 py-1.5 text-[12px]" style={{ background: "rgba(255,255,255,0.02)" }}>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Plan {tradePlan.side}</p>
             <p className="text-[var(--text-secondary)]">Entree: {tradePlan.entry_zone}</p>
             <p className="text-[var(--text-secondary)]">Stop: {tradePlan.invalidation_zone}</p>
             <p className="text-[var(--text-secondary)]">Cible: {tradePlan.target_zone}</p>
