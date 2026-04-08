@@ -6,7 +6,7 @@ import { dirname } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "out");
-const port = parseInt(process.argv[2] || "3000", 10);
+const port = parseInt(process.env.PORT || process.argv[2] || "3000", 10);
 
 const mimeTypes = {
   ".html": "text/html",

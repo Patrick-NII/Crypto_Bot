@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0d0d12;font-family:Inter,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d12;padding:40px 20px">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#14141b;border-radius:16px;border:1px solid rgba(255,255,255,0.06)">
+  <tr><td style="padding:40px 40px 16px;text-align:center">
+    <h1 style="color:#06d6a0;font-size:28px;margin:0">GLUETRADE</h1>
+    <p style="color:#06d6a0;font-size:13px;margin:6px 0 0;letter-spacing:1px;text-transform:uppercase">Récap du jour · {{ recap_date }}</p>
+  </td></tr>
+  <tr><td style="padding:0 40px">
+    <h2 style="color:#e0e0e8;font-size:20px;margin:0 0 16px">Bonjour {{ username }},</h2>
+
+    <!-- Portfolio summary card -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#1a1a24,#1f1f2c);border-radius:12px;padding:24px;margin-bottom:20px;border:1px solid rgba(6,214,160,0.15)">
+      <tr><td>
+        <p style="color:#8888a0;font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px">Valeur du portefeuille</p>
+        <p style="color:#e0e0e8;font-size:32px;font-weight:700;margin:0 0 6px">{{ portfolio_value }}</p>
+        <p style="color:{{ pnl_color|default('#06d6a0') }};font-size:14px;font-weight:600;margin:0">{{ pnl_24h }} (24h)</p>
+      </td></tr>
+    </table>
+
+    <!-- Stats grid -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+      <tr>
+        <td width="33%" style="background:#1a1a24;border-radius:12px;padding:16px;text-align:center">
+          <p style="color:#8888a0;font-size:11px;margin:0 0 4px;text-transform:uppercase">Trades</p>
+          <p style="color:#e0e0e8;font-size:20px;font-weight:700;margin:0">{{ trades_count|default(0) }}</p>
+        </td>
+        <td width="4"></td>
+        <td width="33%" style="background:#1a1a24;border-radius:12px;padding:16px;text-align:center">
+          <p style="color:#8888a0;font-size:11px;margin:0 0 4px;text-transform:uppercase">Achats</p>
+          <p style="color:#06d6a0;font-size:20px;font-weight:700;margin:0">{{ buys|default(0) }}</p>
+        </td>
+        <td width="4"></td>
+        <td width="33%" style="background:#1a1a24;border-radius:12px;padding:16px;text-align:center">
+          <p style="color:#8888a0;font-size:11px;margin:0 0 4px;text-transform:uppercase">Ventes</p>
+          <p style="color:#f59e0b;font-size:20px;font-weight:700;margin:0">{{ sells|default(0) }}</p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Top trades table -->
+    {% if top_trades %}
+    <h3 style="color:#e0e0e8;font-size:15px;margin:24px 0 12px">Mouvements clés</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a24;border-radius:12px;padding:16px 20px;margin-bottom:20px">
+      {% for trade in top_trades %}
+      <tr>
+        <td style="padding:8px 0;color:{{ '#06d6a0' if trade.side == 'buy' else '#f59e0b' }};font-size:12px;font-weight:700;width:48px">{{ trade.side|upper }}</td>
+        <td style="padding:8px 0;color:#e0e0e8;font-size:13px">{{ trade.symbol }}</td>
+        <td style="padding:8px 0;color:#8888a0;font-size:13px;text-align:right">{{ trade.amount }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+    <!-- Market context -->
+    {% if market_context %}
+    <h3 style="color:#e0e0e8;font-size:15px;margin:24px 0 12px">Contexte de marché</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a24;border-radius:12px;padding:16px 20px;margin-bottom:20px">
+      <tr><td style="color:#8888a0;font-size:13px">BTC</td><td style="color:{{ btc_color|default('#e0e0e8') }};font-size:13px;font-weight:600;text-align:right">{{ market_context.btc }}</td></tr>
+      <tr><td style="color:#8888a0;font-size:13px">ETH</td><td style="color:{{ eth_color|default('#e0e0e8') }};font-size:13px;font-weight:600;text-align:right">{{ market_context.eth }}</td></tr>
+    </table>
+    {% endif %}
+
+    <!-- LLM analysis -->
+    <h3 style="color:#06d6a0;font-size:15px;margin:24px 0 12px">Analyse du jour</h3>
+    <div style="background:rgba(6,214,160,0.05);border-left:3px solid #06d6a0;padding:18px 20px;border-radius:8px;margin-bottom:20px">
+      <p style="color:#c0c0d0;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">{{ ai_summary }}</p>
+    </div>
+
+    <!-- LLM advice -->
+    {% if ai_advice %}
+    <h3 style="color:#06d6a0;font-size:15px;margin:24px 0 12px">Conseils pour demain</h3>
+    <div style="background:rgba(6,214,160,0.05);border-left:3px solid #06d6a0;padding:18px 20px;border-radius:8px;margin-bottom:24px">
+      <p style="color:#c0c0d0;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">{{ ai_advice }}</p>
+    </div>
+    {% endif %}
+
+    <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px"><tr><td>
+      <a href="{{ dashboard_url|default('https://gluetrade.com/portfolio') }}" style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,#06d6a0,#0ff0b3);color:#0d0d12;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px">
+        Voir mon dashboard
+      </a>
+    </td></tr></table>
+
+    <p style="color:#5a5a72;font-size:11px;line-height:1.5;margin:0 0 16px;text-align:center">
+      Vous recevez cet email car le récap quotidien est activé.<br>
+      <a href="{{ settings_url|default('https://gluetrade.com/settings') }}" style="color:#06d6a0;text-decoration:none">Modifier mes préférences</a>
+    </p>
+  </td></tr>
+  <tr><td style="padding:20px 40px 30px;border-top:1px solid rgba(255,255,255,0.06)">
+    <p style="color:#3a3a4a;font-size:11px;margin:0;text-align:center">GlueTrade Trading Platform · Récap quotidien généré par IA</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

@@ -163,6 +163,16 @@ export default function SettingsPage() {
   const [notifEmail, setNotifEmail] = useState(() => readBooleanPref("gluetrade-notif-email", true));
   const [notifPush, setNotifPush] = useState(() => readBooleanPref("gluetrade-notif-push", false));
   const [notifTelegram, setNotifTelegram] = useState(() => readBooleanPref("gluetrade-notif-telegram", false));
+
+  // Backend-persisted notification preferences (under preferences.notifications)
+  const [notifEmailEnabled, setNotifEmailEnabled] = useState(true);
+  const [notifTrades, setNotifTrades] = useState(true);
+  const [notifSecurity, setNotifSecurity] = useState(true);
+  const [notifDeposits, setNotifDeposits] = useState(true);
+  const [notifDailyRecap, setNotifDailyRecap] = useState(true);
+  const [notifWeeklyRecap, setNotifWeeklyRecap] = useState(true);
+  const [notifStrongSignals, setNotifStrongSignals] = useState(false);
+  const [dailyRecapHour, setDailyRecapHour] = useState(8);
   const [saved, setSaved] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [riskProfile, setRiskProfile] = useState<RiskProfileId>("moderate");
@@ -208,6 +218,20 @@ export default function SettingsPage() {
       setUser(meResult.value);
       if (meResult.value.risk_profile && meResult.value.risk_profile !== "custom") {
         setRiskProfile(meResult.value.risk_profile);
+      }
+      // Hydrate notification toggles from backend preferences
+      const notif = meResult.value.preferences?.notifications;
+      if (notif) {
+        setNotifEmailEnabled(notif.email_enabled !== false);
+        setNotifTrades(notif.email_trades !== false);
+        setNotifSecurity(notif.email_security !== false);
+        setNotifDeposits(notif.email_deposits !== false);
+        setNotifDailyRecap(notif.email_daily_recap !== false);
+        setNotifWeeklyRecap(notif.email_weekly_recap !== false);
+        setNotifStrongSignals(notif.email_strong_signals === true);
+        if (typeof notif.daily_recap_hour === "number") {
+          setDailyRecapHour(notif.daily_recap_hour);
+        }
       }
     }
 
@@ -324,6 +348,58 @@ export default function SettingsPage() {
     setter(!current);
     localStorage.setItem(`gluetrade-notif-${key}`, String(!current));
     flash();
+  };
+
+  const persistNotificationPrefs = async (
+    overrides: Partial<{
+      email_enabled: boolean;
+      email_trades: boolean;
+      email_security: boolean;
+      email_deposits: boolean;
+      email_daily_recap: boolean;
+      email_weekly_recap: boolean;
+      email_strong_signals: boolean;
+      daily_recap_hour: number;
+    }>,
+  ) => {
+    try {
+      const next = await authApi.updateMe({
+        preferences: {
+          notifications: {
+            email_enabled: notifEmailEnabled,
+            email_trades: notifTrades,
+            email_security: notifSecurity,
+            email_deposits: notifDeposits,
+            email_daily_recap: notifDailyRecap,
+            email_weekly_recap: notifWeeklyRecap,
+            email_strong_signals: notifStrongSignals,
+            daily_recap_hour: dailyRecapHour,
+            ...overrides,
+          },
+        },
+      });
+      setUser(next);
+      flash();
+    } catch {
+      setError("Unable to save notification preferences.");
+    }
+  };
+
+  const toggleBackendNotif = (
+    key:
+      | "email_enabled"
+      | "email_trades"
+      | "email_security"
+      | "email_deposits"
+      | "email_daily_recap"
+      | "email_weekly_recap"
+      | "email_strong_signals",
+    current: boolean,
+    setter: (v: boolean) => void,
+  ) => {
+    const next = !current;
+    setter(next);
+    void persistNotificationPrefs({ [key]: next });
   };
 
   // Use local Settings state first (freshest after updateMe), fallback to AuthProvider
@@ -719,22 +795,90 @@ export default function SettingsPage() {
         </div>
       </SettingSection>
 
-      <SettingSection title="Notifications" icon={Bell}>
+      <SettingSection title="Notifications email" icon={Bell}>
+        <p className="mb-3 text-[12px] text-[var(--text-muted)]">
+          Selectionnez les emails que vous souhaitez recevoir. Le toggle principal coupe tous les emails en un clic.
+        </p>
         <Toggle
-          label="Email notifications"
-          enabled={notifEmail}
-          onChange={() => toggleNotif("email", notifEmail, setNotifEmail)}
+          label="Activer les emails"
+          enabled={notifEmailEnabled}
+          onChange={() => toggleBackendNotif("email_enabled", notifEmailEnabled, setNotifEmailEnabled)}
         />
         <Toggle
-          label="Push notifications"
-          enabled={notifPush}
-          onChange={() => toggleNotif("push", notifPush, setNotifPush)}
+          label="Confirmation des trades (achat / vente)"
+          enabled={notifTrades}
+          onChange={() => toggleBackendNotif("email_trades", notifTrades, setNotifTrades)}
         />
         <Toggle
-          label="Telegram alerts"
-          enabled={notifTelegram}
-          onChange={() => toggleNotif("telegram", notifTelegram, setNotifTelegram)}
+          label="Alertes de securite (nouvelle connexion, IP)"
+          enabled={notifSecurity}
+          onChange={() => toggleBackendNotif("email_security", notifSecurity, setNotifSecurity)}
         />
+        <Toggle
+          label="Mouvements fiat (depots / retraits)"
+          enabled={notifDeposits}
+          onChange={() => toggleBackendNotif("email_deposits", notifDeposits, setNotifDeposits)}
+        />
+        <Toggle
+          label="Recap quotidien IA (analyse + conseils)"
+          enabled={notifDailyRecap}
+          onChange={() => toggleBackendNotif("email_daily_recap", notifDailyRecap, setNotifDailyRecap)}
+        />
+        <Toggle
+          label="Recap hebdomadaire (dimanche soir)"
+          enabled={notifWeeklyRecap}
+          onChange={() => toggleBackendNotif("email_weekly_recap", notifWeeklyRecap, setNotifWeeklyRecap)}
+        />
+        <Toggle
+          label="Signaux IA tres forts (HIGH_CONVICTION)"
+          enabled={notifStrongSignals}
+          onChange={() => toggleBackendNotif("email_strong_signals", notifStrongSignals, setNotifStrongSignals)}
+        />
+        <div className="mt-3 pt-3 border-t border-[var(--glass-border)]">
+          <label className="block text-[13px] text-[var(--text-secondary)] mb-2">
+            Heure du recap quotidien : <span className="accent-text font-semibold">{String(dailyRecapHour).padStart(2, "0")}:00</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={23}
+            value={dailyRecapHour}
+            onChange={(e) => setDailyRecapHour(Number(e.target.value))}
+            onMouseUp={(e) =>
+              void persistNotificationPrefs({
+                daily_recap_hour: Number((e.target as HTMLInputElement).value),
+              })
+            }
+            onTouchEnd={(e) =>
+              void persistNotificationPrefs({
+                daily_recap_hour: Number((e.target as HTMLInputElement).value),
+              })
+            }
+            className="w-full"
+          />
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            Heure locale ({user?.timezone || "Europe/Paris"})
+          </p>
+        </div>
+
+        <div className="mt-4 pt-3 border-t border-[var(--glass-border)]">
+          <p className="mb-2 text-[12px] text-[var(--text-muted)]">Autres canaux (locaux a cet appareil)</p>
+          <Toggle
+            label="Notifications push (navigateur)"
+            enabled={notifPush}
+            onChange={() => toggleNotif("push", notifPush, setNotifPush)}
+          />
+          <Toggle
+            label="Alertes Telegram"
+            enabled={notifTelegram}
+            onChange={() => toggleNotif("telegram", notifTelegram, setNotifTelegram)}
+          />
+          <Toggle
+            label="Notifications email (legacy local)"
+            enabled={notifEmail}
+            onChange={() => toggleNotif("email", notifEmail, setNotifEmail)}
+          />
+        </div>
       </SettingSection>
 
       <div className="liquid-glass-card p-5 border-[#ef4444]/20">

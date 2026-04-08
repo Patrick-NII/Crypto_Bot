@@ -49,6 +49,8 @@ class UserUpdate(BaseModel):
     billing_cycle: Optional[str] = Field(None, pattern=r"^(monthly|yearly)$")
     ai_behavior_style: Optional[str] = Field(None, pattern=r"^(gentle|balanced|assertive|aggressive)$")
     ai_assistant_tone: Optional[str] = Field(None, pattern=r"^(concise|coach|analytical)$")
+    timezone: Optional[str] = Field(None, max_length=50)
+    language: Optional[str] = Field(None, pattern=r"^(fr|en|es|de)$")
     preferences: Optional[dict[str, Any]] = None
 
 
@@ -119,6 +121,8 @@ class UserResponse(BaseModel):
     terms_version: str
     ai_behavior_style: str
     ai_assistant_tone: str
+    timezone: str = "Europe/Paris"
+    language: str = "fr"
     wallet_access_enabled: bool
     wallet_access_reason: str
     connected_exchanges_count: int

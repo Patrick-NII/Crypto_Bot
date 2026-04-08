@@ -4,6 +4,7 @@ Provides endpoints for user registration, login, token refresh,
 profile management, email verification, password reset, and logout.
 """
 
+import json
 import secrets
 from datetime import datetime, timezone
 from uuid import UUID
@@ -204,6 +205,29 @@ def _normalize_preferences(value: object) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+DEFAULT_NOTIFICATION_PREFS: dict[str, object] = {
+    "email_enabled": True,
+    "email_trades": True,
+    "email_security": True,
+    "email_deposits": True,
+    "email_daily_recap": True,
+    "email_weekly_recap": True,
+    "email_strong_signals": False,
+    "daily_recap_hour": 8,
+}
+
+
+def _ensure_notification_defaults(prefs: dict) -> dict:
+    """Return a normalised preferences dict with notification defaults filled in."""
+    normalised = dict(prefs) if isinstance(prefs, dict) else {}
+    notifications = normalised.get("notifications")
+    if not isinstance(notifications, dict):
+        notifications = {}
+    merged = {**DEFAULT_NOTIFICATION_PREFS, **notifications}
+    normalised["notifications"] = merged
+    return normalised
+
+
 async def _user_response(user: User, db: AsyncSession) -> UserResponse:
     connections, live_trading_enabled, reason = await _sync_user_access_state(user, db)
     return UserResponse(
@@ -220,11 +244,13 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
         terms_version=user.terms_version,
         ai_behavior_style=user.ai_behavior_style,
         ai_assistant_tone=user.ai_assistant_tone,
+        timezone=user.timezone or "Europe/Paris",
+        language=user.language or "fr",
         wallet_access_enabled=user.wallet_access_enabled,
         wallet_access_reason=reason,
         connected_exchanges_count=sum(1 for connection in connections if connection.is_active),
         live_trading_enabled=live_trading_enabled,
-        preferences=_normalize_preferences(user.preferences),
+        preferences=_ensure_notification_defaults(_normalize_preferences(user.preferences)),
         created_at=user.created_at,
     )
 
@@ -293,7 +319,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         ai_behavior_style="balanced",
         ai_assistant_tone="analytical",
         wallet_access_enabled=False,
-        preferences={},
+        preferences={"notifications": dict(DEFAULT_NOTIFICATION_PREFS)},
     )
     db.add(user)
     await db.flush()
@@ -343,6 +369,7 @@ async def login(payload: UserLogin, request: Request, db: AsyncSession = Depends
     """
     # Rate limit by IP
     client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
     await _check_rate_limit(
         f"ratelimit:login:{client_ip}",
         settings.LOGIN_RATE_LIMIT,
@@ -379,6 +406,31 @@ async def login(payload: UserLogin, request: Request, db: AsyncSession = Depends
 
     access_token = create_access_token(str(user.id))
     refresh_token = create_refresh_token(str(user.id))
+
+    # Track login + emit security event when IP changed (best-effort, non-blocking)
+    previous_ip = user.last_login_ip
+    is_new_device = previous_ip != client_ip
+    user.last_login_ip = client_ip
+    user.last_login_at = datetime.now(timezone.utc)
+    db.add(user)
+    await db.flush()
+
+    if is_new_device and previous_ip is not None:
+        try:
+            r = await get_redis()
+            event_payload = {
+                "event_type": "login",
+                "user_id": str(user.id),
+                "user_email": user.email,
+                "username": user.username,
+                "ip_address": client_ip,
+                "user_agent": user_agent[:200],
+                "timestamp": user.last_login_at.isoformat(),
+                "previous_ip": previous_ip,
+            }
+            await r.publish("auth:security", json.dumps(event_payload))
+        except Exception:
+            pass  # Non-blocking
 
     return TokenResponse(
         access_token=access_token,
@@ -485,8 +537,26 @@ async def update_me(
     if payload.ai_assistant_tone is not None:
         current_user.ai_assistant_tone = payload.ai_assistant_tone
 
+    if payload.timezone is not None:
+        current_user.timezone = payload.timezone
+
+    if payload.language is not None:
+        current_user.language = payload.language
+
     if payload.preferences is not None:
-        current_user.preferences = _normalize_preferences(payload.preferences)
+        # Deep merge: preserve unrelated keys, only override what was sent.
+        current = _normalize_preferences(current_user.preferences)
+        incoming = _normalize_preferences(payload.preferences)
+        merged = {**current}
+        for key, value in incoming.items():
+            if (
+                isinstance(value, dict)
+                and isinstance(merged.get(key), dict)
+            ):
+                merged[key] = {**merged[key], **value}
+            else:
+                merged[key] = value
+        current_user.preferences = merged
 
     db.add(current_user)
     await db.flush()

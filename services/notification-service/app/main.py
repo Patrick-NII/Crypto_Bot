@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from app.api.alerts import router as alerts_router
 from app.api.notifications import router as notifications_router
 from app.core.config import settings
+from app.services.email_dispatcher import get_dispatcher
+from app.services.recap_scheduler import get_scheduler
 from app.services.telegram import format_alert, send_message
 
 logger = logging.getLogger(__name__)
@@ -41,15 +43,26 @@ async def redis_subscriber():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the Redis subscriber on startup."""
+    """Start the Redis subscriber, email dispatcher, and recap scheduler."""
     task = asyncio.create_task(redis_subscriber())
+
+    dispatcher = get_dispatcher()
+    await dispatcher.start()
+
+    scheduler = get_scheduler()
+    scheduler.start()
+
     logger.info("Notification service started")
     yield
+
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
+
+    await dispatcher.stop()
+    scheduler.stop()
     logger.info("Notification service stopped")
 
 

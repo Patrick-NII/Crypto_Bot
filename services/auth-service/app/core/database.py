@@ -66,6 +66,10 @@ async def init_db() -> None:
                 ADD COLUMN IF NOT EXISTS ai_behavior_style VARCHAR(50) NOT NULL DEFAULT 'balanced',
                 ADD COLUMN IF NOT EXISTS ai_assistant_tone VARCHAR(50) NOT NULL DEFAULT 'analytical',
                 ADD COLUMN IF NOT EXISTS wallet_access_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) NOT NULL DEFAULT 'Europe/Paris',
+                ADD COLUMN IF NOT EXISTS language VARCHAR(10) NOT NULL DEFAULT 'fr',
+                ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(100) NULL,
+                ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ NULL,
                 ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb
                 """
             )

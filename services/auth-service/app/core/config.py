@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT: int = 5  # max attempts
     LOGIN_RATE_WINDOW: int = 300  # seconds (5 min)
 
+    # Internal service-to-service token (used by notification-service for recap dispatch)
+    INTERNAL_API_TOKEN: str = ""
+
 
 settings = Settings()
 

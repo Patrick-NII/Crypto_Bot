@@ -38,11 +38,30 @@ TEMPLATE_SUBJECTS: dict[str, str] = {
     "weekly_report": "Your weekly trading report",
     "security_alert": "Security alert on your GlueTrade account",
     "login_notification": "New login to your GlueTrade account",
+    "trade_buy_confirmation": "Achat exécuté : {quantity} {symbol}",
+    "trade_sell_confirmation": "Vente exécutée : {quantity} {symbol}",
+    "deposit_confirmation": "Dépôt détecté : +{amount} {asset}",
+    "withdrawal_confirmation": "Retrait détecté : -{amount} {asset}",
+    "daily_recap": "Votre récap GlueTrade du {recap_date}",
 }
 
 # ── Template → mailbox mapping (auto-select sender) ──
-_SUPPORT_TEMPLATES = {"verify_email", "password_reset", "security_alert", "login_notification"}
-_HELLO_TEMPLATES = {"welcome", "alert_triggered", "weekly_report"}
+_SUPPORT_TEMPLATES = {
+    "verify_email",
+    "password_reset",
+    "security_alert",
+    "login_notification",
+    "withdrawal_confirmation",
+}
+_HELLO_TEMPLATES = {
+    "welcome",
+    "alert_triggered",
+    "weekly_report",
+    "trade_buy_confirmation",
+    "trade_sell_confirmation",
+    "deposit_confirmation",
+    "daily_recap",
+}
 
 
 def _resolve_sender(template: str, explicit_sender: str | None) -> str:

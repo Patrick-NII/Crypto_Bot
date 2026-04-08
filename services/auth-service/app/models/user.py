@@ -95,6 +95,24 @@ class User(Base):
         default=False,
         nullable=False,
     )
+    timezone: Mapped[str] = mapped_column(
+        String(50),
+        default="Europe/Paris",
+        nullable=False,
+    )
+    language: Mapped[str] = mapped_column(
+        String(10),
+        default="fr",
+        nullable=False,
+    )
+    last_login_ip: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     preferences: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         default=dict,

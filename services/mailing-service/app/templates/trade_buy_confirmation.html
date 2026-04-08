@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0d0d12;font-family:Inter,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d12;padding:40px 20px">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#14141b;border-radius:16px;border:1px solid rgba(255,255,255,0.06)">
+  <tr><td style="padding:40px 40px 20px;text-align:center">
+    <h1 style="color:#06d6a0;font-size:28px;margin:0">GLUETRADE</h1>
+    <p style="color:#06d6a0;font-size:13px;margin:6px 0 0;letter-spacing:1px;text-transform:uppercase">Achat exécuté</p>
+  </td></tr>
+  <tr><td style="padding:0 40px">
+    <h2 style="color:#e0e0e8;font-size:20px;margin:0 0 16px">Bonjour {{ username }},</h2>
+    <p style="color:#8888a0;font-size:14px;line-height:1.6;margin:0 0 24px">
+      Votre ordre d'achat vient d'être exécuté avec succès sur votre compte {{ exchange|default('Binance') }}.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a24;border-radius:12px;padding:20px;margin-bottom:24px">
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Symbole</td><td style="padding:8px 0;color:#e0e0e8;font-size:14px;font-weight:600;text-align:right">{{ symbol }}</td></tr>
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Quantité</td><td style="padding:8px 0;color:#e0e0e8;font-size:14px;font-weight:600;text-align:right">{{ quantity }}</td></tr>
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Prix unitaire</td><td style="padding:8px 0;color:#e0e0e8;font-size:14px;font-weight:600;text-align:right">{{ price }}</td></tr>
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Montant total</td><td style="padding:8px 0;color:#06d6a0;font-size:16px;font-weight:700;text-align:right">{{ total }}</td></tr>
+      {% if fee %}<tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Frais</td><td style="padding:8px 0;color:#8888a0;font-size:13px;text-align:right">{{ fee }}</td></tr>{% endif %}
+      {% if order_id %}<tr><td style="padding:8px 0;color:#8888a0;font-size:13px">ID ordre</td><td style="padding:8px 0;color:#5a5a72;font-size:11px;text-align:right;font-family:monospace">{{ order_id }}</td></tr>{% endif %}
+    </table>
+    <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px"><tr><td>
+      <a href="{{ dashboard_url|default('https://gluetrade.com/portfolio') }}" style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,#06d6a0,#0ff0b3);color:#0d0d12;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px">
+        Voir mon portefeuille
+      </a>
+    </td></tr></table>
+    <p style="color:#5a5a72;font-size:12px;line-height:1.5;margin:0 0 16px">
+      Si vous n'êtes pas à l'origine de cette opération, contactez-nous immédiatement à support@gluetrade.com.
+    </p>
+  </td></tr>
+  <tr><td style="padding:20px 40px 30px;border-top:1px solid rgba(255,255,255,0.06)">
+    <p style="color:#3a3a4a;font-size:11px;margin:0;text-align:center">GlueTrade Trading Platform · Confirmation automatique</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0d0d12;font-family:Inter,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d12;padding:40px 20px">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#14141b;border-radius:16px;border:1px solid rgba(255,255,255,0.06)">
+  <tr><td style="padding:40px 40px 20px;text-align:center">
+    <h1 style="color:#06d6a0;font-size:28px;margin:0">GLUETRADE</h1>
+    <p style="color:#f59e0b;font-size:13px;margin:6px 0 0;letter-spacing:1px;text-transform:uppercase">Retrait détecté</p>
+  </td></tr>
+  <tr><td style="padding:0 40px">
+    <h2 style="color:#e0e0e8;font-size:20px;margin:0 0 16px">Bonjour {{ username }},</h2>
+    <p style="color:#8888a0;font-size:14px;line-height:1.6;margin:0 0 24px">
+      Un retrait vient d'être effectué depuis votre compte {{ exchange|default('Binance') }}.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a24;border-radius:12px;padding:20px;margin-bottom:24px">
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Actif</td><td style="padding:8px 0;color:#e0e0e8;font-size:14px;font-weight:600;text-align:right">{{ asset }}</td></tr>
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Montant</td><td style="padding:8px 0;color:#f59e0b;font-size:18px;font-weight:700;text-align:right">-{{ amount }}</td></tr>
+      {% if value_usd %}<tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Valeur estimée</td><td style="padding:8px 0;color:#e0e0e8;font-size:14px;text-align:right">{{ value_usd }}</td></tr>{% endif %}
+      <tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Date</td><td style="padding:8px 0;color:#e0e0e8;font-size:14px;text-align:right">{{ withdrawal_time }}</td></tr>
+      {% if destination %}<tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Destination</td><td style="padding:8px 0;color:#5a5a72;font-size:11px;text-align:right;font-family:monospace">{{ destination }}</td></tr>{% endif %}
+      {% if tx_id %}<tr><td style="padding:8px 0;color:#8888a0;font-size:13px">Transaction</td><td style="padding:8px 0;color:#5a5a72;font-size:11px;text-align:right;font-family:monospace">{{ tx_id }}</td></tr>{% endif %}
+    </table>
+    <div style="background:rgba(239,68,68,0.08);border-left:3px solid #ef4444;padding:16px;border-radius:8px;margin-bottom:24px">
+      <p style="color:#ef4444;font-size:13px;font-weight:600;margin:0 0 6px">Ce n'était pas vous ?</p>
+      <p style="color:#8888a0;font-size:12px;line-height:1.5;margin:0">
+        Contactez immédiatement support@gluetrade.com et révoquez vos clés API depuis Binance.
+      </p>
+    </div>
+  </td></tr>
+  <tr><td style="padding:20px 40px 30px;border-top:1px solid rgba(255,255,255,0.06)">
+    <p style="color:#3a3a4a;font-size:11px;margin:0;text-align:center">GlueTrade Trading Platform · Notification de retrait</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

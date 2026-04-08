@@ -4,8 +4,9 @@
     {
       "name": "frontend",
       "runtimeExecutable": "/opt/homebrew/bin/node",
-      "runtimeArgs": ["server.mjs", "3000"],
-      "port": 3000,
+      "runtimeArgs": ["server.mjs"],
+      "port": 3500,
+      "autoPort": true,
       "cwd": "frontend"
     },
     {

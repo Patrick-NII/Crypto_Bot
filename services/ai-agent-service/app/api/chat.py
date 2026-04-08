@@ -148,3 +148,35 @@ async def analyze_performance(req: PerformanceAnalysisRequest) -> dict:
         }
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Service-to-service completion endpoint (no auth, no history)
+# ---------------------------------------------------------------------------
+
+
+class CompletionRequest(BaseModel):
+    """Lightweight LLM completion call for internal services (recap, etc)."""
+
+    system_prompt: str = Field(..., min_length=1, max_length=4000)
+    user_message: str = Field(..., min_length=1, max_length=8000)
+    complexity: Complexity | None = Field(default=None)
+
+
+class CompletionResponse(BaseModel):
+    text: str
+    provider: str
+    model: str
+
+
+@router.post("/completion", response_model=CompletionResponse)
+async def completion(req: CompletionRequest) -> CompletionResponse:
+    """Run a single-shot LLM completion. Used by notification-service for recaps."""
+    messages = [{"role": "user", "content": req.user_message}]
+    try:
+        text, provider, model = await chat_completion(
+            messages, req.system_prompt, req.complexity
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return CompletionResponse(text=text, provider=provider, model=model)
