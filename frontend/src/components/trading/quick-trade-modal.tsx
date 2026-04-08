@@ -35,6 +35,7 @@ import {
 import { tradingApi } from "@/lib/api";
 import type { Order, OrderType, SymbolInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useModalViewport } from "@/hooks/use-modal-viewport";
 import { useSymbolInfo } from "@/hooks/use-symbol-info";
 import { usePreflight } from "@/hooks/use-preflight";
 import { useOrdersWs } from "@/hooks/use-orders-ws";
@@ -176,6 +177,7 @@ export function QuickTradeModal({
     symbol: pair,
     enabled: true,
   });
+  const { contentOffsetLeft } = useModalViewport(true);
   const { active: activePortfolio, portfolios, setActive: setActivePortfolio } = useActivePortfolio();
 
   // Derived numeric values
@@ -571,11 +573,12 @@ export function QuickTradeModal({
   // conversion, but for the V1 we force base entry to keep things simple.
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[60]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative z-[1] flex h-full w-full items-end justify-center p-3 sm:items-center sm:p-4"
+        style={{ paddingLeft: contentOffsetLeft ? `${contentOffsetLeft + 16}px` : undefined }}
+      >
       <div
         className="relative flex max-h-[92vh] w-full max-w-md flex-col rounded-t-[28px] border border-[var(--glass-border)] sm:rounded-[28px]"
         style={{ background: "var(--surface)", backdropFilter: "blur(28px) saturate(180%)" }}
@@ -1056,6 +1059,7 @@ export function QuickTradeModal({
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -1139,7 +1143,9 @@ function RecentFills({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const frame = window.requestAnimationFrame(() => {
+      if (!cancelled) setLoading(true);
+    });
     tradingApi
       .getOrders()
       .then((orders) => {
@@ -1158,6 +1164,7 @@ function RecentFills({
       });
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(frame);
     };
   }, [pair]);
 

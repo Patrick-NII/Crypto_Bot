@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search, Sparkles, Star, TrendingDown, TrendingUp, X } from "lucide-react";
 import { CryptoIcon } from "@/components/ui/crypto-icon";
+import { useModalViewport } from "@/hooks/use-modal-viewport";
 import { cn } from "@/lib/utils";
 import type { MarketUniverseView } from "@/lib/types";
 
@@ -55,6 +56,7 @@ export function MarketUniverseModal({
   formatPrice,
 }: MarketUniverseModalProps) {
   const [query, setQuery] = useState("");
+  const { contentOffsetLeft } = useModalViewport(open);
 
   const handleClose = () => {
     setQuery("");
@@ -66,15 +68,6 @@ export function MarketUniverseModal({
     onSelectSymbol(symbol);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [open]);
-
   const filteredItems = useMemo(() => {
     const trimmed = query.trim().toUpperCase();
     if (!trimmed) return items;
@@ -84,14 +77,18 @@ export function MarketUniverseModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[80]">
       <button
         type="button"
         aria-label="Fermer"
         className="absolute inset-0 bg-black/55 backdrop-blur-sm"
         onClick={handleClose}
       />
-      <div className="liquid-glass-strong relative z-[1] flex h-[min(82vh,860px)] w-full max-w-[1120px] flex-col overflow-hidden rounded-[28px] border border-[var(--glass-border)]">
+      <div
+        className="relative z-[1] flex h-full w-full items-center justify-center p-4 md:p-5"
+        style={{ paddingLeft: contentOffsetLeft ? `${contentOffsetLeft + 20}px` : undefined }}
+      >
+      <div className="liquid-glass-strong relative flex h-[min(82vh,860px)] w-full max-w-[1120px] flex-col overflow-hidden rounded-[28px] border border-[var(--glass-border)]">
         <div className="flex items-center justify-between gap-4 border-b border-[var(--glass-border)] px-5 py-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">Market Movers</p>
@@ -204,6 +201,7 @@ export function MarketUniverseModal({
             </div>
           ) : null}
         </div>
+      </div>
       </div>
     </div>
   );

@@ -7,15 +7,33 @@ import { binanceStream } from "@/lib/binance-stream";
 import { cn, toChartTime } from "@/lib/utils";
 import type { OHLCVPoint } from "@/lib/types";
 
-const INTERVALS = [
-  { label: "5M", value: "1m", limit: 5 },
-  { label: "15M", value: "1m", limit: 15 },
-  { label: "30M", value: "1m", limit: 30 },
-  { label: "1H", value: "1m", limit: 60 },
-  { label: "2H", value: "5m", limit: 24 },
-  { label: "4H", value: "15m", limit: 16 },
-  { label: "6H", value: "30m", limit: 12 },
+const CANDLE_INTERVALS = [
+  { label: "1m", value: "1m" },
+  { label: "5m", value: "5m" },
+  { label: "15m", value: "15m" },
+  { label: "1h", value: "1h" },
+  { label: "4h", value: "4h" },
+  { label: "1d", value: "1d" },
 ] as const;
+
+const DATA_INTERVALS = [
+  ...CANDLE_INTERVALS,
+  { label: "1w", value: "1w" },
+  { label: "1M", value: "1M" },
+] as const;
+
+const RANGE_PRESETS = [
+  { label: "1D", seconds: 24 * 60 * 60, minInterval: "1m" },
+  { label: "1W", seconds: 7 * 24 * 60 * 60, minInterval: "15m" },
+  { label: "1M", seconds: 30 * 24 * 60 * 60, minInterval: "1h" },
+  { label: "6M", seconds: 182 * 24 * 60 * 60, minInterval: "1d" },
+  { label: "1Y", seconds: 365 * 24 * 60 * 60, minInterval: "1d" },
+  { label: "5Y", seconds: 5 * 365 * 24 * 60 * 60, minInterval: "1w" },
+  { label: "ALL", seconds: null, minInterval: "1w" },
+] as const;
+
+const DEFAULT_CANDLE_INTERVAL = "1h";
+const DEFAULT_RANGE = "1D";
 
 interface PriceChartProps {
   symbol: string;
@@ -24,6 +42,7 @@ interface PriceChartProps {
   className?: string;
   showIntervals?: boolean;
   defaultInterval?: string;
+  defaultRange?: string;
   realtime?: boolean;
   showLoader?: boolean;
 }
@@ -47,13 +66,49 @@ function intervalToSeconds(interval: string): number {
   return 60;
 }
 
+function normalizeCandleInterval(value?: string | null) {
+  if (!value) return DEFAULT_CANDLE_INTERVAL;
+  const normalized = value.trim().toLowerCase();
+  return CANDLE_INTERVALS.find((preset) => preset.value.toLowerCase() === normalized)?.value ?? DEFAULT_CANDLE_INTERVAL;
+}
+
+function normalizeRangePreset(value?: string | null) {
+  if (!value) return DEFAULT_RANGE;
+  const normalized = value.trim().toUpperCase();
+  return RANGE_PRESETS.find((preset) => preset.label === normalized)?.label ?? DEFAULT_RANGE;
+}
+
+function getDataInterval(value: string) {
+  return DATA_INTERVALS.find((preset) => preset.value === value) ?? DATA_INTERVALS[3];
+}
+
+function getRangePreset(value: string) {
+  return RANGE_PRESETS.find((preset) => preset.label === value) ?? RANGE_PRESETS[0];
+}
+
+function resolveEffectiveInterval(activeInterval: string, activeRange: string) {
+  const selected = getDataInterval(activeInterval);
+  const range = getRangePreset(activeRange);
+  const minimumSeconds = intervalToSeconds(range.minInterval);
+  const selectedSeconds = intervalToSeconds(selected.value);
+  const targetSeconds = Math.max(selectedSeconds, minimumSeconds);
+  return DATA_INTERVALS.find((preset) => intervalToSeconds(preset.value) >= targetSeconds) ?? DATA_INTERVALS[DATA_INTERVALS.length - 1];
+}
+
+function resolveRequestLimit(activeRange: string, intervalValue: string) {
+  const range = getRangePreset(activeRange);
+  if (range.seconds == null) return 1000;
+  return Math.max(2, Math.min(1000, Math.ceil(range.seconds / intervalToSeconds(intervalValue)) + 1));
+}
+
 export function PriceChart({
   symbol,
   height = 300,
   type = "candlestick",
   className,
   showIntervals = false,
-  defaultInterval = "1H",
+  defaultInterval = DEFAULT_CANDLE_INTERVAL,
+  defaultRange = DEFAULT_RANGE,
   realtime = true,
   showLoader = true,
 }: PriceChartProps) {
@@ -62,10 +117,12 @@ export function PriceChart({
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeInterval, setActiveInterval] = useState(defaultInterval);
+  const [activeInterval, setActiveInterval] = useState(() => normalizeCandleInterval(defaultInterval));
+  const [activeRange, setActiveRange] = useState(() => normalizeRangePreset(defaultRange));
   const lastCandleRef = useRef<CandlePoint | null>(null);
-
-  const interval = INTERVALS.find((i) => i.label === activeInterval) ?? INTERVALS[3];
+  const selectedInterval = getDataInterval(activeInterval);
+  const effectiveInterval = resolveEffectiveInterval(activeInterval, activeRange);
+  const requestLimit = resolveRequestLimit(activeRange, effectiveInterval.value);
 
   const applyData = useCallback((data: OHLCVPoint[]) => {
     if (!seriesRef.current || !chartRef.current || data.length === 0) return false;
@@ -162,7 +219,7 @@ export function PriceChart({
   const fetchData = useCallback(async () => {
     if (!seriesRef.current || !chartRef.current) return;
 
-    const cachedData = pricesApi.peekOHLCV(symbol, interval.value, interval.limit);
+    const cachedData = pricesApi.peekOHLCV(symbol, effectiveInterval.value, requestLimit);
     const hasCachedData = cachedData.length > 0;
     if (hasCachedData) {
       applyData(cachedData);
@@ -175,7 +232,7 @@ export function PriceChart({
     }
 
     try {
-      const data = await pricesApi.getOHLCV(symbol, interval.value, interval.limit);
+      const data = await pricesApi.getOHLCV(symbol, effectiveInterval.value, requestLimit);
 
       if (!data || data.length === 0) {
         if (!hasCachedData) setError("No data available");
@@ -189,7 +246,7 @@ export function PriceChart({
       if (!hasCachedData) setError("Failed to load chart data");
       setLoading(false);
     }
-  }, [applyData, interval.limit, interval.value, symbol]);
+  }, [applyData, effectiveInterval.value, requestLimit, symbol]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -215,7 +272,7 @@ export function PriceChart({
       }
 
       const series = seriesRef.current as ISeriesApi<"Candlestick">;
-      const bucketSize = intervalToSeconds(interval.value);
+      const bucketSize = intervalToSeconds(effectiveInterval.value);
       const rawBucketTime = Math.floor(now / bucketSize) * bucketSize;
       const bucketTime = toChartTime(rawBucketTime) as Time;
       const previous = lastCandleRef.current;
@@ -245,27 +302,55 @@ export function PriceChart({
     });
 
     return unsub;
-  }, [interval.value, realtime, symbol, type]);
+  }, [effectiveInterval.value, realtime, symbol, type]);
 
   return (
     <div className={cn("relative w-full", className)}>
-      {/* Interval selector */}
       {showIntervals && (
-        <div className="mb-2 flex gap-1">
-          {INTERVALS.map((i) => (
-            <button
-              key={i.label}
-              onClick={() => setActiveInterval(i.label)}
-              className={cn(
-                "rounded-lg px-3 py-1 text-xs font-medium transition-all",
-                activeInterval === i.label
-                  ? "bg-[#06d6a0]/15 text-[#06d6a0]"
-                  : "text-[#55556a] hover:text-[#8888a0] hover:bg-[rgba(255,255,255,0.03)]",
-              )}
-            >
-              {i.label}
-            </button>
-          ))}
+        <div className="mb-3 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1">
+              {CANDLE_INTERVALS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setActiveInterval(preset.value)}
+                  className={cn(
+                    "rounded-lg px-3 py-1 text-xs font-medium transition-all",
+                    activeInterval === preset.value
+                      ? "bg-[#06d6a0]/15 text-[#06d6a0]"
+                      : "text-[#55556a] hover:bg-[rgba(255,255,255,0.03)] hover:text-[#8888a0]",
+                  )}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              {RANGE_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setActiveRange(preset.label)}
+                  className={cn(
+                    "rounded-lg px-3 py-1 text-xs font-medium transition-all",
+                    activeRange === preset.label
+                      ? "bg-white/[0.08] text-[var(--foreground)]"
+                      : "text-[#55556a] hover:bg-[rgba(255,255,255,0.03)] hover:text-[#8888a0]",
+                  )}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#6f7088]">
+            <span>Granularite {selectedInterval.label}</span>
+            <span>
+              Vue {activeRange}
+              {effectiveInterval.value !== selectedInterval.value ? ` · donnees ${effectiveInterval.label}` : ""}
+            </span>
+          </div>
         </div>
       )}
 

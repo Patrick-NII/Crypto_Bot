@@ -184,7 +184,14 @@ export default function CryptoDetailClient() {
 
         {/* Chart — 3/4 width, dominant */}
         <div className="lg:col-span-3">
-          <PriceChart symbol={symbol} height={500} type="candlestick" showIntervals defaultInterval="1M" />
+          <PriceChart
+            symbol={symbol}
+            height={500}
+            type="candlestick"
+            showIntervals
+            defaultInterval="1h"
+            defaultRange="1M"
+          />
         </div>
 
         {/* Sidebar — 1/4 */}

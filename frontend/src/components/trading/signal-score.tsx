@@ -1,5 +1,7 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+
 // ── Color helpers ──
 
 function scoreColor(score: number): string {
@@ -87,6 +89,7 @@ const CAT_ICONS: Record<string, string> = { momentum: "M", trend: "T", volume: "
 // ── Signal Readout Panel ──
 
 interface SignalReadoutProps {
+  className?: string;
   direction: number;
   directionLabel: string;
   confidence: number;
@@ -126,6 +129,7 @@ interface SignalReadoutProps {
 }
 
 export function SignalReadout({
+  className,
   direction, directionLabel, confidence, reliability = 50, risk, setupQuality,
   executionRisk = risk, published = true,
   actionability, marketRegime, signalContext,
@@ -139,9 +143,10 @@ export function SignalReadout({
   ].slice(0, 3);
 
   return (
-    <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] overflow-hidden text-[var(--foreground)]">
+    <div className={cn("flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--foreground)]", className)}>
       {/* Row 1: Direction + dimensions + actionability */}
-      <div className="px-4 py-2 flex items-center justify-between gap-3 border-b border-white/[0.04]">
+      <div className="shrink-0 border-b border-white/[0.04] px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
             <span className="text-[24px] font-bold font-mono tabular-nums leading-none" style={{ color: dirColor }}>
               {direction}
@@ -165,9 +170,10 @@ export function SignalReadout({
           <Dim label="Setup" value={setupQuality} />
           <ActionabilityBadge status={actionability} />
         </div>
+        </div>
       </div>
 
-      <div className="px-4 py-2 border-b border-white/[0.04]">
+      <div className="shrink-0 border-b border-white/[0.04] px-4 py-2">
         <div className="grid gap-2 md:grid-cols-4">
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
             <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Contexte</p>
@@ -178,7 +184,7 @@ export function SignalReadout({
             <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{setupType ?? "Contexte mixte"}</p>
           </div>
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
-            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Risque d'execution</p>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">Risque d&apos;execution</p>
             <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{executionRisk}/100</p>
           </div>
           <div className="rounded-lg px-2.5 py-2" style={{ background: "rgba(255,255,255,0.02)" }}>
@@ -189,7 +195,8 @@ export function SignalReadout({
       </div>
 
       {/* Row 2: Sub-scores + Why/Why not + Trade plan */}
-      <div className="px-4 py-3 grid gap-3 md:grid-cols-[1.1fr_1fr_auto]">
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div className="grid gap-3 md:grid-cols-[1.1fr_1fr_auto]">
         <div>
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Pourquoi cette opportunite</p>
           <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
@@ -234,6 +241,7 @@ export function SignalReadout({
             <p className="text-[var(--text-secondary)]">RR: {tradePlan.risk_reward} | {tradePlan.validity}</p>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

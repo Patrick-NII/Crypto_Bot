@@ -19,17 +19,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Sync from client state after mount
-    setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true");
-    setIsMobile(window.innerWidth < 768);
-
+    const syncSidebar = () => setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true");
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    const frame = window.requestAnimationFrame(() => {
+      syncSidebar();
+      checkMobile();
+    });
+
     window.addEventListener("resize", checkMobile);
 
-    const interval = setInterval(() => {
-      setSidebarCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true");
-    }, 300);
+    const interval = setInterval(syncSidebar, 300);
 
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", checkMobile);
       clearInterval(interval);
     };
@@ -47,8 +49,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="flex flex-col min-h-screen transition-all duration-300 relative z-[1]"
         style={{ paddingLeft: `${offset}px` }}
       >
-        <main className="flex-1 p-3 md:p-5 pt-14 md:pt-5 pb-6 md:pb-5">
-          <AuthGuard>{children}</AuthGuard>
+        <main className="flex-1 px-3 pb-7 pt-14 md:px-5 md:pb-6 md:pt-5 xl:px-6">
+          <div className="mx-auto w-full max-w-[1920px] border-x border-[var(--glass-border)]/50 px-4 md:px-7 xl:px-10 2xl:max-w-[2320px] 2xl:px-12">
+            <AuthGuard>{children}</AuthGuard>
+          </div>
         </main>
       </div>
       <ChatWrapper />
