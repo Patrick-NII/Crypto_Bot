@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { CurrencyProvider } from "@/components/providers/currency-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { PortfolioProvider } from "@/components/providers/portfolio-provider";
 import "./globals.css";
 
 const inter = Inter({
@@ -43,7 +44,9 @@ export default function RootLayout({
         <ThemeProvider>
           <CurrencyProvider>
             <AuthProvider>
-              <AppShell>{children}</AppShell>
+              <PortfolioProvider>
+                <AppShell>{children}</AppShell>
+              </PortfolioProvider>
             </AuthProvider>
           </CurrencyProvider>
         </ThemeProvider>

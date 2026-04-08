@@ -18,6 +18,10 @@ from app.models.risk import (
     TakeProfitRecommendation,
     TradeEvaluation,
 )
+from app.services.redis_client import (
+    get_daily_trade_count,
+    increment_daily_trade_count,
+)
 from app.services.risk_calculator import RiskCalculator
 from app.services.risk_monitor import RiskMonitor
 
@@ -388,7 +392,7 @@ async def evaluate_trade(
 
     portfolio_value = trade.portfolio_value or Decimal("0")
     current_positions: List[Dict[str, Any]] = trade.current_positions or []
-    daily_trade_count = 0  # TODO: track via Redis in production
+    daily_trade_count = await get_daily_trade_count(trade.user_id or "")
 
     result = RiskCalculator.evaluate_trade(
         trade=trade.dict(),
@@ -397,6 +401,15 @@ async def evaluate_trade(
         current_positions=current_positions,
         daily_trade_count=daily_trade_count,
     )
+
+    # If approved, increment the counter immediately so concurrent calls
+    # see the right number. Idempotency lives in the trading-engine via
+    # client_order_id, so a duplicate retry won't double-count anyway.
+    if result.get("approved"):
+        try:
+            await increment_daily_trade_count(trade.user_id or "")
+        except Exception:
+            pass
 
     return RiskEvaluationResult(**result)
 

@@ -461,6 +461,33 @@ async def update_portfolio(
     return portfolio
 
 
+@router.post("/{portfolio_id}/activate", response_model=PortfolioResponse)
+async def activate_portfolio(
+    portfolio_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a portfolio as the user's active (is_default) portfolio.
+
+    All other portfolios of this user are demoted to ``is_default=False``.
+    The trading-engine reads the active portfolio when no ``portfolio_id``
+    is supplied with an order.
+    """
+    portfolio = await _get_portfolio_or_404(portfolio_id, user_id, db)
+
+    others = await db.execute(
+        select(Portfolio).where(
+            Portfolio.user_id == user_id, Portfolio.is_default.is_(True)
+        )
+    )
+    for other in others.scalars():
+        other.is_default = False
+    portfolio.is_default = True
+    await db.flush()
+    await db.refresh(portfolio)
+    return portfolio
+
+
 @router.delete("/{portfolio_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_portfolio(
     portfolio_id: uuid.UUID,

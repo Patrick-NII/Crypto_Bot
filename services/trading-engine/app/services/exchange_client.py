@@ -74,6 +74,13 @@ class ExchangeClient:
 
         config: Dict[str, Any] = {
             "enableRateLimit": True,
+            # Acknowledge the CCXT warning about higher rate limits when
+            # querying open orders without a symbol. We do it intentionally
+            # for the "all markets" polling path — CCXT still enforces the
+            # Binance rate limiter.
+            "options": {
+                "warnOnFetchOpenOrdersWithoutSymbol": False,
+            },
         }
         if api_key and api_secret:
             config["apiKey"] = api_key
@@ -133,6 +140,20 @@ class ExchangeClient:
         """Load exchange markets if not already cached."""
         if not self._exchange.markets:
             await self._exchange.load_markets()
+
+    async def validate_symbol(self, symbol: str) -> bool:
+        """Return True when *symbol* exists in the exchange markets.
+
+        Accepts any form (BTC, BTC/USDT, BTCUSDT) and normalises before
+        checking. Loads markets on demand.
+        """
+        normalized = self.normalize_symbol(symbol)
+        try:
+            await self._ensure_markets_loaded()
+        except Exception as exc:
+            logger.warning("Could not load markets while validating %s: %s", symbol, exc)
+            return False
+        return normalized in (self._exchange.markets or {})
 
     async def adjust_quantity(self, symbol: str, quantity: float, price: float, side: str = "buy") -> float:
         """Adjust quantity to respect Binance LOT_SIZE and MIN_NOTIONAL filters.
@@ -450,11 +471,18 @@ class ExchangeClient:
         }
 
     async def place_market_order(
-        self, symbol: str, side: str, quantity: float, price: float = 0.0
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float = 0.0,
+        params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Place a market order with automatic pair detection and filter adjustment.
 
         If the user has EUR instead of USDT, automatically switches to EUR pair.
+        Extra ``params`` (e.g. ``{"newClientOrderId": "..."}``) are forwarded
+        to CCXT verbatim.
         """
         preview = await self.preview_market_order(symbol, side, quantity, reference_price=price)
         symbol_to_use = str(preview["resolved_symbol"])
@@ -471,6 +499,7 @@ class ExchangeClient:
                 type="market",
                 side=side,
                 amount=quantity,
+                params=params or {},
             )
             logger.info("Market order placed: %s on %s", result.get("id"), symbol_to_use)
             return result
@@ -478,8 +507,58 @@ class ExchangeClient:
             logger.error("Market order failed on %s: %s", symbol_to_use, exc)
             raise ValueError(parse_exchange_error(exc)) from exc
 
+    async def place_market_order_quote(
+        self,
+        symbol: str,
+        side: str,
+        quote_quantity: float,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Place a BUY market order using Binance ``quoteOrderQty``.
+
+        The user specifies how much quote asset (e.g. USDT) they want to
+        spend, and Binance converts it to the matching base amount.
+
+        Note: Binance only supports ``quoteOrderQty`` for BUY market orders.
+        For SELL market orders, the caller must convert quote -> base first.
+        """
+        normalized = self.normalize_symbol(symbol)
+        merged_params: Dict[str, Any] = {
+            "quoteOrderQty": str(quote_quantity),
+            **(params or {}),
+        }
+        logger.info(
+            "Placing MARKET %s quoteOrderQty=%.4f on %s",
+            side,
+            quote_quantity,
+            normalized,
+        )
+        try:
+            result = await self._exchange.create_order(
+                symbol=normalized,
+                type="market",
+                side=side,
+                amount=None,
+                price=None,
+                params=merged_params,
+            )
+            logger.info(
+                "Market-quote order placed: %s on %s",
+                result.get("id"),
+                normalized,
+            )
+            return result
+        except ccxt.BaseError as exc:
+            logger.error("Market-quote order failed on %s: %s", normalized, exc)
+            raise ValueError(parse_exchange_error(exc)) from exc
+
     async def place_limit_order(
-        self, symbol: str, side: str, quantity: float, price: float
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Place a limit order with automatic filter adjustment."""
         symbol = self.normalize_symbol(symbol)
@@ -497,12 +576,144 @@ class ExchangeClient:
                 side=side,
                 amount=quantity,
                 price=price,
+                params=params or {},
             )
             logger.info("Limit order placed: %s", result.get("id"))
             return result
         except ccxt.BaseError as exc:
             logger.error("Limit order failed: %s", exc)
             raise ValueError(parse_exchange_error(exc)) from exc
+
+    async def place_stop_loss_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        stop_price: float,
+        limit_price: float,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Place a STOP_LOSS_LIMIT order on Binance via CCXT.
+
+        ``stop_price`` is the trigger; ``limit_price`` is the limit posted
+        once the trigger fires.
+        """
+        normalized = self.normalize_symbol(symbol)
+        merged_params = {"stopPrice": str(stop_price), **(params or {})}
+        logger.info(
+            "Placing STOP_LOSS_LIMIT %s %.8f %s stop=%.4f limit=%.4f",
+            side, quantity, normalized, stop_price, limit_price,
+        )
+        try:
+            return await self._exchange.create_order(
+                symbol=normalized,
+                type="STOP_LOSS_LIMIT",
+                side=side,
+                amount=quantity,
+                price=limit_price,
+                params=merged_params,
+            )
+        except ccxt.BaseError as exc:
+            logger.error("STOP_LOSS_LIMIT failed: %s", exc)
+            raise ValueError(parse_exchange_error(exc)) from exc
+
+    async def place_take_profit_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        stop_price: float,
+        limit_price: float,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Place a TAKE_PROFIT_LIMIT order on Binance via CCXT."""
+        normalized = self.normalize_symbol(symbol)
+        merged_params = {"stopPrice": str(stop_price), **(params or {})}
+        logger.info(
+            "Placing TAKE_PROFIT_LIMIT %s %.8f %s stop=%.4f limit=%.4f",
+            side, quantity, normalized, stop_price, limit_price,
+        )
+        try:
+            return await self._exchange.create_order(
+                symbol=normalized,
+                type="TAKE_PROFIT_LIMIT",
+                side=side,
+                amount=quantity,
+                price=limit_price,
+                params=merged_params,
+            )
+        except ccxt.BaseError as exc:
+            logger.error("TAKE_PROFIT_LIMIT failed: %s", exc)
+            raise ValueError(parse_exchange_error(exc)) from exc
+
+    async def place_oco_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        stop_price: float,
+        stop_limit_price: float,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Place a Binance OCO order: take-profit limit + stop-loss-limit.
+
+        ``price`` is the upper take-profit limit; ``stop_price`` is the
+        trigger for the stop-loss; ``stop_limit_price`` is the limit posted
+        once the stop trigger fires.
+        """
+        normalized = self.normalize_symbol(symbol)
+        await self._ensure_markets_loaded()
+        request = {
+            "symbol": normalized.replace("/", ""),
+            "side": side.upper(),
+            "quantity": str(quantity),
+            "price": str(price),
+            "stopPrice": str(stop_price),
+            "stopLimitPrice": str(stop_limit_price),
+            "stopLimitTimeInForce": "GTC",
+        }
+        if params:
+            request.update(params)
+        logger.info(
+            "Placing OCO %s %.8f %s tp=%.4f stop=%.4f stop_limit=%.4f",
+            side, quantity, normalized, price, stop_price, stop_limit_price,
+        )
+        try:
+            # Binance exposes OCO via the dedicated endpoint
+            method = getattr(self._exchange, "private_post_order_oco", None)
+            if method is None:
+                # Fallback for older CCXT versions
+                method = getattr(self._exchange, "private_post_orderoco", None)
+            if method is None:
+                raise ValueError("OCO not supported by this CCXT version.")
+            return await method(request)
+        except ccxt.BaseError as exc:
+            logger.error("OCO failed: %s", exc)
+            raise ValueError(parse_exchange_error(exc)) from exc
+
+    async def fetch_closed_orders(
+        self,
+        symbol: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Return historical (closed) orders from the exchange.
+
+        Binance requires a symbol for this call. When no symbol is given we
+        return an empty list rather than raising — the caller will fall back
+        to its local cache (the in-memory live order store).
+        """
+        if not symbol:
+            return []
+        symbol = self.normalize_symbol(symbol)
+        try:
+            if hasattr(self._exchange, "fetch_closed_orders"):
+                return await self._exchange.fetch_closed_orders(symbol, limit=limit)
+            if hasattr(self._exchange, "fetch_orders"):
+                return await self._exchange.fetch_orders(symbol, limit=limit)
+        except ccxt.BaseError as exc:
+            logger.warning("fetch_closed_orders failed: %s", exc)
+        return []
 
     async def cancel_order(
         self, exchange_order_id: str, symbol: Optional[str] = None

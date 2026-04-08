@@ -68,6 +68,8 @@ export default function CryptoDetailClient() {
 
   const [coin, setCoin] = useState<CoinData | null>(null);
   const [livePrice, setLivePrice] = useState<number>(0);
+  const [liveChangePct, setLiveChangePct] = useState<number | null>(null);
+  const [liveVolume, setLiveVolume] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [tradeModal, setTradeModal] = useState<"buy" | "sell" | null>(null);
   const [watchlistVersion, setWatchlistVersion] = useState(0);
@@ -84,23 +86,41 @@ export default function CryptoDetailClient() {
       if (found) {
         setCoin(found);
         setLivePrice(found.current_price || (found as unknown as Record<string, number>).price || 0);
+        setLiveChangePct(found.price_change_percentage_24h ?? null);
+        setLiveVolume(found.total_volume ?? null);
       }
     }).catch(() => {}).finally(() => setLoading(false));
     signalsApi.getSignal(symbol).then(setSignal).catch(() => {});
   }, [symbol, watchlistVersion]);
 
   useEffect(() => {
-    const unsub = priceWs.subscribe(symbol, (data) => { if (data.price) setLivePrice(data.price); });
+    const unsub = priceWs.subscribe(symbol, (data) => {
+      if (data.price) {
+        setLivePrice(data.price);
+      }
+      if (data.change_pct_24h != null) {
+        setLiveChangePct(data.change_pct_24h);
+      }
+      if (data.volume_24h != null) {
+        setLiveVolume(data.volume_24h);
+      }
+      setCoin((current) => current ? ({
+        ...current,
+        current_price: data.price ?? current.current_price,
+        price_change_percentage_24h: data.change_pct_24h ?? current.price_change_percentage_24h,
+        total_volume: data.volume_24h ?? current.total_volume,
+      }) : current);
+    });
     return unsub;
   }, [symbol]);
 
   const price = livePrice || coin?.current_price || 0;
-  const changePct = coin?.price_change_percentage_24h ?? 0;
+  const changePct = liveChangePct ?? coin?.price_change_percentage_24h ?? 0;
   const positive = changePct >= 0;
 
   const STATS = [
     { label: "Market Cap", value: fmt(coin?.market_cap), icon: BarChart3 },
-    { label: "24h Volume", value: fmt(coin?.total_volume), icon: Activity },
+    { label: "24h Volume", value: fmt(liveVolume ?? coin?.total_volume), icon: Activity },
     { label: "24h High", value: fmt(coin?.high_24h), icon: TrendingUp },
     { label: "24h Low", value: fmt(coin?.low_24h), icon: TrendingDown },
     { label: "Circ. Supply", value: coin?.circulating_supply ? `${(coin.circulating_supply / 1e6).toFixed(1)}M` : "\u2014", icon: DollarSign },

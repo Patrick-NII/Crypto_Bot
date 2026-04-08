@@ -83,6 +83,7 @@ services:
       - CREDENTIAL_ENCRYPTION_KEY=${CREDENTIAL_ENCRYPTION_KEY:-}
       - MAILING_SERVICE_URL=http://mailing-service:8009
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token-change-me}
     ports:
       - "${AUTH_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -143,7 +144,9 @@ services:
       dockerfile: Dockerfile
     container_name: gluetrade-trading
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/${POSTGRES_DB:-okamoey_trading}
+      # Dedicated DB for the trading engine (isolated from auth/portfolio data)
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/gluetrade_trading
+      - DATABASE_ADMIN_URL=postgresql+asyncpg://${POSTGRES_USER:-okamoey}:${POSTGRES_PASSWORD:-okamoey_dev}@postgres:5432/postgres
       - REDIS_HOST=redis
       - MARKET_DATA_SERVICE_URL=http://market-data-service:8003
       - RISK_SERVICE_URL=http://risk-service:8005
@@ -215,6 +218,16 @@ services:
       - REDIS_HOST=redis
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - MAILING_SERVICE_URL=http://mailing-service:8009
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - PORTFOLIO_SERVICE_URL=http://portfolio-service:8002
+      - TRADING_SERVICE_URL=http://trading-engine:8004
+      - ML_SERVICE_URL=http://ml-service:8006
+      - AI_AGENT_SERVICE_URL=http://ai-agent-service:8008
+      - MARKET_DATA_SERVICE_URL=http://market-data-service:8003
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token-change-me}
+      - EMAIL_THROTTLE_MAX_PER_MIN=${EMAIL_THROTTLE_MAX_PER_MIN:-5}
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8007}:8007"
     depends_on:

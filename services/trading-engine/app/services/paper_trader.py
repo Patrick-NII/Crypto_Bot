@@ -8,6 +8,7 @@ arrive.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -47,13 +48,97 @@ class PaperAccountState:
 class PaperTrader:
     """Simulates trades without a real exchange connection.
 
-    All state is kept in memory; a service restart resets it.
+    State lives in memory but is persisted to ``paper_account_states`` (JSONB
+    column) on every fill. At boot the state is rehydrated for all known
+    users via ``rehydrate_from_db``.
     """
 
     def __init__(self) -> None:
         self._accounts: Dict[str, PaperAccountState] = {}
         self._order_owners: Dict[str, str] = {}
         self._fee_rate: Decimal = _DEFAULT_FEE_RATE
+        # Last persistence timestamp per user, for debouncing
+        self._last_persist_at: Dict[str, float] = {}
+
+    # ------------------------------------------------------------------
+    # Persistence (DB-backed snapshot of PaperAccountState)
+    # ------------------------------------------------------------------
+
+    def _serialize_state(self, state: PaperAccountState) -> dict:
+        return {
+            "orders": {
+                oid: order.model_dump(mode="json") for oid, order in state.orders.items()
+            },
+            "balances": {asset: str(qty) for asset, qty in state.balances.items()},
+            "positions": {asset: str(qty) for asset, qty in state.positions.items()},
+            "trailing_prices": {oid: str(p) for oid, p in state.trailing_prices.items()},
+        }
+
+    def _deserialize_state(self, payload: dict) -> PaperAccountState:
+        state = PaperAccountState()
+        state.balances = {
+            asset: Decimal(str(qty)) for asset, qty in (payload.get("balances") or {}).items()
+        }
+        state.positions = {
+            asset: Decimal(str(qty)) for asset, qty in (payload.get("positions") or {}).items()
+        }
+        state.trailing_prices = {
+            oid: Decimal(str(p)) for oid, p in (payload.get("trailing_prices") or {}).items()
+        }
+        for oid, raw in (payload.get("orders") or {}).items():
+            try:
+                order = Order.model_validate(raw)
+                state.orders[oid] = order
+                self._order_owners[oid] = state.balances.get("__user_id__", "default")  # filled later
+            except Exception as exc:
+                logger.debug("Skipping unparsable paper order %s: %s", oid, exc)
+        return state
+
+    async def rehydrate_from_db(self) -> int:
+        """Load all paper account states from DB into memory at boot."""
+        from app.repositories.order_repository import order_repository
+
+        try:
+            all_states = await order_repository.load_all_paper_states()
+        except Exception as exc:
+            logger.warning("Could not rehydrate paper trader: %s", exc)
+            return 0
+
+        loaded = 0
+        for user_id, payload in all_states.items():
+            try:
+                state = self._deserialize_state(payload)
+                self._accounts[user_id] = state
+                # Re-link order owners with the right user
+                for oid in state.orders:
+                    self._order_owners[oid] = user_id
+                loaded += 1
+            except Exception as exc:
+                logger.warning("Failed to rehydrate paper user %s: %s", user_id, exc)
+
+        if loaded:
+            logger.info("Paper trader rehydrated %d user account(s) from DB", loaded)
+        return loaded
+
+    def _schedule_persist(self, user_id: str) -> None:
+        """Persist the user's state to DB (fire-and-forget, debounced 1s)."""
+        import time as _time
+        from app.repositories.order_repository import order_repository
+
+        now = _time.time()
+        last = self._last_persist_at.get(user_id, 0.0)
+        if now - last < 1.0:
+            return
+        self._last_persist_at[user_id] = now
+
+        state = self._accounts.get(user_id)
+        if state is None:
+            return
+        payload = self._serialize_state(state)
+        try:
+            asyncio.create_task(order_repository.save_paper_state(user_id, payload))
+        except Exception as exc:
+            logger.debug("Paper state persistence skipped: %s", exc)
 
     # ------------------------------------------------------------------
     # Public API
@@ -119,6 +204,8 @@ class PaperTrader:
             current_price,
             order.status.value,
         )
+        # Persist after each order placement (debounced 1s)
+        self._schedule_persist(user_id)
         return order
 
     async def check_pending_orders(
@@ -189,6 +276,10 @@ class PaperTrader:
                         order.filled_price,
                     )
 
+            # Persist user state once per cycle (not per fill) to debounce
+            if account_user_id in self._accounts:
+                self._schedule_persist(account_user_id)
+
         return changed
 
     async def get_balance(self, user_id: str) -> Dict[str, Decimal]:
@@ -215,6 +306,8 @@ class PaperTrader:
         order = state.orders.get(order_id)
         if order is None:
             return None
+        # Persist after cancel
+        self._schedule_persist(user_id)
         if order.status not in (OrderStatus.OPEN, OrderStatus.PENDING):
             return order
         order.status = OrderStatus.CANCELLED

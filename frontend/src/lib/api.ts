@@ -38,6 +38,7 @@ import type {
   ExchangeConnection,
   ExchangeProviderGuide,
   UserProfile,
+  SymbolInfo,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
@@ -744,6 +745,7 @@ function normalizePortfolio(portfolio: BackendPortfolio): Portfolio {
     id: portfolio.id,
     name: portfolio.name,
     description: portfolio.description ?? undefined,
+    is_default: Boolean(portfolio.is_default),
     total_value: 0,
     total_pnl: 0,
     total_pnl_pct: 0,
@@ -1159,6 +1161,13 @@ export const portfolioApi = {
   closePosition: (positionId: string) => fetchJson<TradeResult>(`/positions/${positionId}/close`, { method: "POST" }),
   updateStopLoss: (positionId: string, stopLoss: number) =>
     fetchJson<BackendPosition>(`/positions/${positionId}`, { method: "PATCH", body: JSON.stringify({ stop_loss: stopLoss }) }).then(normalizePosition),
+  activate: async (portfolioId: string) => {
+    const portfolio = await fetchJson<BackendPortfolio>(
+      `/portfolios/${encodeURIComponent(portfolioId)}/activate`,
+      { method: "POST" },
+    );
+    return normalizePortfolio(portfolio);
+  },
 };
 
 // ---- Trading ----
@@ -1189,17 +1198,33 @@ export const tradingApi = {
   },
 
   placeOrder: async (data: {
-    symbol: string; side: OrderSide; order_type: OrderType; quantity: number; price?: number;
+    symbol: string;
+    side: OrderSide;
+    order_type: OrderType;
+    quantity?: number;
+    quote_quantity?: number;
+    price?: number;
+    stop_price?: number;
+    take_profit_price?: number;
+    client_order_id?: string;
+    portfolio_id?: string;
   }): Promise<TradeResult> => {
+    const body: Record<string, unknown> = {
+      symbol: data.symbol,
+      side: data.side,
+      order_type: data.order_type,
+    };
+    if (data.quantity != null) body.quantity = data.quantity;
+    if (data.quote_quantity != null) body.quote_quantity = data.quote_quantity;
+    if (data.price != null) body.price = data.price;
+    if (data.stop_price != null) body.stop_price = data.stop_price;
+    if (data.take_profit_price != null) body.take_profit_price = data.take_profit_price;
+    if (data.client_order_id) body.client_order_id = data.client_order_id;
+    if (data.portfolio_id) body.portfolio_id = data.portfolio_id;
+
     const result = await fetchJson<BackendOrderResponse>("/orders/", {
       method: "POST",
-      body: JSON.stringify({
-        symbol: data.symbol,
-        side: data.side,
-        order_type: data.order_type,
-        quantity: data.quantity,
-        price: data.price,
-      }),
+      body: JSON.stringify(body),
     });
     return {
       order_id: result.id,
@@ -1209,6 +1234,21 @@ export const tradingApi = {
       fee: Number(result.fee),
       message: `Order ${result.status}`,
     };
+  },
+
+  getSymbolInfo: (symbol: string) => {
+    const encoded = encodeURIComponent(symbol);
+    return fetchJson<SymbolInfo>(`/orders/symbol-info/${encoded}`);
+  },
+
+  getOpenOrders: async (symbol?: string): Promise<Order[]> => {
+    try {
+      const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+      const response = await fetchJson<BackendOrderListResponse>(`/orders/open${qs}`);
+      return response.orders.map(normalizeOrder);
+    } catch {
+      return [];
+    }
   },
 
   getErrorCatalog: async (): Promise<{ version: string; entries: Array<Record<string, unknown>> }> => {

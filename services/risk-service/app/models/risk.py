@@ -70,8 +70,11 @@ class RiskProfile(BaseModel):
 class TradeEvaluation(BaseModel):
     """A proposed trade to be evaluated against risk rules."""
 
+    user_id: Optional[str] = None
+    portfolio_id: Optional[str] = None
     symbol: str
     side: str = Field(..., pattern="^(buy|sell)$")
+    order_type: Optional[str] = None
     quantity: Decimal
     price: Decimal
     portfolio_value: Optional[Decimal] = None

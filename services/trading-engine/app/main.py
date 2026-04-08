@@ -16,8 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.orders import router as orders_router
 from app.api.strategies_api import router as strategies_router
+from app.api.websocket import router as websocket_router
 from app.core.config import settings
+from app.core.database import init_db
 from app.services.order_manager import OrderManager
+from app.services.order_stream import order_stream_manager
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -58,8 +61,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Startup
     logger.info("Starting Trading Engine (mode=%s)", settings.TRADING_MODE)
+
+    # Initialise persistence layer first so the OrderManager can rehydrate
+    try:
+        await init_db()
+    except Exception as exc:
+        logger.warning("init_db failed (continuing without persistence): %s", exc)
+
     order_manager = OrderManager()
     await order_manager.init_redis()
+
+    # Rehydrate live order cache + paper trader state from the persistent store
+    try:
+        await order_manager.reconcile_at_boot()
+    except Exception as exc:
+        logger.warning("Order reconciliation skipped: %s", exc)
+
+    try:
+        await order_manager._paper_trader.rehydrate_from_db()
+    except Exception as exc:
+        logger.warning("Paper trader rehydration skipped: %s", exc)
+
+    # Wire the order stream manager to the OrderManager
+    order_stream_manager.attach(order_manager)
 
     # Start background pending-order checker for paper mode
     if settings.TRADING_MODE == "paper":
@@ -77,6 +101,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _pending_check_task
         except asyncio.CancelledError:
             pass
+    await order_stream_manager.stop_all()
     if order_manager is not None:
         await order_manager.close()
     logger.info("Trading Engine shut down")
@@ -101,6 +126,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(orders_router)
 app.include_router(strategies_router)
+app.include_router(websocket_router)
 
 
 @app.get("/health", tags=["health"])

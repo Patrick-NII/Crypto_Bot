@@ -39,6 +39,7 @@ export interface Portfolio {
   id: string;
   name: string;
   description?: string;
+  is_default?: boolean;
   total_value: number;
   total_pnl: number;
   total_pnl_pct: number;
@@ -210,6 +211,26 @@ export interface OrderPreflight {
   notes: string[];
 }
 
+export interface SymbolInfo {
+  symbol: string;
+  base_asset: string;
+  quote_asset: string;
+  step_size: string;
+  tick_size: string;
+  min_qty: string;
+  max_qty: string;
+  min_notional: string;
+  base_precision: number;
+  quote_precision: number;
+  is_spot: boolean;
+}
+
+export type OrderWsEvent =
+  | { event: "order_new"; order: Order }
+  | { event: "order_update"; order: Order }
+  | { event: "order_done"; order: Order }
+  | { event: "warning"; message: string };
+
 // --- Strategies ---
 
 export interface Strategy {
@@ -309,6 +330,17 @@ export type DeskChartType = "candlestick" | "line";
 export type MarketMoversView = "gainers" | "losers" | "candidates";
 export type MarketUniverseView = "all" | MarketMoversView;
 
+export interface UserNotificationPreferences {
+  email_enabled?: boolean;
+  email_trades?: boolean;
+  email_security?: boolean;
+  email_deposits?: boolean;
+  email_daily_recap?: boolean;
+  email_weekly_recap?: boolean;
+  email_strong_signals?: boolean;
+  daily_recap_hour?: number;
+}
+
 export interface UserPreferences {
   crypto_desk?: {
     watchlist?: string[];
@@ -321,6 +353,7 @@ export interface UserPreferences {
     theme?: "dark" | "light";
     trading_mode?: "manual" | "auto";
   };
+  notifications?: UserNotificationPreferences;
 }
 
 export interface RiskProfile {
@@ -374,6 +407,8 @@ export interface UserProfile {
   terms_version: string;
   ai_behavior_style: AIBehaviorStyle;
   ai_assistant_tone: AIAssistantTone;
+  timezone?: string;
+  language?: string;
   wallet_access_enabled: boolean;
   wallet_access_reason: string;
   connected_exchanges_count: number;

@@ -23,8 +23,13 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/trading_engine",
+        default="postgresql+asyncpg://postgres:postgres@postgres:5432/gluetrade_trading",
         validation_alias=AliasChoices("DATABASE_URL", "TRADING_DATABASE_URL"),
+    )
+    # The default Postgres admin DB is used to create gluetrade_trading on first boot
+    DATABASE_ADMIN_URL: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@postgres:5432/postgres",
+        validation_alias=AliasChoices("DATABASE_ADMIN_URL", "TRADING_DATABASE_ADMIN_URL"),
     )
 
     # Redis

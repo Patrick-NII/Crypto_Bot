@@ -13,7 +13,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OrderSide(str, Enum):
@@ -47,12 +47,24 @@ class OrderStatus(str, Enum):
 
 
 class OrderCreate(BaseModel):
-    """Request body for creating a new order."""
+    """Request body for creating a new order.
+
+    Either ``quantity`` (base asset) OR ``quote_quantity`` (quote asset) must
+    be provided — exactly one of the two. ``quote_quantity`` is only valid for
+    ``order_type=market`` because Binance does not support it for limit orders.
+    """
 
     symbol: str = Field(..., description="Trading pair symbol, e.g. BTC/USDT or BTC")
     side: OrderSide
     order_type: OrderType
-    quantity: Decimal = Field(..., gt=0, description="Quantity to buy/sell")
+    quantity: Optional[Decimal] = Field(
+        None, gt=0, description="Base-asset quantity (e.g. 0.5 BTC)"
+    )
+    quote_quantity: Optional[Decimal] = Field(
+        None,
+        gt=0,
+        description="Quote-asset quantity (e.g. 20 USDT). Market orders only.",
+    )
     price: Optional[Decimal] = Field(None, description="Limit price (required for limit orders)")
     stop_price: Optional[Decimal] = Field(None, description="Stop price (for stop/OCO orders)")
     take_profit_price: Optional[Decimal] = Field(
@@ -63,6 +75,30 @@ class OrderCreate(BaseModel):
     )
     portfolio_id: Optional[str] = Field(None, description="Portfolio to attribute trade to")
     strategy: Optional[str] = Field(None, description="Strategy that generated this order")
+    client_order_id: Optional[str] = Field(
+        None,
+        description=(
+            "Client-supplied idempotency key. When provided, retries with the "
+            "same value return the existing order instead of creating a duplicate."
+        ),
+        max_length=36,
+    )
+
+    @model_validator(mode="after")
+    def _validate_quantity_exclusivity(self) -> "OrderCreate":
+        has_qty = self.quantity is not None
+        has_quote = self.quote_quantity is not None
+        if has_qty == has_quote:
+            raise ValueError(
+                "Exactly one of 'quantity' or 'quote_quantity' must be provided."
+            )
+        if has_quote and self.order_type != OrderType.MARKET:
+            raise ValueError(
+                "'quote_quantity' is only supported for market orders."
+            )
+        if self.order_type == OrderType.LIMIT and self.price is None:
+            raise ValueError("Limit orders require 'price'.")
+        return self
 
     class Config:
         json_encoders = {Decimal: str}
@@ -184,3 +220,24 @@ class OrderListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class SymbolInfoResponse(BaseModel):
+    """Exchange filters for a trading pair (LOT_SIZE, PRICE_FILTER, MIN_NOTIONAL).
+
+    Consumed by the frontend to validate user input before submission.
+    All numeric fields are serialised as strings so that the frontend can
+    parse them into ``BigNumber`` or ``Decimal`` without losing precision.
+    """
+
+    symbol: str
+    base_asset: str
+    quote_asset: str
+    step_size: str
+    tick_size: str
+    min_qty: str
+    max_qty: str
+    min_notional: str
+    base_precision: int
+    quote_precision: int
+    is_spot: bool = True
