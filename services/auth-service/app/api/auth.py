@@ -248,6 +248,7 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
         language=user.language or "fr",
         phone_number=user.phone_number,
         phone_verified=bool(user.phone_verified),
+        telegram_chat_id=user.telegram_chat_id,
         wallet_access_enabled=user.wallet_access_enabled,
         wallet_access_reason=reason,
         connected_exchanges_count=sum(1 for connection in connections if connection.is_active),

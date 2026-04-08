@@ -2099,6 +2099,35 @@ export const newsApi = {
   getSentiment: () => fetchJson<MarketSentiment>("/news/sentiment"),
 };
 
+// ---- Telegram Notifications ----
+
+export const telegramApi = {
+  getPreferences: () =>
+    fetchJson<{
+      chat_id: string | null;
+      linked: boolean;
+      bot_username: string | null;
+      telegram: { master_enabled: boolean; events: Record<string, boolean> };
+    }>("/telegram/preferences"),
+  updatePreferences: (payload: {
+    master_enabled: boolean;
+    events: Record<string, boolean>;
+  }) =>
+    fetchJson<{ ok: boolean }>("/telegram/preferences", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  link: (chatId: string) =>
+    fetchJson<{ ok: boolean; chat_id: string }>("/telegram/link", {
+      method: "POST",
+      body: JSON.stringify({ chat_id: chatId }),
+    }),
+  sendTest: () =>
+    fetchJson<{ ok: boolean; result?: Record<string, unknown> }>("/telegram/test", {
+      method: "POST",
+    }),
+};
+
 // ---- SMS Notifications ----
 
 export const smsApi = {

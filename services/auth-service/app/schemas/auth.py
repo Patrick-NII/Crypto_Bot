@@ -126,6 +126,7 @@ class UserResponse(BaseModel):
     language: str = "fr"
     phone_number: Optional[str] = None
     phone_verified: bool = False
+    telegram_chat_id: Optional[str] = None
     wallet_access_enabled: bool
     wallet_access_reason: str
     connected_exchanges_count: int

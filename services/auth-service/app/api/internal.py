@@ -176,3 +176,44 @@ async def get_user_phone_settings(
             "events": sms_prefs.get("events") or {},
         },
     }
+
+
+@router.get("/users/{user_id}/notification-settings")
+async def get_user_notification_settings(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_internal_token),
+) -> dict:
+    """Return all notification channel settings for a user (SMS + Telegram).
+
+    Single endpoint consumed by every dispatcher (sms_dispatcher,
+    telegram_dispatcher, ...) so we don't multiply HTTP roundtrips when
+    multiple channels are active for the same event.
+    """
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    user = await db.get(User, user_uuid)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    prefs = user.preferences if isinstance(user.preferences, dict) else {}
+    sms_prefs = prefs.get("sms") or {}
+    telegram_prefs = prefs.get("telegram") or {}
+
+    return {
+        "user_id": str(user.id),
+        "phone_number": user.phone_number,
+        "phone_verified": bool(user.phone_verified),
+        "telegram_chat_id": user.telegram_chat_id,
+        "sms": {
+            "master_enabled": bool(sms_prefs.get("master_enabled", False)),
+            "events": sms_prefs.get("events") or {},
+        },
+        "telegram": {
+            "master_enabled": bool(telegram_prefs.get("master_enabled", False)),
+            "events": telegram_prefs.get("events") or {},
+        },
+    }

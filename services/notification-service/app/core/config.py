@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""  # e.g. "GlueTradeBot" — exposed to UI for the t.me/ link
 
     # Service URLs (used by EmailDispatcher and recap generator)
     MAILING_SERVICE_URL: str = "http://gluetrade-mailing:8009"
@@ -25,6 +26,9 @@ class Settings(BaseSettings):
 
     # SMS throttling (per user, per minute)
     SMS_THROTTLE_MAX_PER_MIN: int = 5
+
+    # Telegram throttling (per user, per minute)
+    TELEGRAM_THROTTLE_MAX_PER_MIN: int = 10
 
     # Twilio credentials
     TWILIO_ACCOUNT_SID: str = ""

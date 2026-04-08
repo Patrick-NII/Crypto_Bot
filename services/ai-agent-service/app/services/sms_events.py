@@ -1,9 +1,13 @@
-"""SMS event publisher for the auto-trader.
+"""Notification event publisher for the auto-trader.
 
-Publishes structured events on Redis channel ``sms:events`` for the
-notification-service ``sms_dispatcher`` to consume. The dispatcher is
-responsible for per-user preference lookup, rate limiting, Twilio delivery,
-and persistence in ``sms_notifications``.
+Publishes structured events on Redis channel ``notification:events`` for the
+notification-service dispatchers (Telegram + SMS) to consume. Each dispatcher
+is responsible for fetching the user preferences for its own channel
+(``user.preferences.telegram`` vs ``user.preferences.sms``), rate limiting,
+delivery, and persistence.
+
+We also publish on the legacy channel ``sms:events`` for backward
+compatibility while the existing SMS dispatcher migrates.
 
 Event types (must match the keys in ``user.preferences.sms.events``):
     - trade_buy           : a buy order was filled
@@ -33,7 +37,8 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-_CHANNEL = "sms:events"
+_PRIMARY_CHANNEL = "notification:events"
+_LEGACY_CHANNEL = "sms:events"
 
 
 def _json_default(obj: Any) -> Any:
@@ -50,12 +55,14 @@ async def publish_event(
     event_type: str,
     payload: Dict[str, Any],
 ) -> None:
-    """Publish an SMS event to Redis for the notification dispatcher.
+    """Publish a notification event to Redis for the channel dispatchers.
 
-    Silent on failure — auto-trader cycles must not be broken by SMS hiccups.
+    Silent on failure — auto-trader cycles must not be broken by hiccups.
+    Publishes on the primary ``notification:events`` channel and the
+    legacy ``sms:events`` for backward compatibility.
     """
     if redis_client is None:
-        logger.debug("No redis client — sms event %s dropped", event_type)
+        logger.debug("No redis client — event %s dropped", event_type)
         return
     envelope = {
         "user_id": user_id,
@@ -63,8 +70,10 @@ async def publish_event(
         "payload": payload,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    serialised = json.dumps(envelope, default=_json_default)
     try:
-        await redis_client.publish(_CHANNEL, json.dumps(envelope, default=_json_default))
-        logger.debug("SMS event published: %s for user %s", event_type, user_id)
+        await redis_client.publish(_PRIMARY_CHANNEL, serialised)
+        await redis_client.publish(_LEGACY_CHANNEL, serialised)
+        logger.debug("notification event published: %s for user %s", event_type, user_id)
     except Exception as exc:
-        logger.warning("Failed to publish SMS event %s: %s", event_type, exc)
+        logger.warning("Failed to publish notification event %s: %s", event_type, exc)

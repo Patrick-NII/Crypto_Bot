@@ -218,6 +218,8 @@ services:
       - REDIS_HOST=redis
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME:-}
+      - TELEGRAM_THROTTLE_MAX_PER_MIN=${TELEGRAM_THROTTLE_MAX_PER_MIN:-10}
       - MAILING_SERVICE_URL=http://mailing-service:8009
       - AUTH_SERVICE_URL=http://auth-service:8001
       - PORTFOLIO_SERVICE_URL=http://portfolio-service:8002

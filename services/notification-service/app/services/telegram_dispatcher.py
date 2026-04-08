@@ -1,16 +1,9 @@
-"""Redis subscriber that dispatches SMS events to Twilio.
+"""Telegram dispatcher — Redis subscriber that pushes events to Telegram.
 
-Subscribes to ``sms:events`` and, for each message:
-    1. Fetches the user's phone + SMS preferences from auth-service
-       (internal token-gated endpoint).
-    2. Drops the event if master_enabled is false or the specific event
-       toggle is false.
-    3. Enforces a per-user rate limit (max N SMS / minute via Redis INCR).
-    4. Renders the template (``sms_templates``) and sends via Twilio.
-    5. Persists the attempt into ``sms_notifications``.
-
-Graceful on every failure — SMS is a best-effort side channel, the main
-trading loop must never be blocked by it.
+Mirrors ``sms_dispatcher`` but consumes the user's Telegram preferences
+instead. Both dispatchers subscribe to the same ``notification:events``
+channel so the auto-trader publishes a single message that fans out to
+every active channel.
 """
 
 from __future__ import annotations
@@ -20,26 +13,24 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
 
 from app.core.config import settings
-from app.services import sms_templates, twilio_client
+from app.services import telegram_templates
+from app.services.telegram import send_message
 
 logger = logging.getLogger(__name__)
 
+# Listen on both channel names for backward compatibility:
+# - "notification:events" : the new generic channel
+# - "sms:events"          : the legacy name still used by ai-agent-service
 _CHANNELS = ("notification:events", "sms:events")
 
 
 class _RateLimiter:
-    """Token-bucket-like per-user rate limiter backed by an in-memory dict.
-
-    The SMS flow is low-volume so a simple per-user sliding window in RAM
-    is sufficient. A restart clears the counters (desired — opens the
-    bucket again).
-    """
+    """Per-user sliding window rate limiter (RAM-only)."""
 
     def __init__(self, max_per_window: int, window_seconds: int = 60) -> None:
         self.max = max_per_window
@@ -57,9 +48,9 @@ class _RateLimiter:
         return True
 
 
-class SmsDispatcher:
+class TelegramDispatcher:
     def __init__(self) -> None:
-        self._throttle = _RateLimiter(settings.SMS_THROTTLE_MAX_PER_MIN)
+        self._throttle = _RateLimiter(getattr(settings, "TELEGRAM_THROTTLE_MAX_PER_MIN", 10))
         self._task: Optional[asyncio.Task] = None
         self._redis = None
         self._client = httpx.AsyncClient(timeout=10.0)
@@ -72,7 +63,7 @@ class SmsDispatcher:
         if self._task is not None:
             return
         self._task = asyncio.create_task(self._run())
-        logger.info("SmsDispatcher started, listening on %s", _CHANNELS)
+        logger.info("TelegramDispatcher started, listening on %s", _CHANNELS)
 
     async def stop(self) -> None:
         if self._task is None:
@@ -90,7 +81,7 @@ class SmsDispatcher:
                 pass
             self._redis = None
         await self._client.aclose()
-        logger.info("SmsDispatcher stopped")
+        logger.info("TelegramDispatcher stopped")
 
     # ------------------------------------------------------------------
     # Loop
@@ -119,7 +110,7 @@ class SmsDispatcher:
         except asyncio.CancelledError:
             return
         except Exception as exc:
-            logger.warning("SmsDispatcher loop exited: %s", exc)
+            logger.warning("TelegramDispatcher loop exited: %s", exc)
 
     async def _handle_event(self, envelope: Dict[str, Any]) -> None:
         user_id = envelope.get("user_id") or ""
@@ -128,108 +119,74 @@ class SmsDispatcher:
         if not user_id or not event_type:
             return
 
-        # 1. Fetch user phone + SMS preferences
-        user_settings = await self._fetch_user_sms_settings(user_id)
+        # 1. Fetch user notification settings
+        user_settings = await self._fetch_user_notification_settings(user_id)
         if user_settings is None:
             return
 
-        if not user_settings.get("phone_verified"):
-            logger.debug("Skipping SMS: phone not verified for user=%s", user_id)
-            return
-        phone_number = user_settings.get("phone_number")
-        if not phone_number:
+        chat_id = user_settings.get("telegram_chat_id")
+        if not chat_id:
+            logger.debug("Skipping Telegram: no chat_id for user=%s", user_id)
             return
 
-        sms_prefs = user_settings.get("sms") or {}
-        if not bool(sms_prefs.get("master_enabled")):
+        telegram_prefs = user_settings.get("telegram") or {}
+        if not bool(telegram_prefs.get("master_enabled")):
             return
-        events = sms_prefs.get("events") or {}
+        events = telegram_prefs.get("events") or {}
         if not bool(events.get(event_type, False)):
             return
 
         # 2. Throttle
         if not self._throttle.allow(user_id):
-            logger.warning("SMS throttled for user=%s event=%s", user_id, event_type)
+            logger.warning("Telegram throttled for user=%s event=%s", user_id, event_type)
             return
 
         # 3. Render and send
-        body = sms_templates.render(event_type, payload)
+        body = telegram_templates.render(event_type, payload)
         if body is None:
-            logger.debug("No template for event %s", event_type)
+            logger.debug("No telegram template for event %s", event_type)
             return
 
         sms_id = uuid.uuid4().hex
-        result = await twilio_client.send_sms(phone_number, body)
+        result = await send_message(chat_id=str(chat_id), text=body, parse_mode="HTML")
 
-        # 4. Persist into sms_notifications (if ai-agent-service repo is reachable)
-        await self._persist_sms_record(
-            sms_id=sms_id,
-            user_id=user_id,
-            phone_number=phone_number,
-            event_type=event_type,
-            payload=payload,
-            twilio_sid=result.sid,
-            status="sent" if result.ok else "failed",
-            error=result.error,
+        ok = bool(result.get("ok"))
+        logger.info(
+            "Telegram dispatched id=%s user=%s event=%s ok=%s",
+            sms_id,
+            user_id,
+            event_type,
+            ok,
         )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _fetch_user_sms_settings(
+    async def _fetch_user_notification_settings(
         self,
         user_id: str,
     ) -> Optional[Dict[str, Any]]:
         if not settings.INTERNAL_API_TOKEN:
-            logger.debug("No internal token — cannot fetch user SMS settings")
+            logger.debug("No internal token — cannot fetch user notification settings")
             return None
         try:
             resp = await self._client.get(
-                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/internal/users/{user_id}/phone-settings",
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/internal/users/{user_id}/notification-settings",
                 headers={"X-Internal-Token": settings.INTERNAL_API_TOKEN},
             )
             if resp.status_code == 200:
                 return resp.json()
             logger.debug(
-                "phone-settings HTTP %s for user=%s: %s",
+                "notification-settings HTTP %s for user=%s",
                 resp.status_code,
                 user_id,
-                resp.text[:120],
             )
             return None
         except Exception as exc:
-            logger.debug("phone-settings fetch failed: %s", exc)
+            logger.debug("notification-settings fetch failed: %s", exc)
             return None
-
-    async def _persist_sms_record(
-        self,
-        *,
-        sms_id: str,
-        user_id: str,
-        phone_number: str,
-        event_type: str,
-        payload: Dict[str, Any],
-        twilio_sid: Optional[str],
-        status: str,
-        error: Optional[str],
-    ) -> None:
-        """Write to sms_notifications in gluetrade_trading via HTTP call.
-
-        V1 simplification: log into structured logger only. A later version
-        will POST to an internal trading-engine endpoint or write directly
-        through a SQLAlchemy connection.
-        """
-        logger.info(
-            "SMS dispatched id=%s user=%s event=%s status=%s sid=%s error=%s",
-            sms_id,
-            user_id,
-            event_type,
-            status,
-            twilio_sid,
-            error,
-        )
 
 
 # Module-level singleton
-sms_dispatcher = SmsDispatcher()
+telegram_dispatcher = TelegramDispatcher()
