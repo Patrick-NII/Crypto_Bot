@@ -1,4 +1,5 @@
 import type { CryptoPrice } from "./types";
+import { binanceStream, type BinanceTick } from "./binance-stream";
 
 const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ||
@@ -15,6 +16,8 @@ type PriceUpdateMap = Record<string, CryptoPrice | Record<string, unknown>>;
 class PriceWebSocket {
   private ws: WebSocket | null = null;
   private listeners: Map<string, Set<PriceListener>> = new Map();
+  private directUnsubs: Map<string, () => void> = new Map();
+  private latestBySymbol: Map<string, CryptoPrice> = new Map();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -84,6 +87,10 @@ class PriceWebSocket {
       this.ws.close();
       this.ws = null;
     }
+    for (const unsub of this.directUnsubs.values()) {
+      unsub();
+    }
+    this.directUnsubs.clear();
     this.reconnectAttempts = 0;
   }
 
@@ -96,10 +103,19 @@ class PriceWebSocket {
 
     if (!this.listeners.has(upper)) {
       this.listeners.set(upper, new Set());
+      this.attachDirectStream(upper);
       this.sendSubscribe(upper);
     }
 
     this.listeners.get(upper)!.add(callback);
+    const cached = this.latestBySymbol.get(upper);
+    if (cached) {
+      try {
+        callback(cached);
+      } catch {
+        // Ignore callback bootstrap errors
+      }
+    }
 
     // Ensure connection is open
     this.connect();
@@ -112,6 +128,11 @@ class PriceWebSocket {
 
       if (set.size === 0) {
         this.listeners.delete(upper);
+        const directUnsub = this.directUnsubs.get(upper);
+        if (directUnsub) {
+          directUnsub();
+          this.directUnsubs.delete(upper);
+        }
         this.sendUnsubscribe(upper);
       }
     };
@@ -123,6 +144,7 @@ class PriceWebSocket {
 
   private dispatch(symbol: string, data: CryptoPrice): void {
     const upper = symbol.toUpperCase();
+    this.latestBySymbol.set(upper, data);
     const set = this.listeners.get(upper);
     if (!set) return;
     for (const cb of set) {
@@ -136,19 +158,93 @@ class PriceWebSocket {
 
   private handlePriceUpdate(payload: PriceUpdateMap): void {
     if ("symbol" in payload && typeof payload.symbol === "string") {
-      const singlePrice = payload as unknown as CryptoPrice;
-      this.dispatch(singlePrice.symbol, singlePrice);
+      this.mergeAndDispatch(payload as unknown as Partial<CryptoPrice>);
       return;
     }
 
     for (const [symbol, rawValue] of Object.entries(payload)) {
       if (!rawValue || typeof rawValue !== "object") continue;
-      const priceData = rawValue as CryptoPrice;
-      this.dispatch(priceData.symbol || symbol, {
-        ...priceData,
-        symbol: (priceData.symbol || symbol).toUpperCase(),
+      this.mergeAndDispatch({
+        ...(rawValue as CryptoPrice),
+        symbol: symbol.toUpperCase(),
       });
     }
+  }
+
+  private attachDirectStream(symbol: string): void {
+    if (this.directUnsubs.has(symbol)) return;
+    const unsub = binanceStream.subscribe(symbol, (tick) => {
+      this.handleDirectTick(tick);
+    });
+    this.directUnsubs.set(symbol, unsub);
+  }
+
+  private handleDirectTick(tick: BinanceTick): void {
+    // Preserve the previous 24h change when Binance didn't emit a valid one
+    // (e.g. during the first tick window). We use `undefined` so that
+    // `mergeAndDispatch`'s `??` fallback kicks in, instead of overwriting a
+    // good value with 0 and causing UI flicker.
+    const hasPct = Number.isFinite(tick.changePct24h);
+    const pct = hasPct ? tick.changePct24h : undefined;
+    const openPrice =
+      hasPct && pct !== undefined && pct > -99.999
+        ? tick.price / (1 + pct / 100)
+        : NaN;
+    const change24h =
+      Number.isFinite(openPrice) && openPrice > 0 ? tick.price - openPrice : undefined;
+
+    this.mergeAndDispatch({
+      symbol: tick.symbol,
+      price: tick.price,
+      ...(change24h !== undefined ? { change_24h: change24h } : {}),
+      ...(pct !== undefined ? { change_pct_24h: pct } : {}),
+      volume_24h: tick.volume24h,
+    });
+  }
+
+  private mergeAndDispatch(patch: Partial<CryptoPrice>): void {
+    const upper = String(patch.symbol ?? "").toUpperCase();
+    if (!upper) return;
+
+    const previous = this.latestBySymbol.get(upper);
+
+    // Merge a single numeric field, keeping the previous value when the patch
+    // contains a missing or non-finite number. This is what prevents UI flicker
+    // when a tick arrives without a valid 24h change field.
+    const mergeNum = (
+      patchVal: unknown,
+      prevVal: number | undefined,
+      fallback = 0,
+    ): number => {
+      const parsed = patchVal === undefined || patchVal === null ? NaN : Number(patchVal);
+      if (Number.isFinite(parsed)) return parsed;
+      if (prevVal !== undefined && Number.isFinite(prevVal)) return prevVal;
+      return fallback;
+    };
+
+    const next: CryptoPrice = {
+      symbol: upper,
+      name: String(patch.name ?? previous?.name ?? upper),
+      price: mergeNum(patch.price, previous?.price),
+      change_24h: mergeNum(patch.change_24h, previous?.change_24h),
+      change_pct_24h: mergeNum(patch.change_pct_24h, previous?.change_pct_24h),
+      volume_24h: mergeNum(patch.volume_24h, previous?.volume_24h),
+      market_cap: mergeNum(patch.market_cap, previous?.market_cap),
+      sparkline: patch.sparkline ?? previous?.sparkline,
+    };
+
+    if (
+      previous &&
+      previous.price === next.price &&
+      previous.change_24h === next.change_24h &&
+      previous.change_pct_24h === next.change_pct_24h &&
+      previous.volume_24h === next.volume_24h &&
+      previous.market_cap === next.market_cap
+    ) {
+      return;
+    }
+
+    this.dispatch(upper, next);
   }
 
   private sendSubscribe(symbol: string): void {

@@ -136,15 +136,23 @@ class BinanceStream {
         if (!d || !d.s) return;
 
         // Binance miniTicker fields:
-        // s=symbol, c=close, P=priceChangePct, v=volume, h=high, l=low, E=eventTime
+        // s=symbol, c=close, o=open, h=high, l=low, v=base_volume, q=quote_volume, E=eventTime
+        // NOTE: miniTicker does NOT include P (priceChangePct). Compute from o/c.
         const rawSymbol = String(d.s); // e.g. "BTCUSDT"
         const symbol = rawSymbol.replace(/USDT$/i, "").toUpperCase();
 
+        const closePrice = Number(d.c);
+        const openPrice = Number(d.o);
+        const changePct =
+          Number.isFinite(openPrice) && openPrice > 0 && Number.isFinite(closePrice)
+            ? ((closePrice - openPrice) / openPrice) * 100
+            : NaN;
+
         const tick: BinanceTick = {
           symbol,
-          price: Number(d.c),
-          changePct24h: Number(d.P),
-          volume24h: Number(d.v) * Number(d.c), // base volume * price = quote volume
+          price: closePrice,
+          changePct24h: changePct,
+          volume24h: Number(d.v) * closePrice, // base volume * price = quote volume
           high24h: Number(d.h),
           low24h: Number(d.l),
           time: Number(d.E),

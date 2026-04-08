@@ -18,6 +18,7 @@ import {
   Zap,
   Search,
   Star,
+  X,
 } from "lucide-react";
 import { WalletAccessPanel } from "@/components/account/wallet-access-panel";
 import { CryptoIcon } from "@/components/ui/crypto-icon";
@@ -69,6 +70,7 @@ const TRADING_VIEW_CACHE_TTL = 300_000;
 const SCANNER_BLOCKLIST = new Set(["USDC", "USDT", "USD1", "FDUSD", "TUSD", "USDE", "XAUT", "PAXG", "STO", "U"]);
 const COMPACT_MOVER_ROWS = 4;
 const VISIBLE_PUBLICATION_FILTERS = 2;
+const TOP_WALLET_ITEMS = 3;
 
 interface SignalDetail {
   symbol: string;
@@ -148,6 +150,18 @@ interface TradeIntent {
   side: "buy" | "sell";
   amount?: number;
   advisory?: string;
+}
+
+interface WalletPreviewItem {
+  sym: string;
+  fiat: boolean;
+  stable: boolean;
+  total: number;
+  price: number;
+  value: number;
+  changePct: number;
+  fiatSym: string;
+  image?: string;
 }
 
 interface TradingViewCache {
@@ -608,11 +622,52 @@ export default function CryptoTradingPage() {
   const [moversSortAsc, setMoversSortAsc] = useState(false);
   const [universeView, setUniverseView] = useState<MarketUniverseView>("all");
   const [universeModalOpen, setUniverseModalOpen] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
 
   // ---- Live Wallet (always fetched, independent of walletUnlocked) ----
   const [walletPreview, setWalletPreview] = useState<Array<{ currency: string; available: number; reserved: number; total: number }>>([]);
   const [walletPreviewLoading, setWalletPreviewLoading] = useState(true);
   const [walletPreviewError, setWalletPreviewError] = useState<string | null>(null);
+
+  const applyLiveTickerUpdate = useCallback((update: { symbol: string; price?: number; change_pct_24h?: number; volume_24h?: number }) => {
+    const upper = update.symbol.toUpperCase();
+
+    // Keep the previous value for any field that arrives invalid/missing.
+    // This is what prevents the 24h change indicator from flickering back to
+    // 0 when a tick doesn't carry every field.
+    const parseKeep = (incoming: unknown, fallback: number | undefined): number | undefined => {
+      const parsed = incoming === undefined || incoming === null ? NaN : Number(incoming);
+      if (Number.isFinite(parsed)) return parsed;
+      return fallback;
+    };
+
+    startTransition(() => {
+      setLiveTickers((current) => {
+        const previous = current[upper];
+        const nextPrice = parseKeep(update.price, previous?.price) ?? 0;
+        const nextChangePct = parseKeep(update.change_pct_24h, previous?.changePct24h);
+        const nextVolume = parseKeep(update.volume_24h, previous?.volume24h) ?? 0;
+
+        if (
+          previous &&
+          previous.price === nextPrice &&
+          previous.changePct24h === nextChangePct &&
+          previous.volume24h === nextVolume
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [upper]: {
+            price: nextPrice,
+            changePct24h: nextChangePct,
+            volume24h: nextVolume,
+          },
+        };
+      });
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -926,10 +981,20 @@ export default function CryptoTradingPage() {
       const price = stable ? 1 : livePrices[symbol] ?? Number(mktAsset?.current_price ?? mktAsset?.price ?? 0);
       const total = balance.total;
       const value = total * price;
-      const changePct = stable ? 0 : Number(mktAsset?.price_change_percentage_24h ?? mktAsset?.change_pct_24h ?? 0);
+      let changePct = 0;
+      if (!stable) {
+        const live = liveTickers[symbol]?.changePct24h;
+        if (typeof live === "number" && Number.isFinite(live)) {
+          changePct = live;
+        } else {
+          const restPct = mktAsset?.price_change_percentage_24h ?? mktAsset?.change_pct_24h;
+          const restNum = typeof restPct === "number" ? restPct : Number(restPct);
+          changePct = Number.isFinite(restNum) ? restNum : 0;
+        }
+      }
       return { symbol, total, available: balance.available, reserved: balance.reserved, price, value, changePct, stable };
     }).filter((h) => h.total > 0).sort((a, b) => b.value - a.value);
-  }, [livePrices, marketBySymbol, snapshot, walletPreview]);
+  }, [liveTickers, livePrices, marketBySymbol, snapshot, walletPreview]);
 
   const positions = useMemo(() => snapshot?.positions ?? [], [snapshot]);
   const executionFeed = useMemo(() => snapshot?.execution_feed ?? [], [snapshot]);
@@ -996,13 +1061,16 @@ export default function CryptoTradingPage() {
   );
 
   const resolveAssetChangePct = useCallback(
-    (symbol: string, asset?: CryptoMarketData | null) =>
-      Number(
-        liveTickers[symbol]?.changePct24h ??
-          asset?.price_change_percentage_24h ??
-          asset?.change_pct_24h ??
-          0,
-      ),
+    (symbol: string, asset?: CryptoMarketData | null) => {
+      // Prefer live value only when it is a finite number. An undefined live
+      // value means we haven't received a valid tick yet — fall back to the
+      // REST snapshot so the indicator stays stable on the 24h baseline.
+      const live = liveTickers[symbol]?.changePct24h;
+      if (typeof live === "number" && Number.isFinite(live)) return live;
+      const restPct = asset?.price_change_percentage_24h ?? asset?.change_pct_24h;
+      const restNum = typeof restPct === "number" ? restPct : Number(restPct);
+      return Number.isFinite(restNum) ? restNum : 0;
+    },
     [liveTickers],
   );
 
@@ -1081,10 +1149,13 @@ export default function CryptoTradingPage() {
   const liveSymbols = useMemo(() => {
     return unique([
       ...(selectedSymbol ? [selectedSymbol] : []),
-      ...market.slice(0, 16).map((asset) => asset.symbol.toUpperCase()),
-      ...holdings.slice(0, 8).map((holding) => holding.symbol.toUpperCase()),
+      ...watchlist.slice(0, 24).map((symbol) => symbol.toUpperCase()),
+      ...market.slice(0, 40).map((asset) => asset.symbol.toUpperCase()),
+      ...holdings.slice(0, 12).map((holding) => holding.symbol.toUpperCase()),
+      ...positions.slice(0, 8).map((position) => position.symbol.toUpperCase()),
+      ...orders.slice(0, 8).map((order) => order.symbol.toUpperCase()),
     ]).filter((symbol) => !WALLET_STABLES.has(symbol));
-  }, [holdings, market, selectedSymbol]);
+  }, [holdings, market, orders, positions, selectedSymbol, watchlist]);
   const liveSymbolsKey = useMemo(() => liveSymbols.join("|"), [liveSymbols]);
 
   useEffect(() => {
@@ -1092,41 +1163,13 @@ export default function CryptoTradingPage() {
     if (symbols.length === 0) return;
 
     const unsubs = symbols.map((symbol) =>
-      priceWs.subscribe(symbol, (update) => {
-        const upper = update.symbol.toUpperCase();
-        const nextPrice = Number(update.price);
-        const nextChangePct = Number(update.change_pct_24h ?? 0);
-        const nextVolume = Number(update.volume_24h ?? 0);
-
-        startTransition(() => {
-          setLiveTickers((current) => {
-            const previous = current[upper];
-            if (
-              previous &&
-              previous.price === nextPrice &&
-              previous.changePct24h === nextChangePct &&
-              previous.volume24h === nextVolume
-            ) {
-              return current;
-            }
-
-            return {
-              ...current,
-              [upper]: {
-                price: nextPrice,
-                changePct24h: nextChangePct,
-                volume24h: nextVolume,
-              },
-            };
-          });
-        });
-      }),
+      priceWs.subscribe(symbol, applyLiveTickerUpdate),
     );
 
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [liveSymbolsKey]);
+  }, [applyLiveTickerUpdate, liveSymbolsKey]);
 
   useEffect(() => {
     if (selectedSymbol) return;
@@ -1220,6 +1263,23 @@ export default function CryptoTradingPage() {
     () => marketUniverseCollections[universeView],
     [marketUniverseCollections, universeView],
   );
+  const modalLiveSymbolsKey = useMemo(
+    () =>
+      universeModalOpen
+        ? modalUniverseItems.slice(0, 48).map((item) => item.symbol.toUpperCase()).join("|")
+        : "",
+    [modalUniverseItems, universeModalOpen],
+  );
+
+  useEffect(() => {
+    const symbols = modalLiveSymbolsKey.split("|").filter(Boolean);
+    if (symbols.length === 0) return;
+
+    const unsubs = symbols.map((symbol) => priceWs.subscribe(symbol, applyLiveTickerUpdate));
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, [applyLiveTickerUpdate, modalLiveSymbolsKey]);
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -1402,6 +1462,55 @@ export default function CryptoTradingPage() {
         : "Offline";
   const visiblePublicationReasons = selectedSignal?.notrade_reasons.slice(0, VISIBLE_PUBLICATION_FILTERS) ?? [];
   const hiddenPublicationReasonCount = Math.max((selectedSignal?.notrade_reasons.length ?? 0) - visiblePublicationReasons.length, 0);
+  const walletView = useMemo(() => {
+    const FIAT_SYMBOLS: Record<string, string> = { EUR: "\u20ac", USD: "$", GBP: "\u00a3", CHF: "CHF", JPY: "\u00a5" };
+    const isFiat = (symbol: string) => symbol in FIAT_SYMBOLS;
+    const fiatSymbol = (symbol: string) => FIAT_SYMBOLS[symbol] ?? "";
+
+    const items: WalletPreviewItem[] = walletPreview
+      .map((balance) => {
+        const sym = balance.currency.toUpperCase();
+        const fiat = isFiat(sym);
+        const stable = fiat || WALLET_STABLES.has(sym);
+        const marketAsset = marketBySymbol.get(sym);
+        const price = stable ? 1 : resolveAssetPrice(sym, marketAsset);
+        const value = fiat ? balance.total : stable ? balance.total : balance.total * price;
+        const changePct = stable ? 0 : resolveAssetChangePct(sym, marketAsset);
+        return {
+          sym,
+          fiat,
+          stable,
+          total: balance.total,
+          price,
+          value,
+          changePct,
+          fiatSym: fiatSymbol(sym),
+          image: marketAsset?.image,
+        };
+      })
+      .filter((item) => item.total > 0)
+      .sort((left, right) => right.value - left.value);
+
+    const totalValue = items.reduce((sum, item) => sum + (item.fiat ? 0 : item.value), 0);
+    const totalPnl24h = items.reduce((sum, item) => {
+      if (item.stable || item.changePct === 0 || item.value <= 0) return sum;
+      return sum + (item.value - item.value / (1 + item.changePct / 100));
+    }, 0);
+    const pnlPct = totalValue > 0 ? (totalPnl24h / (totalValue - totalPnl24h)) * 100 : 0;
+    const pnlPositive = totalPnl24h >= 0;
+    const cryptoItems = items.filter((item) => !item.fiat);
+    const displayItems = (cryptoItems.length > 0 ? cryptoItems : items).slice(0, TOP_WALLET_ITEMS);
+
+    return {
+      items,
+      displayItems,
+      totalValue,
+      totalPnl24h,
+      pnlPct,
+      pnlPositive,
+      hasOverflow: (cryptoItems.length > 0 ? cryptoItems.length : items.length) > TOP_WALLET_ITEMS,
+    };
+  }, [marketBySymbol, resolveAssetChangePct, resolveAssetPrice, walletPreview]);
 
   if (loading && market.length === 0) {
     return (
@@ -1462,103 +1571,92 @@ export default function CryptoTradingPage() {
         )}
 
         {/* ============ MY WALLET — always visible ============ */}
-        {(() => {
-          // ── Compute wallet totals ──
-          const FIAT_SYMBOLS: Record<string, string> = { EUR: "\u20ac", USD: "$", GBP: "\u00a3", CHF: "CHF", JPY: "\u00a5" };
-          const isFiat = (s: string) => s in FIAT_SYMBOLS;
-          const fiatSymbol = (s: string) => FIAT_SYMBOLS[s] ?? "";
-          const walletItems = walletPreview.map((b) => {
-            const sym = b.currency.toUpperCase();
-            const fiat = isFiat(sym);
-            const stable = fiat || WALLET_STABLES.has(sym);
-            const mktAsset = marketBySymbol.get(sym);
-            const price = stable ? 1 : livePrices[sym] ?? Number(mktAsset?.current_price ?? mktAsset?.price ?? 0);
-            const value = fiat ? b.total : stable ? b.total : b.total * price;
-            const changePct = stable ? 0 : Number(mktAsset?.price_change_percentage_24h ?? mktAsset?.change_pct_24h ?? 0);
-            return { sym, fiat, stable, total: b.total, price, value, changePct, fiatSym: fiatSymbol(sym) };
-          }).filter((i) => i.total > 0).sort((a, b) => b.value - a.value);
-
-          const totalValue = walletItems.reduce((s, i) => s + (i.fiat ? 0 : i.value), 0);
-          const totalPnl24h = walletItems.reduce((s, i) => {
-            if (i.stable || i.changePct === 0 || i.value <= 0) return s;
-            return s + (i.value - i.value / (1 + i.changePct / 100));
-          }, 0);
-          const pnlPct = totalValue > 0 ? (totalPnl24h / (totalValue - totalPnl24h)) * 100 : 0;
-          const pnlPositive = totalPnl24h >= 0;
-          const cryptoCount = walletItems.filter((i) => !i.fiat).length;
-          const fiatItems = walletItems.filter((i) => i.fiat);
-
-          return (
-            <section className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 md:p-5 mb-6">
-              {/* Header row: title + total + P&L */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5 accent-text" />
-                  <h2 className="text-base font-bold text-[var(--foreground)]">My Wallet</h2>
-                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]">Binance</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  {walletPreviewLoading && <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />}
-                  {!walletPreviewLoading && walletItems.length > 0 && (
-                    <div className="text-right">
-                      <p className="text-lg font-bold font-mono text-[var(--foreground)]">{format(totalValue)}</p>
-                      <div className={cn("flex items-center gap-1 justify-end text-[14px] font-semibold", pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                        {pnlPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                        <span>{pnlPositive ? "+" : ""}{format(totalPnl24h)}</span>
-                        <span className="text-[var(--text-muted)] font-normal">({pnlPositive ? "+" : ""}{pnlPct.toFixed(2)}%)</span>
-                      </div>
+        <section className="mb-6 flex h-[260px] flex-col rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 md:p-5">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 accent-text" />
+              <h2 className="text-base font-bold text-[var(--foreground)]">My Wallet</h2>
+              <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]">Binance</span>
+            </div>
+            <div className="flex items-start gap-3">
+              {walletView.hasOverflow ? (
+                <button
+                  type="button"
+                  onClick={() => setWalletModalOpen(true)}
+                  className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-[12px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg-strong)]"
+                >
+                  Voir tout
+                </button>
+              ) : null}
+              <div className="flex items-center gap-3">
+                {walletPreviewLoading ? <Loader2 className="mt-1 h-4 w-4 animate-spin text-[var(--text-muted)]" /> : null}
+                {!walletPreviewLoading && walletView.items.length > 0 ? (
+                  <div className="text-right">
+                    <p className="text-[24px] font-bold font-mono leading-none text-[var(--foreground)]">{format(walletView.totalValue)}</p>
+                    <div
+                      className={cn(
+                        "mt-1 flex items-center justify-end gap-1 text-[14px] font-semibold",
+                        walletView.pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]",
+                      )}
+                    >
+                      {walletView.pnlPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      <span>{walletView.pnlPositive ? "+" : ""}{format(walletView.totalPnl24h)}</span>
+                      <span className="font-normal text-[var(--text-muted)]">({walletView.pnlPositive ? "+" : ""}{walletView.pnlPct.toFixed(2)}%)</span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                ) : null}
               </div>
+            </div>
+          </div>
 
-              {/* Error state */}
-              {walletPreviewError ? (
-                <div className="px-1 py-1">
-                  <p className="text-[15px] text-[var(--danger)]">{walletPreviewError}</p>
-                  <p className="text-[13px] text-[var(--text-muted)] mt-0.5">Verifiez vos cles API dans Settings.</p>
-                </div>
-              ) : walletPreview.length === 0 && !walletPreviewLoading ? (
+          <div className="flex min-h-[156px] flex-1 flex-col overflow-hidden">
+            {walletPreviewError ? (
+              <div className="flex flex-1 flex-col justify-center px-1 py-1">
+                <p className="text-[15px] text-[var(--danger)]">{walletPreviewError}</p>
+                <p className="mt-0.5 text-[13px] text-[var(--text-muted)]">Verifiez vos cles API dans Settings.</p>
+              </div>
+            ) : walletPreview.length === 0 && !walletPreviewLoading ? (
+              <div className="flex flex-1 items-center">
                 <p className="text-[15px] text-[var(--text-muted)]">Aucun solde. Ajoutez vos cles Binance dans Settings.</p>
-              ) : (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {/* Fiat inline */}
-                  {fiatItems.map((item) => (
-                    <span key={item.sym} className="text-[16px] font-semibold text-[var(--text-secondary)]">
-                      {item.fiatSym}{item.total.toFixed(2)} <span className="text-[13px] text-[var(--text-muted)]">{item.sym}</span>
-                    </span>
-                  ))}
-                  {fiatItems.length > 0 && cryptoCount > 0 && <span className="text-[var(--glass-border)]"> |</span>}
-                  {/* Crypto inline — clickable, with icons + separators */}
-                  {walletItems.filter((i) => !i.fiat).map((item, idx, arr) => (
-                    <span key={item.sym} className="flex items-center gap-0">
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                  {walletView.displayItems.map((item, index) => (
+                    <div key={item.sym} className="flex items-center gap-x-5 gap-y-3">
                       <button
+                        type="button"
                         onClick={() => setSelectedSymbol(item.sym)}
                         className={cn(
-                          "flex items-center gap-1.5 py-0.5 transition-colors hover:text-[var(--page-accent)]",
+                          "flex items-center gap-2 py-0.5 text-left transition-colors hover:text-[var(--page-accent)]",
                           selectedSymbol === item.sym ? "text-[var(--page-accent)]" : "text-[var(--foreground)]",
                         )}
                       >
-                        <CryptoIcon symbol={item.sym} imageUrl={marketBySymbol.get(item.sym)?.image} size="xs" />
-                        <span className="text-[16px] font-bold">{item.sym}</span>
-                        <span className="text-[14px] text-[var(--text-muted)] font-mono">
-                          {item.total.toLocaleString(undefined, { maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2 })}
+                        <CryptoIcon symbol={item.sym} imageUrl={item.image} size="xs" />
+                        <span className="text-[15px] font-bold">{item.sym}</span>
+                        <span className="text-[13px] font-mono text-[var(--text-muted)]">
+                          {item.total.toLocaleString(undefined, {
+                            maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2,
+                          })}
                         </span>
-                        <span className="text-[15px] font-semibold font-mono">{item.price > 0 ? format(item.value) : "--"}</span>
-                        {item.changePct !== 0 && (
-                          <span className={cn("text-[13px] font-semibold", item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                            {item.changePct >= 0 ? "+" : ""}{item.changePct.toFixed(1)}%
-                          </span>
-                        )}
+                        <span className="text-[14px] font-semibold font-mono">{item.price > 0 ? format(item.value) : "--"}</span>
+                        <span
+                          className={cn(
+                            "text-[12px] font-semibold",
+                            item.stable ? "text-[var(--text-muted)]" : item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]",
+                          )}
+                        >
+                          {item.stable ? "Stable" : `${item.changePct >= 0 ? "+" : ""}${item.changePct.toFixed(1)}%`}
+                        </span>
                       </button>
-                      {idx < arr.length - 1 && <span className="text-[var(--glass-border)] mx-2">|</span>}
-                    </span>
+                      {index < walletView.displayItems.length - 1 ? <span className="text-[var(--glass-border)]">/</span> : null}
+                    </div>
                   ))}
                 </div>
-              )}
-            </section>
-          );
-        })()}
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* ============ MAIN LAYOUT: Scanner (left) + Chart (right) ============ */}
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
@@ -1888,6 +1986,18 @@ export default function CryptoTradingPage() {
         formatPrice={format}
       />
 
+      <WalletOverviewModal
+        open={walletModalOpen}
+        items={walletView.items}
+        selectedSymbol={selectedSymbol}
+        formatValue={format}
+        onClose={() => setWalletModalOpen(false)}
+        onSelectSymbol={(symbol) => {
+          setSelectedSymbol(symbol);
+          setWalletModalOpen(false);
+        }}
+      />
+
       {tradeModalOpen && selectedSymbol ? (
         <QuickTradeModal
           symbol={selectedSymbol}
@@ -1905,5 +2015,91 @@ export default function CryptoTradingPage() {
         />
       ) : null}
     </>
+  );
+}
+
+function WalletOverviewModal({
+  open,
+  items,
+  selectedSymbol,
+  formatValue,
+  onClose,
+  onSelectSymbol,
+}: {
+  open: boolean;
+  items: WalletPreviewItem[];
+  selectedSymbol: string | null;
+  formatValue: (value: number, decimals?: number) => string;
+  onClose: () => void;
+  onSelectSymbol: (symbol: string) => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative flex h-[min(85vh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[var(--glass-border)] bg-[var(--surface)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--glass-border)] px-5 py-4">
+          <div>
+            <h3 className="text-lg font-bold text-[var(--foreground)]">Wallet complet</h3>
+            <p className="mt-1 text-[13px] text-[var(--text-muted)]">{items.length} actifs detectes</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--glass-bg)] hover:text-[var(--foreground)]"
+            aria-label="Fermer le wallet"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+            {items.map((item) => (
+              <button
+                key={item.sym}
+                type="button"
+                disabled={item.fiat}
+                onClick={() => onSelectSymbol(item.sym)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-4 py-1 text-left transition-colors",
+                  item.fiat
+                    ? "cursor-default opacity-80"
+                    : "hover:text-[var(--page-accent)]",
+                  !item.fiat && selectedSymbol === item.sym ? "text-[var(--page-accent)]" : "",
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <CryptoIcon symbol={item.sym} imageUrl={item.image} size="sm" />
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-bold text-[var(--foreground)]">{item.sym}</p>
+                    <p className="truncate text-[12px] font-mono text-[var(--text-muted)]">
+                      {item.fiat ? `${item.fiatSym}${item.total.toFixed(2)}` : item.total.toLocaleString(undefined, {
+                        maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2,
+                      })}
+                    </p>
+                  </div>
+                </div>
+                <div className="ml-4 text-right">
+                  <p className="text-[15px] font-semibold font-mono text-[var(--foreground)]">{item.price > 0 ? formatValue(item.value) : "--"}</p>
+                  <p
+                    className={cn(
+                      "text-[12px] font-semibold",
+                      item.fiat || item.stable ? "text-[var(--text-muted)]" : item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]",
+                    )}
+                  >
+                    {item.fiat || item.stable ? "Stable" : `${item.changePct >= 0 ? "+" : ""}${item.changePct.toFixed(1)}%`}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
