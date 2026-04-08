@@ -1981,8 +1981,66 @@ export const aiApi = {
     fetchAI<{ status: string }>("/ai/chat/clear", { method: "POST", body: JSON.stringify({ agent_type: agentType, user_id: userId }) }),
   getAutoTradingStatus: () =>
     fetchAI<{ enabled: boolean; last_run: string | null; trades_today: number; total_pnl: number }>("/ai/auto-trading/status"),
-  toggleAutoTrading: (enabled: boolean) =>
-    fetchAI<{ enabled: boolean }>("/ai/auto-trading/toggle", { method: "POST", body: JSON.stringify({ enabled }) }),
+  toggleAutoTrading: (
+    enabled: boolean,
+    opts?: {
+      mode?: "paper" | "live" | "dry_run";
+      portfolio_id?: string;
+      interval_seconds?: number;
+      config?: Record<string, unknown>;
+    },
+  ) =>
+    fetchAI<{ enabled: boolean }>("/ai/auto-trading/toggle", {
+      method: "POST",
+      body: JSON.stringify({
+        enabled,
+        mode: opts?.mode,
+        portfolio_id: opts?.portfolio_id,
+        interval_seconds: opts?.interval_seconds,
+        config: opts?.config,
+      }),
+    }),
+  updateAutoConfig: (payload: {
+    mode?: "paper" | "live" | "dry_run";
+    interval_seconds?: number;
+    portfolio_id?: string;
+    breakers?: Record<string, unknown>;
+  }) =>
+    fetchAI<Record<string, unknown>>("/ai/auto-trading/config", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  emergencyStopAutoTrading: (reason?: string) =>
+    fetchAI<Record<string, unknown>>("/ai/auto-trading/emergency-stop", {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || "user_initiated" }),
+    }),
+  getAutoDecisions: (opts?: {
+    cycle_id?: string;
+    outcome?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (opts?.cycle_id) params.set("cycle_id", opts.cycle_id);
+    if (opts?.outcome) params.set("outcome", opts.outcome);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.offset) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return fetchAI<{ decisions: Array<Record<string, unknown>>; count: number }>(
+      `/ai/auto-trading/decisions${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getAutoTradeGroups: (opts?: { status?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.status) params.set("status", opts.status);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.offset) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return fetchAI<{ trade_groups: Array<Record<string, unknown>>; count: number }>(
+      `/ai/auto-trading/trade-groups${qs ? `?${qs}` : ""}`,
+    );
+  },
   getAutoTradingHistory: () =>
     fetchAI<Array<{
       timestamp: string;
@@ -2039,4 +2097,37 @@ export const newsApi = {
     fetchJson<NewsArticle[]>(`/news/feed/${symbol}?limit=${limit}`),
   getTrending: () => fetchJson<TrendingCoin[]>("/news/trending"),
   getSentiment: () => fetchJson<MarketSentiment>("/news/sentiment"),
+};
+
+// ---- SMS Notifications ----
+
+export const smsApi = {
+  getPreferences: () =>
+    fetchJson<{
+      phone_number: string | null;
+      phone_verified: boolean;
+      sms: { master_enabled: boolean; events: Record<string, boolean> };
+    }>("/sms/preferences"),
+  updatePreferences: (payload: {
+    master_enabled: boolean;
+    events: Record<string, boolean>;
+  }) =>
+    fetchJson<{ ok: boolean }>("/sms/preferences", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  startVerification: (phone: string) =>
+    fetchJson<{ status: string; channel: string }>("/sms/verify/start", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    }),
+  checkVerification: (phone: string, code: string) =>
+    fetchJson<{ status: string; verified: boolean }>("/sms/verify/check", {
+      method: "POST",
+      body: JSON.stringify({ phone, code }),
+    }),
+  sendTest: () =>
+    fetchJson<{ ok: boolean; sid?: string; error?: string }>("/sms/test", {
+      method: "POST",
+    }),
 };

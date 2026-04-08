@@ -51,6 +51,7 @@ class UserUpdate(BaseModel):
     ai_assistant_tone: Optional[str] = Field(None, pattern=r"^(concise|coach|analytical)$")
     timezone: Optional[str] = Field(None, max_length=50)
     language: Optional[str] = Field(None, pattern=r"^(fr|en|es|de)$")
+    phone_number: Optional[str] = Field(None, max_length=32)
     preferences: Optional[dict[str, Any]] = None
 
 
@@ -123,6 +124,8 @@ class UserResponse(BaseModel):
     ai_assistant_tone: str
     timezone: str = "Europe/Paris"
     language: str = "fr"
+    phone_number: Optional[str] = None
+    phone_verified: bool = False
     wallet_access_enabled: bool
     wallet_access_reason: str
     connected_exchanges_count: int

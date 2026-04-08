@@ -7,9 +7,11 @@ from fastapi import FastAPI
 
 from app.api.alerts import router as alerts_router
 from app.api.notifications import router as notifications_router
+from app.api.sms import router as sms_router
 from app.core.config import settings
 from app.services.email_dispatcher import get_dispatcher
 from app.services.recap_scheduler import get_scheduler
+from app.services.sms_dispatcher import sms_dispatcher
 from app.services.telegram import format_alert, send_message
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,7 @@ async def redis_subscriber():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the Redis subscriber, email dispatcher, and recap scheduler."""
+    """Start the Redis subscriber, email dispatcher, sms dispatcher and recap scheduler."""
     task = asyncio.create_task(redis_subscriber())
 
     dispatcher = get_dispatcher()
@@ -51,6 +53,8 @@ async def lifespan(app: FastAPI):
 
     scheduler = get_scheduler()
     scheduler.start()
+
+    await sms_dispatcher.start()
 
     logger.info("Notification service started")
     yield
@@ -62,6 +66,7 @@ async def lifespan(app: FastAPI):
         pass
 
     await dispatcher.stop()
+    await sms_dispatcher.stop()
     scheduler.stop()
     logger.info("Notification service stopped")
 
@@ -75,6 +80,7 @@ app = FastAPI(
 
 app.include_router(notifications_router)
 app.include_router(alerts_router)
+app.include_router(sms_router)
 
 
 @app.get("/health")

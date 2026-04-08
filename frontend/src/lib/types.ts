@@ -231,6 +231,98 @@ export type OrderWsEvent =
   | { event: "order_done"; order: Order }
   | { event: "warning"; message: string };
 
+// --- Auto-trading decisions & trade groups ---
+
+export type AutoMode = "paper" | "live" | "dry_run";
+
+export type AutoDecisionOutcome =
+  | "executed"
+  | "dry_run"
+  | "rejected_filter"
+  | "rejected_risk"
+  | "rejected_balance"
+  | "hold"
+  | "pending";
+
+export interface AutoDecision {
+  id: string;
+  cycle_id: string;
+  decided_at: string;
+  symbol: string;
+  action: "buy" | "sell" | "hold";
+  quantity?: string | null;
+  target_price?: string | null;
+  confidence: number;
+  score: number;
+  regime?: string | null;
+  scenario?: string | null;
+  reasoning: string;
+  decision_outcome: AutoDecisionOutcome;
+  outcome_reason?: string | null;
+  execution_order_id?: string | null;
+  trade_group_id?: string | null;
+  signals?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+}
+
+export interface TradeGroup {
+  id: string;
+  short_id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  status: "open" | "closed" | "cancelled";
+  entry_order_id?: string | null;
+  exit_order_id?: string | null;
+  entry_decision_id?: string | null;
+  exit_decision_id?: string | null;
+  entry_time?: string | null;
+  exit_time?: string | null;
+  holding_seconds?: number | null;
+  entry_quantity: string;
+  exit_quantity: string;
+  entry_price?: string | null;
+  exit_price?: string | null;
+  entry_fee?: string | null;
+  exit_fee?: string | null;
+  realized_pnl?: string | null;
+  realized_pnl_pct?: string | null;
+  entry_reason?: string | null;
+  exit_reason?: string | null;
+}
+
+export interface AutoBreakerConfig {
+  max_daily_loss_pct?: number;
+  max_consecutive_losses?: number;
+  symbol_cooldown_minutes?: number;
+  heartbeat_max_miss_seconds?: number;
+}
+
+export interface AutoStatusExtended {
+  enabled: boolean;
+  mode: AutoMode;
+  portfolio_id?: string | null;
+  cycle_id?: string | null;
+  last_run?: string | null;
+  last_regime?: string | null;
+  trades_today: number;
+  max_daily_trades: number;
+  total_pnl: number;
+  realized_pnl_today: string;
+  consecutive_losses: number;
+  cooldown_symbols: Record<string, string>;
+  heartbeat_at?: string | null;
+  next_cycle_at?: string | null;
+  interval_seconds: number;
+  confidence_threshold: number;
+  config: AutoBreakerConfig;
+  last_error?: string | null;
+}
+
+export interface SmsPreferences {
+  master_enabled: boolean;
+  events: Record<string, boolean>;
+}
+
 // --- Strategies ---
 
 export interface Strategy {

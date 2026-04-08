@@ -1,14 +1,26 @@
-"""Auto-Trading Agent — deterministic signal selection, scoped per user."""
+"""Auto-Trading Agent — deterministic signal selection, scoped per user.
+
+Refactored in the "auto-trading complet" phase to:
+    - Persist every decision in ``auto_decisions`` (Postgres) with a feature
+      snapshot and an audit hash chain.
+    - Link each BUY to its eventual SELL via ``trade_groups`` (FIFO).
+    - Enforce circuit breakers (daily loss, consecutive losses, heartbeat,
+      symbol cooldown after stop-loss).
+    - Publish SMS events on ``sms:events`` for the notification-service.
+    - Support three modes: ``paper`` (simulated fills), ``live`` (real
+      Binance), ``dry_run`` (decisions logged but no orders sent).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -16,6 +28,11 @@ from app.core.auth import DEFAULT_AI_USER_ID, get_auth_ttl_seconds
 from app.core.config import settings
 from app.core.llm_router import Complexity, chat_completion
 from app.memory.redis_client import get_redis
+from app.repositories.auto_repository import auto_repository
+from app.services import circuit_breakers
+from app.services.decision_logger import log_decision, serialize_ml_opportunity
+from app.services.sms_events import publish_event as publish_sms_event
+from app.services.trade_group_tracker import close_trade_group, open_trade_group
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +70,19 @@ class AutoTradingSession:
     auth_header: Optional[str] = None
     last_error: Optional[str] = None
     trade_day: Optional[str] = None
+
+    # Extended auto-trading fields (auto-trading complet phase)
+    mode: str = "paper"  # paper | live | dry_run
+    portfolio_id: Optional[str] = None
+    interval_seconds: int = 300
+    cycle_id: Optional[str] = None
+    cooldown_symbols: Dict[str, str] = field(default_factory=dict)
+    consecutive_losses: int = 0
+    realized_pnl_today: Decimal = Decimal("0")
+    portfolio_value_start_of_day: Optional[Decimal] = None
+    heartbeat_at: Optional[datetime] = None
+    next_cycle_at: Optional[datetime] = None
+    config: Dict[str, Any] = field(default_factory=dict)
 
 
 _sessions: dict[str, AutoTradingSession] = {}
@@ -93,9 +123,40 @@ def _sync_daily_counter(session: AutoTradingSession) -> None:
         session.trade_day = today
 
 
+def _session_state_for_breakers(session: AutoTradingSession) -> Dict[str, Any]:
+    """Snapshot used by circuit_breakers.check_all().
+
+    Intentionally minimal — just what the breakers need. Kept in sync with
+    the dataclass on purpose (no generic dict dump).
+    """
+    return {
+        "config": dict(session.config),
+        "cooldown_symbols": dict(session.cooldown_symbols),
+        "consecutive_losses": session.consecutive_losses,
+        "realized_pnl_today": session.realized_pnl_today,
+        "portfolio_value_start_of_day": session.portfolio_value_start_of_day,
+        "heartbeat_at": session.heartbeat_at,
+    }
+
+
 def _serializable_session(session: AutoTradingSession) -> dict[str, Any]:
     return {
         "enabled": session.enabled,
+        "mode": session.mode,
+        "portfolio_id": session.portfolio_id,
+        "interval_seconds": session.interval_seconds,
+        "cycle_id": session.cycle_id,
+        "cooldown_symbols": session.cooldown_symbols,
+        "consecutive_losses": session.consecutive_losses,
+        "realized_pnl_today": str(session.realized_pnl_today),
+        "portfolio_value_start_of_day": (
+            str(session.portfolio_value_start_of_day)
+            if session.portfolio_value_start_of_day is not None
+            else None
+        ),
+        "heartbeat_at": session.heartbeat_at.isoformat() if session.heartbeat_at else None,
+        "next_cycle_at": session.next_cycle_at.isoformat() if session.next_cycle_at else None,
+        "config": session.config,
         "trades_today": session.trades_today,
         "last_run": session.last_run,
         "last_regime": session.last_regime,
@@ -153,6 +214,19 @@ async def _restore_session(user_id: str) -> AutoTradingSession | None:
 
     session = AutoTradingSession(
         enabled=bool(payload.get("enabled", False)),
+        mode=str(payload.get("mode", "paper") or "paper"),
+        portfolio_id=payload.get("portfolio_id"),
+        interval_seconds=int(payload.get("interval_seconds", AUTO_TRADE_INTERVAL) or AUTO_TRADE_INTERVAL),
+        cycle_id=payload.get("cycle_id"),
+        cooldown_symbols=payload.get("cooldown_symbols") or {},
+        consecutive_losses=int(payload.get("consecutive_losses", 0) or 0),
+        realized_pnl_today=Decimal(str(payload.get("realized_pnl_today") or "0")),
+        portfolio_value_start_of_day=(
+            Decimal(str(payload["portfolio_value_start_of_day"]))
+            if payload.get("portfolio_value_start_of_day") is not None
+            else None
+        ),
+        config=payload.get("config") or {},
         trades_today=int(payload.get("trades_today", 0) or 0),
         last_run=payload.get("last_run"),
         last_regime=payload.get("last_regime"),
@@ -162,6 +236,17 @@ async def _restore_session(user_id: str) -> AutoTradingSession | None:
         last_error=payload.get("last_error"),
         trade_day=payload.get("trade_day"),
     )
+    # Parse datetime fields
+    for attr in ("heartbeat_at", "next_cycle_at"):
+        raw = payload.get(attr)
+        if isinstance(raw, str) and raw:
+            try:
+                parsed = datetime.fromisoformat(raw)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                setattr(session, attr, parsed)
+            except ValueError:
+                pass
     session.history = session.history[-AUTO_TRADING_HISTORY_LIMIT:]
     _sessions[user_id] = session
     return session
@@ -310,16 +395,28 @@ async def _execute_trade(
     quantity: Decimal,
     strategy: str,
     auth_header: Optional[str],
-) -> bool:
+) -> Dict[str, Any]:
     """Execute a trade with mandatory preflight + retry + auto-conversion.
 
     Uses /orders/execute-with-conversion which:
     - Preflights the order
     - Handles conversion chains (e.g. EUR → USDT → BTC)
     - Retries with exponential backoff on rate limit / timeout
+
+    Returns a result dict:
+        {
+            "success": bool,
+            "order_id": Optional[str],        # ID of the primary fill order
+            "filled_price": Optional[float],
+            "filled_quantity": Optional[float],
+            "fee": float,
+            "steps": list[dict],
+            "error_code": Optional[str],
+            "error_message": Optional[str],
+        }
     """
     if quantity <= 0:
-        return False
+        return {"success": False, "order_id": None, "error_message": "quantity_zero"}
 
     payload = {
         "symbol": symbol,
@@ -338,12 +435,14 @@ async def _execute_trade(
             "Auto-trade failed: %s %s qty=%s strategy=%s — no response",
             side, symbol, quantity, strategy,
         )
-        return False
+        return {"success": False, "order_id": None, "error_message": "no_response", "steps": []}
 
     status = response.get("status")
-    steps = response.get("steps", [])
+    steps = response.get("steps", []) or []
 
     if status == "filled":
+        # The primary (last) step is the actual target trade; earlier steps are conversions
+        primary = steps[-1] if steps else {}
         conversion_count = sum(1 for s in steps if s.get("note") == "conversion step")
         if conversion_count > 0:
             logger.info(
@@ -352,9 +451,18 @@ async def _execute_trade(
             )
         else:
             logger.info("Auto-trade filled: %s %s qty=%s", side, symbol, quantity)
-        return True
+        return {
+            "success": True,
+            "order_id": primary.get("order_id"),
+            "filled_price": primary.get("filled_price") or primary.get("avg_price"),
+            "filled_quantity": primary.get("filled_quantity") or float(quantity),
+            "fee": float(primary.get("fee") or 0),
+            "steps": steps,
+            "error_code": None,
+            "error_message": None,
+        }
 
-    error = response.get("error", {})
+    error = response.get("error", {}) or {}
     logger.error(
         "Auto-trade failed: %s %s qty=%s strategy=%s code=%s reason=%s steps=%d",
         side, symbol, quantity, strategy,
@@ -362,7 +470,13 @@ async def _execute_trade(
         error.get("user_message", "unknown error"),
         len(steps),
     )
-    return False
+    return {
+        "success": False,
+        "order_id": None,
+        "steps": steps,
+        "error_code": error.get("code", "UNKNOWN"),
+        "error_message": error.get("user_message") or "execution_failed",
+    }
 
 
 def _rank_signals(signals: list[dict]) -> list[dict]:
@@ -482,12 +596,186 @@ async def _build_cycle_analysis(
         return _build_fallback_analysis(regime, signals, executed), None, None
 
 
+async def _handle_execution_result(
+    *,
+    user_id: str,
+    session: AutoTradingSession,
+    decision_id: str,
+    trade: Dict[str, Any],
+    result: Dict[str, Any],
+    redis,
+) -> None:
+    """After an order execution, link it to a trade_group and notify SMS.
+
+    - BUY → open new trade_group (or extend the existing open one).
+    - SELL → close the oldest open trade_group for the symbol.
+    - Publish the appropriate sms:events payload.
+    """
+    symbol = str(trade["symbol"]).upper()
+    side = str(trade["action"]).lower()
+    success = bool(result.get("success"))
+
+    if not success:
+        await auto_repository.update_decision(
+            decision_id,
+            outcome="rejected_filter",
+            outcome_reason=result.get("error_message") or "execution_failed",
+        )
+        await publish_sms_event(
+            redis,
+            user_id,
+            "trade_failed",
+            {
+                "symbol": symbol,
+                "side": side,
+                "reason": result.get("error_message"),
+                "code": result.get("error_code"),
+            },
+        )
+        return
+
+    order_id = result.get("order_id")
+    filled_price = float(result.get("filled_price") or trade.get("price") or 0)
+    filled_qty = float(result.get("filled_quantity") or trade.get("quantity") or 0)
+    fee = float(result.get("fee") or 0)
+
+    trade_group_id: Optional[str] = None
+    if side == "buy":
+        trade_group_id = await open_trade_group(
+            user_id=user_id,
+            portfolio_id=session.portfolio_id,
+            symbol=symbol,
+            side="buy",
+            entry_decision_id=decision_id,
+            entry_order_id=order_id,
+            entry_quantity=filled_qty,
+            entry_price=filled_price,
+            entry_fee=fee,
+            entry_reason=str(trade.get("reason") or ""),
+        )
+    elif side == "sell":
+        trade_group_id = await close_trade_group(
+            user_id=user_id,
+            symbol=symbol,
+            exit_decision_id=decision_id,
+            exit_order_id=order_id,
+            exit_quantity=filled_qty,
+            exit_price=filled_price,
+            exit_fee=fee,
+            exit_reason=str(trade.get("reason") or ""),
+            side="buy",  # match the long open group
+        )
+        # Register outcome for the circuit breakers
+        if trade_group_id:
+            group = await auto_repository.get_trade_group(trade_group_id)
+            if group is not None and group.realized_pnl is not None:
+                pnl_float = float(group.realized_pnl)
+                breaker_state = _session_state_for_breakers(session)
+                circuit_breakers.register_trade_outcome(
+                    breaker_state,
+                    pnl=pnl_float,
+                    symbol=symbol,
+                    was_stop_loss=pnl_float < 0,  # paper approximation
+                )
+                session.realized_pnl_today = breaker_state["realized_pnl_today"]
+                session.consecutive_losses = breaker_state["consecutive_losses"]
+                session.cooldown_symbols = breaker_state["cooldown_symbols"]
+                session.total_pnl = float(session.realized_pnl_today)
+
+    await auto_repository.update_decision(
+        decision_id,
+        outcome="executed",
+        execution_order_id=order_id,
+        trade_group_id=trade_group_id,
+    )
+
+    # SMS event per side
+    sms_event_type = "trade_buy" if side == "buy" else "trade_sell"
+    await publish_sms_event(
+        redis,
+        user_id,
+        sms_event_type,
+        {
+            "symbol": symbol,
+            "side": side,
+            "quantity": filled_qty,
+            "price": filled_price,
+            "trade_group_id": trade_group_id,
+            "portfolio_id": session.portfolio_id,
+            "reason": trade.get("reason"),
+        },
+    )
+
+
 async def run_cycle(
     user_id: str,
     auth_header: Optional[str],
     trades_today: int,
+    *,
+    session: Optional[AutoTradingSession] = None,
 ) -> dict:
-    """Run one auto-trading analysis cycle for a specific user."""
+    """Run one auto-trading analysis cycle for a specific user.
+
+    When ``session`` is provided, the cycle:
+        - Checks circuit breakers at start (and short-circuits if tripped)
+        - Persists every evaluated opportunity to ``auto_decisions``
+        - Links fills to ``trade_groups`` and updates P&L counters
+        - Publishes SMS events for fills / failures
+    """
+    session = session if session is not None else _session(user_id)
+    cycle_id = uuid.uuid4().hex
+    session.cycle_id = cycle_id
+    redis = None
+    try:
+        redis = await get_redis()
+    except Exception:
+        redis = None
+
+    # ------------------------------------------------------------------
+    # Circuit breakers — short-circuit if tripped
+    # ------------------------------------------------------------------
+    breaker_state = _session_state_for_breakers(session)
+    breaker_result = circuit_breakers.check_all(breaker_state)
+    if not breaker_result.ok:
+        logger.warning(
+            "Auto-trader breaker tripped user=%s reason=%s action=%s",
+            user_id,
+            breaker_result.reason,
+            breaker_result.action,
+        )
+        session.last_error = breaker_result.reason
+        await publish_sms_event(
+            redis,
+            user_id,
+            "circuit_breaker",
+            {
+                "reason": breaker_result.reason,
+                "action": breaker_result.action,
+                "cycle_id": cycle_id,
+            },
+        )
+        if breaker_result.action == "stop":
+            session.enabled = False
+        # Return an early cycle result so the loop can persist state cleanly
+        return {
+            "user_id": user_id,
+            "timestamp": _now(),
+            "cycle_id": cycle_id,
+            "analysis": f"Breaker tripped: {breaker_result.reason}",
+            "recommendations": 0,
+            "executed": 0,
+            "trades": [],
+            "provider": None,
+            "model": None,
+            "regime": "breaker",
+            "signals_scanned": 0,
+            "candidates": [],
+            "breaker_reason": breaker_result.reason,
+        }
+
+    # ------------------------------------------------------------------
+    # Fetch data
+    # ------------------------------------------------------------------
     markets = await _fetch_json(
         f"{settings.MARKET_DATA_URL}/api/v1/markets/top",
         params={"limit": 12},
@@ -524,16 +812,95 @@ async def run_cycle(
     remaining_trade_budget = max(0, MAX_DAILY_TRADES - trades_today)
     cycle_trades = _select_trades(ranked_signals, balances, remaining_trade_budget)
 
+    # ------------------------------------------------------------------
+    # Persist every evaluated opportunity (executed + rejected + watch)
+    # ------------------------------------------------------------------
+    decision_id_by_symbol: Dict[str, str] = {}
+    selected_symbols = {str(t["symbol"]).upper() for t in cycle_trades}
+
+    for opp in ranked_signals:
+        symbol = str(opp.get("symbol", "")).upper()
+        if not symbol:
+            continue
+        action = str(opp.get("action", "hold")).lower()
+        feature_payload = serialize_ml_opportunity(opp)
+
+        in_cooldown = circuit_breakers.is_symbol_in_cooldown(breaker_state, symbol)
+        will_execute = symbol in selected_symbols and not in_cooldown
+        pre_outcome = "pending" if will_execute else (
+            "rejected_risk" if in_cooldown else "rejected_filter"
+        )
+        pre_reason = (
+            "symbol_cooldown" if in_cooldown
+            else ("selected_for_execution" if will_execute else "not_selected_by_ranker")
+        )
+
+        decision_id = await log_decision(
+            user_id=user_id,
+            cycle_id=cycle_id,
+            portfolio_id=session.portfolio_id,
+            symbol=symbol,
+            action=action,
+            confidence=float(opp.get("confidence") or 0),
+            score=float(opp.get("score") or 0),
+            quantity=None,
+            target_price=float(opp.get("price") or 0) or None,
+            regime=str(opp.get("regime") or "") or None,
+            scenario=str(opp.get("scenario") or "") or None,
+            signals=feature_payload["signals"],
+            context=feature_payload["context"],
+            reasoning=str(opp.get("reasoning") or ""),
+            outcome=pre_outcome,
+            outcome_reason=pre_reason,
+        )
+        decision_id_by_symbol[symbol] = decision_id
+
+    # ------------------------------------------------------------------
+    # Execute selected trades (dry-run skips the actual POST)
+    # ------------------------------------------------------------------
     executed: list[dict] = []
     for trade in cycle_trades:
-        success = await _execute_trade(
+        symbol = str(trade["symbol"]).upper()
+        decision_id = decision_id_by_symbol.get(symbol)
+        if decision_id is None:
+            # Shouldn't happen, but stay defensive
+            continue
+
+        if session.mode == "dry_run":
+            await auto_repository.update_decision(
+                decision_id,
+                outcome="dry_run",
+                outcome_reason="dry_run_mode",
+            )
+            executed.append(
+                {
+                    **{k: trade[k] for k in ("symbol", "action", "amount_usd",
+                                              "confidence", "reason", "regime",
+                                              "strategy", "price")},
+                    "dry_run": True,
+                    "decision_id": decision_id,
+                }
+            )
+            continue
+
+        result = await _execute_trade(
             trade["symbol"],
             trade["action"],
             trade["quantity"],
             trade["strategy"],
             auth_header=auth_header,
         )
-        if success:
+
+        await _handle_execution_result(
+            user_id=user_id,
+            session=session,
+            decision_id=decision_id,
+            trade=trade,
+            result=result,
+            redis=redis,
+        )
+
+        if result.get("success"):
             executed.append(
                 {
                     "symbol": trade["symbol"],
@@ -544,6 +911,8 @@ async def run_cycle(
                     "regime": trade["regime"],
                     "strategy": trade["strategy"],
                     "price": trade["price"],
+                    "decision_id": decision_id,
+                    "trade_group_id": None,  # filled by handler via DB
                 }
             )
 
@@ -559,8 +928,14 @@ async def run_cycle(
     )
     timestamp = _now()
 
+    # Update heartbeat and next_cycle_at for the dead-man switch + UI countdown
+    session.heartbeat_at = timestamp
+    from datetime import timedelta as _timedelta
+    session.next_cycle_at = timestamp + _timedelta(seconds=session.interval_seconds)
+
     return {
         "user_id": user_id,
+        "cycle_id": cycle_id,
         "timestamp": timestamp,
         "analysis": analysis,
         "recommendations": len(ranked_signals),
@@ -586,7 +961,10 @@ async def run_cycle(
 async def _auto_loop(user_id: str) -> None:
     """Background loop that runs auto-trading cycles for one user."""
     session = _session(user_id)
-    logger.info("Auto-trader started for user=%s (interval=%ds)", user_id, AUTO_TRADE_INTERVAL)
+    logger.info(
+        "Auto-trader started for user=%s (mode=%s interval=%ds)",
+        user_id, session.mode, session.interval_seconds,
+    )
 
     while session.enabled:
         try:
@@ -596,7 +974,9 @@ async def _auto_loop(user_id: str) -> None:
                     "Missing authorization for user-scoped auto-trading"
                 )
 
-            result = await run_cycle(user_id, session.auth_header, session.trades_today)
+            result = await run_cycle(
+                user_id, session.auth_header, session.trades_today, session=session
+            )
             session.last_run = result.get("timestamp")
             session.last_regime = result.get("regime")
             session.trades_today = min(
@@ -605,6 +985,45 @@ async def _auto_loop(user_id: str) -> None:
             )
             session.history.append(result)
             session.history = session.history[-AUTO_TRADING_HISTORY_LIMIT:]
+
+            # Persist session snapshot to gluetrade_trading DB (in addition
+            # to the existing Redis mirror)
+            try:
+                await auto_repository.upsert_session(
+                    {
+                        "user_id": user_id,
+                        "portfolio_id": session.portfolio_id,
+                        "enabled": session.enabled,
+                        "mode": session.mode,
+                        "interval_seconds": session.interval_seconds,
+                        "last_cycle_at": session.heartbeat_at,
+                        "next_cycle_at": session.next_cycle_at,
+                        "heartbeat_at": session.heartbeat_at,
+                        "cycles_today": int(session.trades_today),
+                        "trades_today": int(session.trades_today),
+                        "realized_pnl_today": Decimal(str(session.realized_pnl_today)),
+                        "consecutive_losses": int(session.consecutive_losses),
+                        "portfolio_value_start_of_day": session.portfolio_value_start_of_day,
+                        "cooldown_symbols": dict(session.cooldown_symbols),
+                        "config": dict(session.config),
+                        "last_error": session.last_error,
+                        "trade_day": session.trade_day,
+                    }
+                )
+            except Exception as exc:
+                logger.debug("auto_repository upsert_session failed: %s", exc)
+
+            if not session.enabled:
+                # Breaker tripped during run_cycle — exit the loop cleanly
+                session.last_error = session.last_error or "Auto-trader disabled by circuit breaker"
+                await _persist_session(user_id)
+                logger.warning(
+                    "Auto-trader disabled by breaker user=%s: %s",
+                    user_id,
+                    session.last_error,
+                )
+                break
+
             session.last_error = None
             await _persist_session(user_id)
 
@@ -628,7 +1047,7 @@ async def _auto_loop(user_id: str) -> None:
             logger.exception("Auto-trade loop error for user=%s", user_id)
 
         try:
-            await asyncio.sleep(AUTO_TRADE_INTERVAL)
+            await asyncio.sleep(session.interval_seconds or AUTO_TRADE_INTERVAL)
         except asyncio.CancelledError:
             break
 
@@ -642,11 +1061,33 @@ async def start(
     auth_header: Optional[str] = None,
     *,
     restore: bool = False,
+    mode: Optional[str] = None,
+    portfolio_id: Optional[str] = None,
+    interval_seconds: Optional[int] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Start the auto-trading loop for a specific user."""
+    """Start the auto-trading loop for a specific user.
+
+    Extra params:
+        mode: "paper" | "live" | "dry_run"
+        portfolio_id: which portfolio the auto-trader operates on
+        interval_seconds: cycle interval (overrides AUTO_TRADE_INTERVAL)
+        config: per-user circuit-breaker overrides
+    """
     session = _session(user_id)
     if auth_header:
         session.auth_header = auth_header
+    if mode:
+        session.mode = mode
+    if portfolio_id is not None:
+        session.portfolio_id = portfolio_id
+    if interval_seconds:
+        session.interval_seconds = max(60, min(int(interval_seconds), 3600))
+    if config:
+        merged = dict(session.config or {})
+        merged.update(config)
+        session.config = merged
+
     _sync_daily_counter(session)
     if session.enabled and session.task and not session.task.done():
         await _persist_session(user_id)
@@ -657,6 +1098,93 @@ async def start(
     session.last_error = None
     session.task = asyncio.create_task(_auto_loop(user_id))
     await _persist_session(user_id)
+    try:
+        redis = await get_redis()
+        await publish_sms_event(
+            redis,
+            user_id,
+            "auto_armed",
+            {
+                "mode": session.mode,
+                "interval_seconds": session.interval_seconds,
+                "portfolio_id": session.portfolio_id,
+            },
+        )
+    except Exception:
+        pass
+
+
+async def emergency_stop(user_id: str, *, reason: str = "user_initiated") -> Dict[str, Any]:
+    """Cancel every open order + disable the session + publish SMS alert.
+
+    Returns a summary ``{cancelled: N, errors: [...]}``.
+    """
+    session = _sessions.get(user_id)
+    summary: Dict[str, Any] = {"cancelled": 0, "errors": []}
+
+    # Disable the loop first so a new cycle doesn't race with the cancels.
+    if session is not None:
+        session.enabled = False
+        task = session.task
+        session.task = None
+        if task and not task.done():
+            task.cancel()
+            try:
+                await asyncio.gather(task, return_exceptions=True)
+            except Exception:
+                pass
+        session.last_error = f"Emergency stop: {reason}"
+
+    # Try to fetch open orders from trading-engine and cancel each
+    auth_header = session.auth_header if session else None
+    if auth_header:
+        open_orders = await _fetch_json(
+            f"{settings.TRADING_URL}/api/v1/orders/open",
+            auth_header=auth_header,
+        )
+        if isinstance(open_orders, dict):
+            order_list = open_orders.get("orders", []) or []
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for order in order_list:
+                    order_id = order.get("id")
+                    if not order_id:
+                        continue
+                    try:
+                        resp = await client.delete(
+                            f"{settings.TRADING_URL}/api/v1/orders/{order_id}",
+                            headers={"Authorization": auth_header},
+                        )
+                        if resp.status_code < 400:
+                            summary["cancelled"] = int(summary["cancelled"]) + 1
+                        else:
+                            summary["errors"].append(
+                                f"{order_id}: HTTP {resp.status_code}"
+                            )
+                    except Exception as exc:
+                        summary["errors"].append(f"{order_id}: {exc}")
+
+    if session is not None:
+        await _persist_session(user_id)
+
+    try:
+        redis = await get_redis()
+        await publish_sms_event(
+            redis,
+            user_id,
+            "emergency_halt",
+            {"reason": reason, "cancelled": summary["cancelled"]},
+        )
+    except Exception:
+        pass
+
+    logger.warning(
+        "Emergency stop user=%s reason=%s cancelled=%d errors=%d",
+        user_id,
+        reason,
+        summary["cancelled"],
+        len(summary["errors"]),
+    )
+    return summary
 
 
 async def stop(user_id: str) -> None:
@@ -672,6 +1200,40 @@ async def stop(user_id: str) -> None:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
     await _persist_session(user_id)
+    try:
+        redis = await get_redis()
+        await publish_sms_event(redis, user_id, "auto_disarmed", {})
+    except Exception:
+        pass
+
+
+async def update_config(
+    user_id: str,
+    *,
+    mode: Optional[str] = None,
+    interval_seconds: Optional[int] = None,
+    portfolio_id: Optional[str] = None,
+    breakers: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Update auto-trader per-user config without stopping the loop."""
+    session = _session(user_id)
+    if mode is not None:
+        session.mode = mode
+    if interval_seconds is not None:
+        session.interval_seconds = max(60, min(int(interval_seconds), 3600))
+    if portfolio_id is not None:
+        session.portfolio_id = portfolio_id
+    if breakers:
+        merged = dict(session.config or {})
+        merged.update(breakers)
+        session.config = merged
+    await _persist_session(user_id)
+    return {
+        "mode": session.mode,
+        "interval_seconds": session.interval_seconds,
+        "portfolio_id": session.portfolio_id,
+        "config": session.config,
+    }
 
 
 async def shutdown() -> None:
@@ -695,13 +1257,22 @@ def get_status(user_id: str) -> dict:
     _sync_daily_counter(session)
     return {
         "enabled": session.enabled,
+        "mode": session.mode,
+        "portfolio_id": session.portfolio_id,
+        "cycle_id": session.cycle_id,
         "last_run": session.last_run,
         "last_regime": session.last_regime,
         "trades_today": session.trades_today,
         "max_daily_trades": MAX_DAILY_TRADES,
         "total_pnl": session.total_pnl,
-        "interval_seconds": AUTO_TRADE_INTERVAL,
+        "realized_pnl_today": str(session.realized_pnl_today),
+        "consecutive_losses": session.consecutive_losses,
+        "cooldown_symbols": session.cooldown_symbols,
+        "heartbeat_at": session.heartbeat_at.isoformat() if session.heartbeat_at else None,
+        "next_cycle_at": session.next_cycle_at.isoformat() if session.next_cycle_at else None,
+        "interval_seconds": session.interval_seconds or AUTO_TRADE_INTERVAL,
         "confidence_threshold": CONFIDENCE_THRESHOLD,
+        "config": session.config,
         "last_error": session.last_error,
     }
 

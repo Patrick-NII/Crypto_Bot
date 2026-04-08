@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     # Email dispatcher throttling (per user, per minute)
     EMAIL_THROTTLE_MAX_PER_MIN: int = 5
 
+    # SMS throttling (per user, per minute)
+    SMS_THROTTLE_MAX_PER_MIN: int = 5
+
+    # Twilio credentials
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_PHONE_NUMBER: str = ""  # E.164 sender number
+    TWILIO_MESSAGING_SERVICE_SID: str = ""  # alternative to TWILIO_PHONE_NUMBER
+    TWILIO_VERIFY_SERVICE_SID: str = ""
+
     class Config:
         env_file = ".env"
 

@@ -29,10 +29,13 @@ import { LiveSparkline } from "@/components/charts/live-sparkline";
 import { QuickTradeModal } from "@/components/trading/quick-trade-modal";
 import { MarketUniverseModal, type MarketUniverseItem } from "@/components/trading/market-universe-modal";
 import { ScoreGauge, SignalReadout } from "@/components/trading/signal-score";
+import { useModalViewport } from "@/hooks/use-modal-viewport";
 import {
   type AutoTradingHistorySnapshot,
   type AutoTradingStatusSnapshot,
 } from "@/components/trading/auto-trading-monitor";
+import { AutoLogPanel } from "@/components/trading/auto-log-panel";
+import type { AutoStatusExtended } from "@/lib/types";
 import { type SignalAction } from "@/components/trading/signal-badge";
 import { ApiError, aiApi, analyticsApi, authApi, binanceApi, portfolioApi, pricesApi, signalsApi, strategiesApi, tradingApi } from "@/lib/api";
 import {
@@ -68,9 +71,9 @@ const DEFAULT_WATCHLIST = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AV
 const TRADING_VIEW_CACHE_KEY = "gluetrade-trading-view:v5";
 const TRADING_VIEW_CACHE_TTL = 300_000;
 const SCANNER_BLOCKLIST = new Set(["USDC", "USDT", "USD1", "FDUSD", "TUSD", "USDE", "XAUT", "PAXG", "STO", "U"]);
-const COMPACT_MOVER_ROWS = 4;
-const VISIBLE_PUBLICATION_FILTERS = 2;
 const TOP_WALLET_ITEMS = 3;
+const MAX_SCANNER_ITEMS = 6;
+const FIAT_SYMBOLS: Record<string, string> = { EUR: "€", USD: "$", GBP: "£", CHF: "CHF", JPY: "¥" };
 
 interface SignalDetail {
   symbol: string;
@@ -180,6 +183,24 @@ interface TradingViewCache {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function formatAccountDisplayName(raw?: string | null): string {
+  if (!raw) return "Votre compte";
+  const base = raw.includes("@") ? raw.split("@")[0] : raw;
+  const normalized = base
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return "Votre compte";
+
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 function readObjectCache<T>(key: string, ttl: number): T | null {
@@ -502,13 +523,6 @@ function formatSetupType(setupType: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function compactMetricNumber(value: number) {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  return `${Math.round(value)}`;
-}
-
 function computeDiscoveryScore({
   changePct24h,
   volume24h,
@@ -618,16 +632,17 @@ export default function CryptoTradingPage() {
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [chartType, setChartType] = useState<DeskChartType>("candlestick");
   const [moversView, setMoversView] = useState<MarketMoversView>("candidates");
-  const [moversSortBy, setMoversSortBy] = useState<"default" | "price" | "change" | "volume">("default");
-  const [moversSortAsc, setMoversSortAsc] = useState(false);
   const [universeView, setUniverseView] = useState<MarketUniverseView>("all");
   const [universeModalOpen, setUniverseModalOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
   // ---- Live Wallet (always fetched, independent of walletUnlocked) ----
   const [walletPreview, setWalletPreview] = useState<Array<{ currency: string; available: number; reserved: number; total: number }>>([]);
   const [walletPreviewLoading, setWalletPreviewLoading] = useState(true);
   const [walletPreviewError, setWalletPreviewError] = useState<string | null>(null);
+  const [fiatQuoteRates, setFiatQuoteRates] = useState<Record<string, number>>({ USD: 1 });
 
   const applyLiveTickerUpdate = useCallback((update: { symbol: string; price?: number; change_pct_24h?: number; volume_24h?: number }) => {
     const upper = update.symbol.toUpperCase();
@@ -692,6 +707,16 @@ export default function CryptoTradingPage() {
     void fetchWallet();
     const interval = window.setInterval(() => void fetchWallet(), 30_000);
     return () => { cancelled = true; window.clearInterval(interval); };
+  }, []);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      setViewportWidth(window.innerWidth);
+      setViewportHeight(window.innerHeight);
+    };
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   // Watchlist + search
@@ -996,11 +1021,49 @@ export default function CryptoTradingPage() {
     }).filter((h) => h.total > 0).sort((a, b) => b.value - a.value);
   }, [liveTickers, livePrices, marketBySymbol, snapshot, walletPreview]);
 
+  useEffect(() => {
+    const sourceSymbols =
+      walletPreview.length > 0
+        ? walletPreview.map((balance) => balance.currency.toUpperCase())
+        : holdings.map((holding) => holding.symbol.toUpperCase());
+    const fiatSymbols = Array.from(
+      new Set(
+        sourceSymbols.filter((symbol) => symbol in FIAT_SYMBOLS && symbol !== "USD"),
+      ),
+    );
+
+    if (fiatSymbols.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(
+      fiatSymbols.map(async (symbol) => {
+        try {
+          const ticker = await binanceApi.getTicker(symbol);
+          const raw = Number(ticker.lastPrice ?? ticker.price ?? 0);
+          return [symbol, Number.isFinite(raw) && raw > 0 ? raw : 1] as const;
+        } catch {
+          return [symbol, 1] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setFiatQuoteRates((current) => ({
+        ...current,
+        USD: 1,
+        ...Object.fromEntries(entries),
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [holdings, walletPreview]);
+
   const positions = useMemo(() => snapshot?.positions ?? [], [snapshot]);
   const executionFeed = useMemo(() => snapshot?.execution_feed ?? [], [snapshot]);
-  const portfolioHeadline = useMemo(
-    () => snapshot?.portfolio?.name ?? snapshot?.portfolios[0]?.name ?? "Primary portfolio",
-    [snapshot],
+  const accountHeadline = useMemo(
+    () => formatAccountDisplayName(account?.username ?? account?.email ?? null),
+    [account],
   );
 
   const portfolioValue = useMemo(
@@ -1195,6 +1258,11 @@ export default function CryptoTradingPage() {
     });
   }, [market, signalMap, watchlist]);
 
+  const visibleScannerAssets = useMemo(
+    () => scannerAssets.slice(0, MAX_SCANNER_ITEMS),
+    [scannerAssets],
+  );
+
   const marketUniverseItems = useMemo<MarketUniverseItem[]>(() => {
     return market
       .filter((asset) => isScannerEligibleSymbol(asset.symbol))
@@ -1244,20 +1312,6 @@ export default function CryptoTradingPage() {
 
     return { all, gainers, losers, candidates };
   }, [marketUniverseItems]);
-
-  const compactMoversItems = useMemo(() => {
-    const base = [...marketUniverseCollections[moversView]];
-    if (moversSortBy !== "default") {
-      base.sort((a, b) => {
-        let diff = 0;
-        if (moversSortBy === "price") diff = a.price - b.price;
-        else if (moversSortBy === "change") diff = a.changePct24h - b.changePct24h;
-        else if (moversSortBy === "volume") diff = a.volume24h - b.volume24h;
-        return moversSortAsc ? diff : -diff;
-      });
-    }
-    return base.slice(0, COMPACT_MOVER_ROWS);
-  }, [marketUniverseCollections, moversView, moversSortBy, moversSortAsc]);
 
   const modalUniverseItems = useMemo(
     () => marketUniverseCollections[universeView],
@@ -1460,21 +1514,29 @@ export default function CryptoTradingPage() {
       : market.length > 0
         ? "Snapshot mode"
         : "Offline";
-  const visiblePublicationReasons = selectedSignal?.notrade_reasons.slice(0, VISIBLE_PUBLICATION_FILTERS) ?? [];
-  const hiddenPublicationReasonCount = Math.max((selectedSignal?.notrade_reasons.length ?? 0) - visiblePublicationReasons.length, 0);
   const walletView = useMemo(() => {
-    const FIAT_SYMBOLS: Record<string, string> = { EUR: "\u20ac", USD: "$", GBP: "\u00a3", CHF: "CHF", JPY: "\u00a5" };
     const isFiat = (symbol: string) => symbol in FIAT_SYMBOLS;
     const fiatSymbol = (symbol: string) => FIAT_SYMBOLS[symbol] ?? "";
 
-    const items: WalletPreviewItem[] = walletPreview
+    const sourceBalances =
+      walletPreview.length > 0
+        ? walletPreview.map((balance) => ({
+            currency: balance.currency,
+            total: balance.total,
+          }))
+        : holdings.map((holding) => ({
+            currency: holding.symbol,
+            total: holding.total,
+          }));
+
+    const items: WalletPreviewItem[] = sourceBalances
       .map((balance) => {
         const sym = balance.currency.toUpperCase();
         const fiat = isFiat(sym);
         const stable = fiat || WALLET_STABLES.has(sym);
         const marketAsset = marketBySymbol.get(sym);
-        const price = stable ? 1 : resolveAssetPrice(sym, marketAsset);
-        const value = fiat ? balance.total : stable ? balance.total : balance.total * price;
+        const price = fiat ? (fiatQuoteRates[sym] ?? 1) : stable ? 1 : resolveAssetPrice(sym, marketAsset);
+        const value = balance.total * price;
         const changePct = stable ? 0 : resolveAssetChangePct(sym, marketAsset);
         return {
           sym,
@@ -1491,26 +1553,51 @@ export default function CryptoTradingPage() {
       .filter((item) => item.total > 0)
       .sort((left, right) => right.value - left.value);
 
-    const totalValue = items.reduce((sum, item) => sum + (item.fiat ? 0 : item.value), 0);
+    const totalValue = items.reduce((sum, item) => sum + item.value, 0);
+    const cashItems = items.filter((item) => item.stable);
+    const cashValue = cashItems.reduce((sum, item) => sum + item.value, 0);
+    const investedValue = items.reduce((sum, item) => sum + (item.stable ? 0 : item.value), 0);
     const totalPnl24h = items.reduce((sum, item) => {
       if (item.stable || item.changePct === 0 || item.value <= 0) return sum;
       return sum + (item.value - item.value / (1 + item.changePct / 100));
     }, 0);
-    const pnlPct = totalValue > 0 ? (totalPnl24h / (totalValue - totalPnl24h)) * 100 : 0;
+    const pnlPct = investedValue > 0 ? (totalPnl24h / (investedValue - totalPnl24h)) * 100 : 0;
     const pnlPositive = totalPnl24h >= 0;
     const cryptoItems = items.filter((item) => !item.fiat);
     const displayItems = (cryptoItems.length > 0 ? cryptoItems : items).slice(0, TOP_WALLET_ITEMS);
-
     return {
       items,
       displayItems,
       totalValue,
+      cashValue,
       totalPnl24h,
       pnlPct,
       pnlPositive,
       hasOverflow: (cryptoItems.length > 0 ? cryptoItems.length : items.length) > TOP_WALLET_ITEMS,
     };
-  }, [marketBySymbol, resolveAssetChangePct, resolveAssetPrice, walletPreview]);
+  }, [fiatQuoteRates, holdings, marketBySymbol, resolveAssetChangePct, resolveAssetPrice, walletPreview]);
+
+  const chartHeight = useMemo(() => {
+    if (!viewportWidth || !viewportHeight) return 360;
+    const preferred = Math.round(viewportHeight * (viewportWidth >= 1280 ? 0.39 : 0.34));
+    const maxHeight =
+      viewportWidth >= 2560 ? 540 :
+        viewportWidth >= 1920 ? 470 :
+          viewportWidth >= 1280 ? 420 :
+            360;
+    return clamp(preferred, 300, maxHeight);
+  }, [viewportHeight, viewportWidth]);
+
+  const signalPanelHeight = useMemo(() => {
+    if (!viewportWidth || !viewportHeight) return 220;
+    const preferred = Math.round(viewportHeight * (viewportWidth >= 1920 ? 0.26 : 0.24));
+    const maxHeight =
+      viewportWidth >= 2560 ? 340 :
+        viewportWidth >= 1920 ? 300 :
+          viewportWidth >= 1280 ? 250 :
+            220;
+    return clamp(preferred, 190, maxHeight);
+  }, [viewportHeight, viewportWidth]);
 
   if (loading && market.length === 0) {
     return (
@@ -1525,7 +1612,7 @@ export default function CryptoTradingPage() {
 
   return (
     <>
-      <div className="mx-auto max-w-[1440px] space-y-3 p-3 md:p-5">
+      <div className="w-full space-y-4 py-3 md:space-y-5 md:py-4 xl:space-y-6">
 
         {/* ============ 1. HEADER — compact, centered ============ */}
         <div className="flex items-center justify-between">
@@ -1533,7 +1620,7 @@ export default function CryptoTradingPage() {
             <h1 className="text-xl md:text-2xl font-bold glow-text">Crypto</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className={cn("text-[14px] font-medium", health?.connected ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>{feedLabel}</span>
-              <span className="text-[14px] text-[var(--text-muted)]">&middot; {portfolioHeadline}</span>
+              <span className="text-[14px] text-[var(--text-muted)]">&middot; {accountHeadline}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1554,8 +1641,15 @@ export default function CryptoTradingPage() {
               <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh
             </button>
             <button onClick={() => void handleAutoToggle()} disabled={!autoStatus || arming}
-              className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[14px] font-semibold transition-all disabled:opacity-40",
-                autoStatus?.enabled ? "bg-[var(--danger)]/12 text-[var(--danger)]" : "bg-[var(--success)]/12 text-[var(--success)]")}>
+              className={cn(
+                "relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[14px] font-semibold transition-all disabled:opacity-40",
+                autoStatus?.enabled
+                  ? "bg-[var(--danger)]/12 text-[var(--danger)] ring-1 ring-[var(--success)]/30 shadow-[0_0_16px_rgba(6,214,160,0.35)]"
+                  : "bg-[var(--success)]/12 text-[var(--success)]",
+              )}>
+              {autoStatus?.enabled && (
+                <span className="absolute -left-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-[var(--success)]" aria-hidden="true" />
+              )}
               {arming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
               {walletUnlocked ? (autoStatus?.enabled ? "Disarm" : "Arm AI") : "Wallet locked"}
             </button>
@@ -1571,45 +1665,22 @@ export default function CryptoTradingPage() {
         )}
 
         {/* ============ MY WALLET — always visible ============ */}
-        <section className="mb-6 flex h-[260px] flex-col rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 md:p-5">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 accent-text" />
-              <h2 className="text-base font-bold text-[var(--foreground)]">My Wallet</h2>
-              <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]">Binance</span>
+        <section className="mb-4 flex h-[126px] flex-col rounded-[24px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-3 md:h-[132px] md:px-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Wallet className="h-4.5 w-4.5 accent-text" />
+              <h2 className="text-[15px] font-bold text-[var(--foreground)]">My Wallet</h2>
+              <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)]">Binance</span>
             </div>
-            <div className="flex items-start gap-3">
-              {walletView.hasOverflow ? (
-                <button
-                  type="button"
-                  onClick={() => setWalletModalOpen(true)}
-                  className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-[12px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg-strong)]"
-                >
-                  Voir tout
-                </button>
-              ) : null}
-              <div className="flex items-center gap-3">
-                {walletPreviewLoading ? <Loader2 className="mt-1 h-4 w-4 animate-spin text-[var(--text-muted)]" /> : null}
-                {!walletPreviewLoading && walletView.items.length > 0 ? (
-                  <div className="text-right">
-                    <p className="text-[24px] font-bold font-mono leading-none text-[var(--foreground)]">{format(walletView.totalValue)}</p>
-                    <div
-                      className={cn(
-                        "mt-1 flex items-center justify-end gap-1 text-[14px] font-semibold",
-                        walletView.pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]",
-                      )}
-                    >
-                      {walletView.pnlPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      <span>{walletView.pnlPositive ? "+" : ""}{format(walletView.totalPnl24h)}</span>
-                      <span className="font-normal text-[var(--text-muted)]">({walletView.pnlPositive ? "+" : ""}{walletView.pnlPct.toFixed(2)}%)</span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+            <Loader2
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-opacity",
+                walletPreviewLoading ? "animate-spin opacity-100" : "opacity-0",
+              )}
+            />
           </div>
 
-          <div className="flex min-h-[156px] flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
             {walletPreviewError ? (
               <div className="flex flex-1 flex-col justify-center px-1 py-1">
                 <p className="text-[15px] text-[var(--danger)]">{walletPreviewError}</p>
@@ -1620,38 +1691,85 @@ export default function CryptoTradingPage() {
                 <p className="text-[15px] text-[var(--text-muted)]">Aucun solde. Ajoutez vos cles Binance dans Settings.</p>
               </div>
             ) : (
-              <div className="flex flex-1 items-center">
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-                  {walletView.displayItems.map((item, index) => (
-                    <div key={item.sym} className="flex items-center gap-x-5 gap-y-3">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSymbol(item.sym)}
-                        className={cn(
-                          "flex items-center gap-2 py-0.5 text-left transition-colors hover:text-[var(--page-accent)]",
-                          selectedSymbol === item.sym ? "text-[var(--page-accent)]" : "text-[var(--foreground)]",
-                        )}
-                      >
-                        <CryptoIcon symbol={item.sym} imageUrl={item.image} size="xs" />
-                        <span className="text-[15px] font-bold">{item.sym}</span>
-                        <span className="text-[13px] font-mono text-[var(--text-muted)]">
-                          {item.total.toLocaleString(undefined, {
-                            maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2,
-                          })}
-                        </span>
-                        <span className="text-[14px] font-semibold font-mono">{item.price > 0 ? format(item.value) : "--"}</span>
+              <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_148px_148px]">
+                <div
+                  className={cn(
+                    "grid min-h-0 rounded-[22px] border border-white/[0.06] bg-white/[0.02]",
+                    walletView.hasOverflow
+                      ? "grid-cols-[repeat(3,minmax(0,1fr))_112px]"
+                      : "grid-cols-3",
+                  )}
+                >
+                  {walletView.displayItems.map((item) => (
+                    <button
+                      key={item.sym}
+                      type="button"
+                      onClick={() => setSelectedSymbol(item.sym)}
+                      className={cn(
+                        "min-w-0 border-r border-white/[0.06] px-3 py-2 text-left transition-colors last:border-r-0",
+                        selectedSymbol === item.sym
+                          ? "bg-[var(--glass-bg-strong)] text-[var(--page-accent)]"
+                          : "text-[var(--foreground)] hover:bg-[var(--glass-bg-strong)]",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <CryptoIcon symbol={item.sym} imageUrl={item.image} size="xs" />
+                          <span className="truncate text-[13px] font-bold">{item.sym}</span>
+                        </div>
                         <span
                           className={cn(
-                            "text-[12px] font-semibold",
+                            "shrink-0 text-[11px] font-semibold",
                             item.stable ? "text-[var(--text-muted)]" : item.changePct >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]",
                           )}
                         >
                           {item.stable ? "Stable" : `${item.changePct >= 0 ? "+" : ""}${item.changePct.toFixed(1)}%`}
                         </span>
-                      </button>
-                      {index < walletView.displayItems.length - 1 ? <span className="text-[var(--glass-border)]">/</span> : null}
-                    </div>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <span className="truncate text-[12px] font-semibold font-mono tabular-nums">
+                          {item.price > 0 ? format(item.value) : "--"}
+                        </span>
+                        <span className="truncate text-[11px] font-mono text-[var(--text-muted)] tabular-nums">
+                          {item.total.toLocaleString(undefined, {
+                            maximumFractionDigits: item.price >= 1000 ? 4 : item.total < 1 ? 6 : 2,
+                          })}
+                        </span>
+                      </div>
+                    </button>
                   ))}
+                  {walletView.hasOverflow ? (
+                    <button
+                      type="button"
+                      onClick={() => setWalletModalOpen(true)}
+                      className="px-3 py-2 text-center text-[12px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg-strong)]"
+                    >
+                      Voir tout
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="rounded-[22px] border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">Wallet</p>
+                  <p className="mt-1 whitespace-nowrap text-[20px] font-bold font-mono leading-none text-[var(--foreground)] tabular-nums">
+                    {format(walletView.totalValue)}
+                  </p>
+                  <div
+                    className={cn(
+                      "mt-1 flex items-center gap-1 text-[11px] font-semibold tabular-nums",
+                      walletView.pnlPositive ? "text-[var(--success)]" : "text-[var(--danger)]",
+                    )}
+                  >
+                    {walletView.pnlPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                    <span>{walletView.pnlPositive ? "+" : ""}{format(walletView.totalPnl24h)}</span>
+                  </div>
+                </div>
+
+                <div className="rounded-[22px] border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">Cash dispo</p>
+                  <p className="mt-1 whitespace-nowrap text-[20px] font-bold font-mono leading-none text-[var(--text-secondary)] tabular-nums">
+                    {format(walletView.cashValue)}
+                  </p>
                 </div>
               </div>
             )}
@@ -1659,17 +1777,35 @@ export default function CryptoTradingPage() {
         </section>
 
         {/* ============ MAIN LAYOUT: Scanner (left) + Chart (right) ============ */}
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[304px_minmax(0,1fr)] xl:gap-5 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
 
           {/* LEFT: Scanner with search + watchlist */}
-          <aside className="lg:order-first order-last">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold text-[var(--foreground)]">Watchlist <span className="text-[12px] text-[var(--text-muted)] font-normal ml-1">{scannerAssets.length}</span></h2>
-              <LocalClock />
+          <aside className="order-last lg:order-first">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">
+                Watchlist
+                <span className="ml-1 text-[12px] font-normal text-[var(--text-muted)]">
+                  {scannerAssets.length > MAX_SCANNER_ITEMS ? `${visibleScannerAssets.length}/${scannerAssets.length}` : scannerAssets.length}
+                </span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUniverseView(moversView);
+                    setUniverseModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--glass-border)] px-3 py-1 text-[11px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg)]"
+                >
+                  <Sparkles className="h-3.5 w-3.5 accent-text" />
+                  Market Movers
+                </button>
+                <LocalClock />
+              </div>
             </div>
 
             {/* Search bar */}
-            <div className="relative mb-2">
+            <div className="relative mb-3">
               <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-[var(--glass-bg)] border border-[var(--glass-border)]">
                 <Search className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0" />
                 <input
@@ -1715,11 +1851,11 @@ export default function CryptoTradingPage() {
             </div>
 
             {/* Watchlist */}
-            <div className="space-y-0.5 max-h-[calc(100vh-260px)] overflow-y-auto custom-scrollbar pr-1">
-              {scannerAssets.length === 0 && (
+            <div className="space-y-1.5 pr-1">
+              {visibleScannerAssets.length === 0 && (
                 <p className="text-[13px] text-[var(--text-muted)] text-center py-4">Recherchez et suivez des cryptos</p>
               )}
-	              {scannerAssets.map((asset) => {
+		              {visibleScannerAssets.map((asset) => {
 	                const signal = signalMap[asset.symbol.toUpperCase()];
 	                const livePrice = resolveAssetPrice(asset.symbol.toUpperCase(), asset);
 	                const liveChangePct = resolveAssetChangePct(asset.symbol.toUpperCase(), asset);
@@ -1728,10 +1864,10 @@ export default function CryptoTradingPage() {
 	                  <div key={asset.symbol} role="button" tabIndex={0}
 	                    onClick={() => setSelectedSymbol(asset.symbol)}
 	                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedSymbol(asset.symbol); }}
-	                    className={cn("flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all duration-150 group",
-	                      selectedSymbol === asset.symbol
-	                        ? "bg-[var(--glass-bg-strong)] shadow-sm"
-	                        : "hover:bg-[var(--glass-bg)]")}>
+		                    className={cn("group flex items-center gap-2 rounded-lg px-2 py-2 transition-all duration-150",
+		                      selectedSymbol === asset.symbol
+		                        ? "bg-[var(--glass-bg-strong)] shadow-sm"
+		                        : "hover:bg-[var(--glass-bg)]")}>
 																				<div className="min-w-0 flex-1">
 	                      <div className="flex items-center gap-1.5">
 	                        <CryptoIcon symbol={asset.symbol} imageUrl={asset.image} size="xs" /><span className="text-[15px] font-bold text-[var(--foreground)]">{asset.symbol}</span>
@@ -1769,8 +1905,8 @@ export default function CryptoTradingPage() {
           </aside>
 
           {/* RIGHT: Chart + Readout */}
-          <section className="min-w-0">
-	          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <section className="min-w-0 space-y-4 xl:space-y-5">
+		          <div className="flex flex-wrap items-center justify-between gap-4">
 	            <div className="flex items-center gap-3">
 	              <div className="flex items-center gap-2">
 								{selectedSymbol && <CryptoIcon symbol={selectedSymbol} imageUrl={selectedAsset?.image} size="lg" />}
@@ -1813,19 +1949,27 @@ export default function CryptoTradingPage() {
             </div>
           </div>
 
-          {selectedSymbol ? (
-            <PriceChart symbol={selectedSymbol} type={chartType} height={292} showIntervals defaultInterval="1H" />
-          ) : (
-            <div className="flex h-[360px] items-center justify-center text-sm text-[var(--text-muted)]">Select an asset from the scanner below</div>
-          )}
+	          {selectedSymbol ? (
+	            <PriceChart
+	              symbol={selectedSymbol}
+	              type={chartType}
+	              height={chartHeight}
+	              showIntervals
+	              defaultInterval="15m"
+	              defaultRange="1D"
+	            />
+	          ) : (
+	            <div className="flex items-center justify-center rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-sm text-[var(--text-muted)]" style={{ height: chartHeight }}>Select an asset from the scanner below</div>
+	          )}
 
-          {/* Signal readout V2 — enriched sub-scores */}
-	          {selectedSignal && selectedSignal.sub_scores?.length > 0 && (
-	            <div className="mt-4">
-	              <SignalReadout
-	                direction={selectedSignal.display_score}
-	                directionLabel={signalReadoutLabel(selectedSignal)}
-	                confidence={selectedSignal.composite_score}
+	          {/* Signal readout V2 — enriched sub-scores */}
+			          {selectedSignal && selectedSignal.sub_scores?.length > 0 && (
+			            <div className="min-h-0 overflow-hidden rounded-xl" style={{ height: `${signalPanelHeight}px` }}>
+			              <SignalReadout
+			                className="h-full min-h-0"
+			                direction={selectedSignal.display_score}
+		                directionLabel={signalReadoutLabel(selectedSignal)}
+		                confidence={selectedSignal.composite_score}
 	                reliability={selectedSignal.reliability_score}
 	                risk={selectedSignal.risk}
 	                setupQuality={selectedSignal.setup_quality}
@@ -1841,133 +1985,13 @@ export default function CryptoTradingPage() {
                 setupType={formatSetupType(selectedSignal.setup_type)}
                 expectedHoldingWindow={selectedSignal.expected_holding_window}
                 subScores={selectedSignal.sub_scores}
-                keyReasons={selectedSignal.key_reasons}
-                notTradeReasons={selectedSignal.notrade_reasons}
-                contradictions={selectedSignal.contradictions}
-                tradePlan={selectedSignal.signal_trade_plan}
-	              />
-	            </div>
-	          )}
-	          {selectedSignal && selectedSignal.notrade_reasons.length > 0 && (
-	            <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-	              <div className="flex items-center justify-between gap-3">
-	                <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Publication filters</p>
-	                {hiddenPublicationReasonCount > 0 ? (
-	                  <span className="rounded-full border border-[var(--glass-border)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-muted)]">
-	                    +{hiddenPublicationReasonCount}
-	                  </span>
-	                ) : null}
-	              </div>
-	              {visiblePublicationReasons.map((reason, index) => (
-	                <p key={`${reason}-${index}`} className="mt-1 text-[13px] text-[var(--text-secondary)]">
-	                  - {reason}
-	                </p>
-	              ))}
-	            </div>
-	          )}
-            <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[14px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Market Movers</p>
-                  <p className="mt-0.5 text-[14px] text-[var(--text-muted)]">Discovery layer compacte pour alimenter la watchlist.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUniverseView(moversView);
-                    setUniverseModalOpen(true);
-                  }}
-                  className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-[12px] font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--glass-bg)]"
-                >
-                  Voir tout
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                {([
-                  ["gainers", "Gains"],
-                  ["losers", "Pertes"],
-                  ["candidates", "Candidats"],
-                ] as const).map(([view, label]) => (
-                  <button
-                    key={view}
-                    type="button"
-                    onClick={() => setMoversView(view)}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-[13px] font-semibold transition-all",
-                      moversView === view
-                        ? "bg-[var(--glass-bg-strong)] text-[var(--foreground)]"
-                        : "bg-[var(--glass-bg)] text-[var(--text-muted)] hover:text-[var(--foreground)]",
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {/* Sortable column headers */}
-              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_88px_74px_78px_34px] items-center gap-2 px-2 pb-1 border-b border-white/[0.04]">
-                <button type="button" onClick={() => { setMoversSortBy("default"); setMoversSortAsc(false); }} className={cn("text-left text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "default" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
-                  Asset
-                </button>
-                <button type="button" onClick={() => { if (moversSortBy === "price") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("price"); setMoversSortAsc(false); } }} className={cn("text-right text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "price" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
-                  Prix {moversSortBy === "price" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
-                </button>
-                <button type="button" onClick={() => { if (moversSortBy === "change") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("change"); setMoversSortAsc(false); } }} className={cn("text-right text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "change" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
-                  24h {moversSortBy === "change" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
-                </button>
-                <button type="button" onClick={() => { if (moversSortBy === "volume") { setMoversSortAsc(!moversSortAsc); } else { setMoversSortBy("volume"); setMoversSortAsc(false); } }} className={cn("text-right text-[12px] uppercase tracking-wider transition-colors", moversSortBy === "volume" ? "text-[var(--foreground)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]")}>
-                  Vol {moversSortBy === "volume" ? (moversSortAsc ? "\u2191" : "\u2193") : ""}
-                </button>
-                <span />
-              </div>
-              <div className="mt-1 space-y-1">
-                {compactMoversItems.length === 0 ? (
-                  <p className="text-[14px] text-[var(--text-muted)] py-2">Le flux de marche est en cours de chargement.</p>
-                ) : compactMoversItems.map((item) => {
-                  const isWatched = watchlist.includes(item.symbol);
-                  return (
-                    <div
-                      key={`${moversView}-${item.symbol}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedSymbol(item.symbol)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") setSelectedSymbol(item.symbol);
-                      }}
-                      className="grid grid-cols-[minmax(0,1fr)_88px_74px_78px_34px] items-center gap-2 rounded-xl px-2 py-2 transition-colors hover:bg-[var(--glass-bg)]"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <CryptoIcon symbol={item.symbol} imageUrl={item.image} size="sm" />
-                          <span className="truncate text-[15px] font-bold text-[var(--foreground)]">{item.symbol}</span>
-                        </div>
-                        <p className="truncate text-[13px] text-[var(--text-muted)]">{item.name}</p>
-                      </div>
-                      <span className="text-right text-[14px] font-mono text-[var(--foreground)]">{format(item.price, item.price < 1 ? 6 : 2)}</span>
-                      <span className={cn("text-right text-[14px] font-semibold", item.changePct24h >= 0 ? "text-[var(--success)]" : "text-[var(--danger)]")}>
-                        {item.changePct24h >= 0 ? "+" : ""}
-                        {item.changePct24h.toFixed(1)}%
-                      </span>
-                      <span className="text-right text-[13px] text-[var(--text-secondary)]">{compactMetricNumber(item.volume24h)}</span>
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleWatch(item.symbol);
-                          }}
-                          className={cn(
-                            "rounded-full p-1.5 transition-colors",
-                            isWatched ? "text-[#c6f135]" : "text-[var(--text-muted)] hover:text-[var(--foreground)]",
-                          )}
-                        >
-                          <Star className="h-3.5 w-3.5" fill={isWatched ? "currentColor" : "none"} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+		                keyReasons={selectedSignal.key_reasons}
+		                notTradeReasons={selectedSignal.notrade_reasons}
+		                contradictions={selectedSignal.contradictions}
+		                tradePlan={selectedSignal.signal_trade_plan}
+		              />
+		            </div>
+		          )}
 	          </section>
         </div>
 
@@ -1982,7 +2006,10 @@ export default function CryptoTradingPage() {
         onClose={() => setUniverseModalOpen(false)}
         onSelectSymbol={selectUniverseSymbol}
         onToggleWatch={toggleWatch}
-        onViewChange={setUniverseView}
+        onViewChange={(view) => {
+          setUniverseView(view);
+          if (view !== "all") setMoversView(view);
+        }}
         formatPrice={format}
       />
 
@@ -2014,6 +2041,15 @@ export default function CryptoTradingPage() {
           onSuccess={() => { setTradeModalOpen(false); void refreshDesk(); }}
         />
       ) : null}
+
+      {autoStatus?.enabled ? (
+        <AutoLogPanel
+          status={autoStatus as unknown as AutoStatusExtended}
+          onEmergencyStopped={() => {
+            void refreshDesk();
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -2033,11 +2069,17 @@ function WalletOverviewModal({
   onClose: () => void;
   onSelectSymbol: (symbol: string) => void;
 }) {
+  const { contentOffsetLeft } = useModalViewport(open);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[70]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative z-[1] flex h-full w-full items-center justify-center p-4 md:p-5"
+        style={{ paddingLeft: contentOffsetLeft ? `${contentOffsetLeft + 20}px` : undefined }}
+      >
       <div
         className="relative flex h-[min(85vh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[var(--glass-border)] bg-[var(--surface)]"
         onClick={(event) => event.stopPropagation()}
@@ -2099,6 +2141,7 @@ function WalletOverviewModal({
             ))}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

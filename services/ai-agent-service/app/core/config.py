@@ -16,8 +16,11 @@ class Settings(BaseSettings):
     MODEL_MEDIUM: str = "gpt-4o"
     MODEL_COMPLEX: str = "claude-sonnet-4-20250514"
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://gluetrade:gluetrade@localhost:5433/gluetrade"
+    # Database — shared with trading-engine (gluetrade_trading)
+    DATABASE_URL: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@postgres:5432/gluetrade_trading",
+        validation_alias=AliasChoices("DATABASE_URL", "AI_DATABASE_URL"),
+    )
 
     # Redis
     REDIS_HOST: str = "localhost"

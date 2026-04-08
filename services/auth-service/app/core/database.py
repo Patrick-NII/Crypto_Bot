@@ -70,6 +70,9 @@ async def init_db() -> None:
                 ADD COLUMN IF NOT EXISTS language VARCHAR(10) NOT NULL DEFAULT 'fr',
                 ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(100) NULL,
                 ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ NULL,
+                ADD COLUMN IF NOT EXISTS phone_number VARCHAR(32) NULL,
+                ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ NULL,
                 ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb
                 """
             )

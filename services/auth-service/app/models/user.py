@@ -113,6 +113,19 @@ class User(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    phone_number: Mapped[Optional[str]] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+    phone_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    phone_verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     preferences: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         default=dict,

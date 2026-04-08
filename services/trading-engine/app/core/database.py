@@ -117,6 +117,7 @@ async def init_db() -> None:
 
     # Import models so SQLAlchemy is aware of them before create_all
     from app.models.db import order as _order_models  # noqa: F401
+    from app.models.db import auto as _auto_models  # noqa: F401
 
     engine = get_engine()
     async with engine.begin() as conn:
@@ -133,6 +134,29 @@ async def init_db() -> None:
                 ADD COLUMN IF NOT EXISTS take_profit_price NUMERIC(38, 18) NULL,
                 ADD COLUMN IF NOT EXISTS trailing_pct NUMERIC(20, 8) NULL,
                 ADD COLUMN IF NOT EXISTS error_message TEXT NULL
+                """
+            )
+        )
+
+        # Auto-trading tables evolution guards
+        await conn.execute(
+            text(
+                """
+                ALTER TABLE auto_sessions
+                ADD COLUMN IF NOT EXISTS portfolio_value_start_of_day NUMERIC(38, 18) NULL,
+                ADD COLUMN IF NOT EXISTS cooldown_symbols JSONB NOT NULL DEFAULT '{}'::jsonb,
+                ADD COLUMN IF NOT EXISTS config JSONB NOT NULL DEFAULT '{}'::jsonb
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                ALTER TABLE auto_decisions
+                ADD COLUMN IF NOT EXISTS trade_group_id VARCHAR(64) NULL,
+                ADD COLUMN IF NOT EXISTS execution_order_id VARCHAR(64) NULL,
+                ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64) NULL,
+                ADD COLUMN IF NOT EXISTS entry_hash VARCHAR(64) NOT NULL DEFAULT ''
                 """
             )
         )

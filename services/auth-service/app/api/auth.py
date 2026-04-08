@@ -246,6 +246,8 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
         ai_assistant_tone=user.ai_assistant_tone,
         timezone=user.timezone or "Europe/Paris",
         language=user.language or "fr",
+        phone_number=user.phone_number,
+        phone_verified=bool(user.phone_verified),
         wallet_access_enabled=user.wallet_access_enabled,
         wallet_access_reason=reason,
         connected_exchanges_count=sum(1 for connection in connections if connection.is_active),
@@ -542,6 +544,15 @@ async def update_me(
 
     if payload.language is not None:
         current_user.language = payload.language
+
+    if payload.phone_number is not None:
+        # Changing the phone number always resets verification — the user
+        # must re-verify the new number via OTP.
+        new_phone = payload.phone_number.strip() or None
+        if new_phone != current_user.phone_number:
+            current_user.phone_number = new_phone
+            current_user.phone_verified = False
+            current_user.phone_verified_at = None
 
     if payload.preferences is not None:
         # Deep merge: preserve unrelated keys, only override what was sent.

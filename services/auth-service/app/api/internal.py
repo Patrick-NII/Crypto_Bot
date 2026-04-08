@@ -2,12 +2,17 @@
 
 These endpoints are protected by a shared INTERNAL_API_TOKEN header
 (``X-Internal-Token``). They are NOT exposed publicly through the gateway —
-they exist for the notification-service to enumerate users for recap dispatch.
+they exist for the notification-service to enumerate users for recap dispatch
+and to confirm phone verification after a successful OTP check.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,3 +102,77 @@ async def list_users_for_recap(
         )
 
     return {"users": matching, "count": len(matching)}
+
+
+class MarkPhoneVerifiedRequest(BaseModel):
+    user_id: str
+    phone_number: str
+
+
+@router.post("/mark-phone-verified")
+async def mark_phone_verified(
+    payload: MarkPhoneVerifiedRequest,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_internal_token),
+) -> dict:
+    """Mark a phone number as verified.
+
+    Called by notification-service after a successful Twilio Verify check.
+    The phone number in the payload must match the user's current phone to
+    avoid race conditions (e.g. user changed the number mid-flow).
+    """
+    try:
+        user_uuid = UUID(payload.user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    user = await db.get(User, user_uuid)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.phone_number != payload.phone_number:
+        raise HTTPException(
+            status_code=409,
+            detail="Phone number mismatch — user may have changed it in the meantime",
+        )
+
+    user.phone_verified = True
+    user.phone_verified_at = datetime.now(timezone.utc)
+    db.add(user)
+    await db.flush()
+
+    return {"ok": True, "phone_verified": True}
+
+
+@router.get("/users/{user_id}/phone-settings")
+async def get_user_phone_settings(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(_require_internal_token),
+) -> dict:
+    """Return a user's phone number + SMS preferences (token-gated).
+
+    Consumed by the sms_dispatcher in notification-service to decide
+    whether to send an SMS for a given event type.
+    """
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    user = await db.get(User, user_uuid)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    prefs = user.preferences if isinstance(user.preferences, dict) else {}
+    sms_prefs = prefs.get("sms") or {}
+
+    return {
+        "user_id": str(user.id),
+        "phone_number": user.phone_number,
+        "phone_verified": bool(user.phone_verified),
+        "sms": {
+            "master_enabled": bool(sms_prefs.get("master_enabled", False)),
+            "events": sms_prefs.get("events") or {},
+        },
+    }

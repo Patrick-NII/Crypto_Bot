@@ -9,7 +9,7 @@ import {
   CURRENCIES,
   type CurrencyCode,
 } from "@/components/providers/currency-provider";
-import { authApi, riskApi } from "@/lib/api";
+import { authApi, riskApi, smsApi } from "@/lib/api";
 import type {
   AIBehaviorStyle,
   AIAssistantTone,
@@ -26,7 +26,10 @@ import {
   Check,
   Hand,
   Key,
+  Loader2,
+  MessageSquare,
   Palette,
+  Phone,
   Shield,
   Trash2,
   User,
@@ -406,7 +409,7 @@ export default function SettingsPage() {
   const displayUser = user ?? authUser;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="w-full max-w-[1520px] space-y-5">
       <div>
         <h1 className="text-2xl font-bold glow-text mb-1">Settings</h1>
         <p className="text-xs text-[var(--text-muted)]">
@@ -881,6 +884,8 @@ export default function SettingsPage() {
         </div>
       </SettingSection>
 
+      <SmsNotificationsSection />
+
       <div className="liquid-glass-card p-5 border-[#ef4444]/20">
         <div className="flex items-center gap-2.5 mb-3">
           <Trash2 className="h-4.5 w-4.5 text-[#ef4444]" />
@@ -970,5 +975,261 @@ export default function SettingsPage() {
         </p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SMS notifications section
+// ---------------------------------------------------------------------------
+
+const SMS_EVENT_CATALOG: Array<{ key: string; label: string; group: string; defaultOn: boolean }> = [
+  { key: "trade_buy", label: "Achat execute", group: "Trades", defaultOn: true },
+  { key: "trade_sell", label: "Vente executee", group: "Trades", defaultOn: true },
+  { key: "trade_failed", label: "Ordre echec", group: "Trades", defaultOn: false },
+  { key: "stop_loss_hit", label: "Stop-loss declenche", group: "Trades", defaultOn: true },
+  { key: "take_profit_hit", label: "Take-profit atteint", group: "Trades", defaultOn: false },
+  { key: "circuit_breaker", label: "Circuit breaker", group: "Securite", defaultOn: true },
+  { key: "emergency_halt", label: "Arret d'urgence", group: "Securite", defaultOn: true },
+  { key: "heartbeat_miss", label: "Heartbeat manquant", group: "Securite", defaultOn: false },
+  { key: "new_login_unknown", label: "Nouvelle IP de connexion", group: "Securite", defaultOn: false },
+  { key: "api_key_error", label: "Erreur cle API Binance", group: "Securite", defaultOn: false },
+  { key: "daily_recap", label: "Recap quotidien", group: "Recaps", defaultOn: true },
+  { key: "pnl_milestone", label: "Seuil P&L atteint", group: "Recaps", defaultOn: false },
+  { key: "position_opened_large", label: "Position importante ouverte", group: "Trades", defaultOn: false },
+  { key: "auto_armed", label: "Auto-trading arme", group: "Auto", defaultOn: false },
+  { key: "auto_disarmed", label: "Auto-trading desarme", group: "Auto", defaultOn: false },
+];
+
+function SmsNotificationsSection() {
+  const [phoneInput, setPhoneInput] = useState("");
+  const [code, setCode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  const [events, setEvents] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [checkingCode, setCheckingCode] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const prefs = await smsApi.getPreferences();
+        setPhoneNumber(prefs.phone_number);
+        setPhoneVerified(prefs.phone_verified);
+        setPhoneInput(prefs.phone_number || "");
+        setSmsEnabled(prefs.sms.master_enabled);
+        const merged: Record<string, boolean> = {};
+        for (const item of SMS_EVENT_CATALOG) {
+          merged[item.key] =
+            prefs.sms.events[item.key] !== undefined
+              ? Boolean(prefs.sms.events[item.key])
+              : item.defaultOn;
+        }
+        setEvents(merged);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : "Impossible de charger les preferences SMS");
+      }
+    })();
+  }, []);
+
+  const savePreferences = async (
+    nextMaster: boolean,
+    nextEvents: Record<string, boolean>,
+  ) => {
+    setLoading(true);
+    setStatus(null);
+    try {
+      await smsApi.updatePreferences({
+        master_enabled: nextMaster,
+        events: nextEvents,
+      });
+      setStatus("Preferences enregistrees");
+      setTimeout(() => setStatus(null), 2000);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Echec de l'enregistrement");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleMaster = async () => {
+    const next = !smsEnabled;
+    setSmsEnabled(next);
+    await savePreferences(next, events);
+  };
+
+  const handleToggleEvent = async (key: string) => {
+    const next = { ...events, [key]: !events[key] };
+    setEvents(next);
+    await savePreferences(smsEnabled, next);
+  };
+
+  const handleSendCode = async () => {
+    setStatus(null);
+    setSendingCode(true);
+    try {
+      await smsApi.startVerification(phoneInput);
+      setStatus("Code envoye par SMS");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Echec envoi code");
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  const handleCheckCode = async () => {
+    setStatus(null);
+    setCheckingCode(true);
+    try {
+      const result = await smsApi.checkVerification(phoneInput, code);
+      if (result.verified) {
+        setPhoneNumber(phoneInput);
+        setPhoneVerified(true);
+        setStatus("Numero verifie avec succes");
+        setCode("");
+      } else {
+        setStatus("Code incorrect");
+      }
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Echec verification");
+    } finally {
+      setCheckingCode(false);
+    }
+  };
+
+  const handleSendTest = async () => {
+    setStatus(null);
+    try {
+      const result = await smsApi.sendTest();
+      if (result.ok) {
+        setStatus(`SMS test envoye (sid ${result.sid || "?"})`);
+      } else {
+        setStatus(result.error || "Echec envoi test");
+      }
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Echec envoi test");
+    }
+  };
+
+  const groupedEvents = SMS_EVENT_CATALOG.reduce<Record<string, typeof SMS_EVENT_CATALOG>>((acc, item) => {
+    (acc[item.group] ??= []).push(item);
+    return acc;
+  }, {});
+
+  return (
+    <SettingSection title="Notifications SMS" icon={MessageSquare}>
+      <p className="mb-3 text-[12px] text-[var(--text-muted)]">
+        Recevez des alertes SMS sur votre telephone pour les trades et les evenements critiques.
+        Activez au minimum les notifications de securite.
+      </p>
+
+      {/* Phone number + verification */}
+      <div className="mb-4 rounded-xl border border-[var(--glass-border)] p-3" style={{ background: "var(--glass-bg)" }}>
+        <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">
+          Numero de telephone (format international)
+        </label>
+        <div className="flex gap-2">
+          <div className="flex flex-1 items-center gap-2 rounded-lg border border-[var(--glass-border)] px-3 py-2" style={{ background: "var(--surface)" }}>
+            <Phone className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+            <input
+              type="tel"
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              placeholder="+33612345678"
+              className="flex-1 bg-transparent text-[13px] text-[var(--foreground)] outline-none"
+              disabled={sendingCode || checkingCode}
+            />
+            {phoneVerified && phoneNumber === phoneInput && (
+              <span className="flex items-center gap-0.5 rounded-full bg-[var(--success)]/15 px-2 py-0.5 text-[9px] font-bold uppercase text-[var(--success)]">
+                <Check className="h-3 w-3" /> Verifie
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleSendCode}
+            disabled={sendingCode || !phoneInput}
+            className="rounded-lg bg-[var(--page-accent)]/15 px-3 py-2 text-[11px] font-semibold text-[var(--page-accent)] disabled:opacity-40"
+          >
+            {sendingCode ? <Loader2 className="h-3 w-3 animate-spin" /> : "Envoyer code"}
+          </button>
+        </div>
+
+        <div className="mt-2 flex gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            placeholder="Code (6 chiffres)"
+            className="flex-1 rounded-lg border border-[var(--glass-border)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none"
+            style={{ background: "var(--surface)" }}
+            disabled={checkingCode}
+          />
+          <button
+            type="button"
+            onClick={handleCheckCode}
+            disabled={checkingCode || !code}
+            className="rounded-lg bg-[var(--success)]/15 px-3 py-2 text-[11px] font-semibold text-[var(--success)] disabled:opacity-40"
+          >
+            {checkingCode ? <Loader2 className="h-3 w-3 animate-spin" /> : "Verifier"}
+          </button>
+        </div>
+
+        {phoneVerified && phoneNumber && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSendTest}
+              className="rounded-lg border border-[var(--glass-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--glass-bg)]"
+            >
+              Envoyer SMS test
+            </button>
+          </div>
+        )}
+        {status && <p className="mt-2 text-[10px] text-[var(--text-muted)]">{status}</p>}
+      </div>
+
+      {/* Master toggle */}
+      <Toggle
+        label="Activer les notifications SMS"
+        enabled={smsEnabled && phoneVerified}
+        onChange={handleToggleMaster}
+      />
+      {!phoneVerified && (
+        <p className="mb-3 text-[10px] italic text-[var(--text-muted)]">
+          Verifiez d'abord votre numero pour activer les notifications.
+        </p>
+      )}
+
+      {/* Granular toggles by group */}
+      {phoneVerified && (
+        <div className="mt-3 space-y-3">
+          {Object.entries(groupedEvents).map(([group, items]) => (
+            <div key={group}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                {group}
+              </p>
+              <div className="grid grid-cols-1 gap-1">
+                {items.map((item) => (
+                  <Toggle
+                    key={item.key}
+                    label={item.label}
+                    enabled={Boolean(events[item.key])}
+                    onChange={() => void handleToggleEvent(item.key)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading && (
+        <p className="mt-2 text-[10px] text-[var(--text-muted)]">Enregistrement...</p>
+      )}
+    </SettingSection>
   );
 }
